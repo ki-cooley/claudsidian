@@ -9,21 +9,29 @@ import 'dotenv/config';
 import { startServer } from './server.js';
 import { logger } from './utils.js';
 
+const MOCK_MODE = process.env.MOCK_MODE === 'true';
+
 // Verify required environment variables
 function checkEnv() {
-  const required = ['ANTHROPIC_API_KEY'];
-  const missing = required.filter((key) => !process.env[key]);
+  // In mock mode, we don't need the API key
+  if (!MOCK_MODE) {
+    const required = ['ANTHROPIC_API_KEY'];
+    const missing = required.filter((key) => !process.env[key]);
 
-  if (missing.length > 0) {
-    logger.error(`Missing required environment variables: ${missing.join(', ')}`);
-    process.exit(1);
+    if (missing.length > 0) {
+      logger.error(`Missing required environment variables: ${missing.join(', ')}`);
+      process.exit(1);
+    }
   }
 
   // Log configuration (without sensitive values)
   logger.info('Configuration:');
+  logger.info(`  MOCK_MODE: ${MOCK_MODE}`);
   logger.info(`  PORT: ${process.env.PORT || 3001}`);
   logger.info(`  AUTH_TOKEN: ${process.env.AUTH_TOKEN ? '***' : 'dev-token (default)'}`);
-  logger.info(`  CLAUDE_MODEL: ${process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514'}`);
+  if (!MOCK_MODE) {
+    logger.info(`  CLAUDE_MODEL: ${process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514'}`);
+  }
   logger.info(`  LOG_LEVEL: ${process.env.LOG_LEVEL || 'info'}`);
 }
 

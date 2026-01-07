@@ -9,7 +9,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import type { IncomingMessage } from 'http';
 import { runAgent } from './agent.js';
+import { runMockAgent } from './mock-agent.js';
 import { logger } from './utils.js';
+
+const MOCK_MODE = process.env.MOCK_MODE === 'true';
 import type {
   ClientMessage,
   ServerMessage,
@@ -98,7 +101,10 @@ class ConnectionHandler {
       // Create vault bridge that sends RPC requests to plugin
       const vaultBridge = this.createVaultBridge();
 
-      for await (const event of runAgent(
+      // Use mock agent in mock mode, real agent otherwise
+      const agentRunner = MOCK_MODE ? runMockAgent : runAgent;
+
+      for await (const event of agentRunner(
         msg.prompt,
         vaultBridge,
         msg.context,

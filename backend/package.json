@@ -6,9 +6,13 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:mock": "MOCK_MODE=true tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "start:mock": "MOCK_MODE=true node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test:client": "tsx test/test-client.ts",
+    "test:auto": "tsx test/automated-test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
