@@ -6,8 +6,9 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
+import { createServer, type Server } from 'http';
 import { randomUUID } from 'crypto';
-import type { IncomingMessage } from 'http';
+import type { IncomingMessage, ServerResponse } from 'http';
 import { runAgent } from './agent.js';
 import { runMockAgent } from './mock-agent.js';
 import { logger } from './utils.js';
@@ -282,11 +283,27 @@ class ConnectionHandler {
 }
 
 /**
- * Start the WebSocket server
+ * Start the HTTP + WebSocket server
  */
-export function startServer(): WebSocketServer {
-  const wss = new WebSocketServer({ port: PORT });
+export function startServer(): Server {
   const connections = new Map<WebSocket, ConnectionHandler>();
+
+  // Create HTTP server for health checks
+  const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+    // Health check endpoint
+    if (req.url === '/health' || req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', mock: MOCK_MODE }));
+      return;
+    }
+
+    // 404 for other routes
+    res.writeHead(404);
+    res.end('Not Found');
+  });
+
+  // Create WebSocket server attached to HTTP server
+  const wss = new WebSocketServer({ server: httpServer });
 
   // Heartbeat interval to detect dead connections
   const heartbeatInterval = setInterval(() => {
@@ -322,6 +339,9 @@ export function startServer(): WebSocketServer {
     clearInterval(heartbeatInterval);
   });
 
-  logger.info(`WebSocket server running on port ${PORT}`);
-  return wss;
+  httpServer.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+  });
+
+  return httpServer;
 }
