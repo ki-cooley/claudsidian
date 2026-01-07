@@ -1,0 +1,34 @@
+{
+  "name": "obsidian-claude-agent-backend",
+  "version": "1.0.0",
+  "description": "Backend service for Obsidian Claude Agent plugin",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:mock": "MOCK_MODE=true tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:mock": "MOCK_MODE=true node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test:client": "tsx test/test-client.ts",
+    "test:auto": "tsx test/automated-test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
