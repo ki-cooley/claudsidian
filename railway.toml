@@ -1,10 +1,11 @@
 [build]
 builder = "dockerfile"
 dockerfilePath = "backend/Dockerfile"
+buildContext = "backend"
 watchPatterns = ["backend/**"]
 
 [deploy]
-healthcheckPath = "/"
+healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

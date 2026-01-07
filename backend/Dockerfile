@@ -2,15 +2,15 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Copy package files from backend directory
-COPY backend/package*.json ./
+# Copy package files
+COPY package*.json ./
 
 # Install all dependencies (need devDeps for build)
 RUN npm ci
 
 # Copy source files
-COPY backend/src ./src
-COPY backend/tsconfig.json ./
+COPY src ./src
+COPY tsconfig.json ./
 
 # Build TypeScript
 RUN npm run build
