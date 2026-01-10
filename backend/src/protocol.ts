@@ -119,7 +119,7 @@ export interface ErrorMessage {
 export interface RpcRequestMessage {
   type: 'rpc_request';
   id: string;
-  method: 'vault_read' | 'vault_write' | 'vault_search' | 'vault_list' | 'vault_delete';
+  method: 'vault_read' | 'vault_write' | 'vault_edit' | 'vault_search' | 'vault_grep' | 'vault_glob' | 'vault_list' | 'vault_rename' | 'vault_delete';
   params: Record<string, unknown>;
 }
 
@@ -199,10 +199,21 @@ export type AgentEvent =
 // Vault Bridge Interface
 // ============================================================================
 
+export interface GrepResult {
+  path: string;
+  line: number;
+  content: string;
+  context?: string;
+}
+
 export interface VaultBridge {
   read(path: string): Promise<string>;
   write(path: string, content: string): Promise<void>;
+  edit(path: string, oldString: string, newString: string): Promise<void>;
   search(query: string, limit?: number): Promise<SearchResult[]>;
+  grep(pattern: string, folder?: string, filePattern?: string, limit?: number): Promise<GrepResult[]>;
+  glob(pattern: string): Promise<string[]>;
   list(folder: string): Promise<FileInfo[]>;
+  rename(oldPath: string, newPath: string): Promise<void>;
   delete(path: string): Promise<void>;
 }

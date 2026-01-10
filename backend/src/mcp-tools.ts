@@ -70,6 +70,29 @@ export function getVaultToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'vault_edit',
+      description:
+        'Make precise edits to an existing note by replacing a specific string. More efficient than rewriting entire file. The old_string must match exactly (including whitespace).',
+      input_schema: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note to edit',
+          },
+          old_string: {
+            type: 'string',
+            description: 'Exact text to find and replace (must be unique in file)',
+          },
+          new_string: {
+            type: 'string',
+            description: 'Text to replace it with',
+          },
+        },
+        required: ['path', 'old_string', 'new_string'],
+      },
+    },
+    {
       name: 'vault_search',
       description:
         'Search for notes by content or filename. Returns matching file paths with content snippets. Useful for finding relevant notes before reading them.',
@@ -89,6 +112,48 @@ export function getVaultToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'vault_grep',
+      description:
+        'Search file contents using a regex pattern. More powerful than vault_search for pattern matching. Returns matching lines with context.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          pattern: {
+            type: 'string',
+            description: 'Regular expression pattern to search for',
+          },
+          folder: {
+            type: 'string',
+            description: 'Folder to search in (empty for entire vault)',
+          },
+          file_pattern: {
+            type: 'string',
+            description: 'Glob pattern to filter files, e.g. "*.md" (default: all markdown files)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum results to return (default: 50)',
+          },
+        },
+        required: ['pattern'],
+      },
+    },
+    {
+      name: 'vault_glob',
+      description:
+        'Find files matching a glob pattern. Use this to discover files by name pattern, e.g. "**/*.md" for all markdown files, "projects/*.md" for markdown in projects folder.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          pattern: {
+            type: 'string',
+            description: 'Glob pattern, e.g. "**/*.md", "daily/*.md", "projects/**/*"',
+          },
+        },
+        required: ['pattern'],
+      },
+    },
+    {
       name: 'vault_list',
       description:
         'List files and folders in a directory. Use empty string or "/" for vault root.',
@@ -101,6 +166,25 @@ export function getVaultToolDefinitions(): ToolDefinition[] {
           },
         },
         required: [],
+      },
+    },
+    {
+      name: 'vault_rename',
+      description:
+        'Rename or move a note to a new path. Updates any internal links pointing to this file if possible.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          old_path: {
+            type: 'string',
+            description: 'Current path of the note',
+          },
+          new_path: {
+            type: 'string',
+            description: 'New path for the note',
+          },
+        },
+        required: ['old_path', 'new_path'],
       },
     },
     {
@@ -194,6 +278,62 @@ export async function executeVaultTool(
         await bridge.delete(path);
         return {
           content: `Deleted ${path}`,
+        };
+      }
+
+      case 'vault_edit': {
+        const path = input.path as string;
+        const oldString = input.old_string as string;
+        const newString = input.new_string as string;
+        await bridge.edit(path, oldString, newString);
+        return {
+          content: `Successfully edited ${path}`,
+        };
+      }
+
+      case 'vault_grep': {
+        const pattern = input.pattern as string;
+        const folder = (input.folder as string) || '';
+        const filePattern = (input.file_pattern as string) || '*.md';
+        const limit = (input.limit as number) || 50;
+        const results = await bridge.grep(pattern, folder, filePattern, limit);
+
+        if (results.length === 0) {
+          return {
+            content: 'No matches found.',
+          };
+        }
+
+        const formatted = results
+          .map((r) => `${r.path}:${r.line}: ${truncate(r.content, 100)}`)
+          .join('\n');
+        return {
+          content: `Found ${results.length} match(es):\n${formatted}`,
+        };
+      }
+
+      case 'vault_glob': {
+        const pattern = input.pattern as string;
+        const files = await bridge.glob(pattern);
+
+        if (files.length === 0) {
+          return {
+            content: 'No files matched the pattern.',
+          };
+        }
+
+        const formatted = files.map((f) => `- ${f}`).join('\n');
+        return {
+          content: `Found ${files.length} file(s):\n${formatted}`,
+        };
+      }
+
+      case 'vault_rename': {
+        const oldPath = input.old_path as string;
+        const newPath = input.new_path as string;
+        await bridge.rename(oldPath, newPath);
+        return {
+          content: `Renamed ${oldPath} → ${newPath}`,
         };
       }
 

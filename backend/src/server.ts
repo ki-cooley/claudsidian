@@ -23,6 +23,7 @@ import type {
   VaultBridge,
   SearchResult,
   FileInfo,
+  GrepResult,
 } from './protocol.js';
 
 const AUTH_TOKEN = process.env.AUTH_TOKEN || 'dev-token';
@@ -243,14 +244,36 @@ class ConnectionHandler {
       write: async (path: string, content: string): Promise<void> => {
         await this.sendRpc('vault_write', { path, content });
       },
+      edit: async (path: string, oldString: string, newString: string): Promise<void> => {
+        await this.sendRpc('vault_edit', { path, old_string: oldString, new_string: newString });
+      },
       search: async (
         query: string,
         limit: number = 20
       ): Promise<SearchResult[]> => {
         return this.sendRpc<SearchResult[]>('vault_search', { query, limit });
       },
+      grep: async (
+        pattern: string,
+        folder?: string,
+        filePattern?: string,
+        limit: number = 50
+      ): Promise<GrepResult[]> => {
+        return this.sendRpc<GrepResult[]>('vault_grep', {
+          pattern,
+          folder: folder || '',
+          file_pattern: filePattern || '*.md',
+          limit
+        });
+      },
+      glob: async (pattern: string): Promise<string[]> => {
+        return this.sendRpc<string[]>('vault_glob', { pattern });
+      },
       list: async (folder: string): Promise<FileInfo[]> => {
         return this.sendRpc<FileInfo[]>('vault_list', { folder });
+      },
+      rename: async (oldPath: string, newPath: string): Promise<void> => {
+        await this.sendRpc('vault_rename', { old_path: oldPath, new_path: newPath });
       },
       delete: async (path: string): Promise<void> => {
         await this.sendRpc('vault_delete', { path });
