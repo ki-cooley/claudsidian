@@ -18,30 +18,129 @@ import type {
   AgentEvent,
 } from './protocol.js';
 
-const SYSTEM_PROMPT = `You are an Obsidian note-editing assistant. You help users create, edit, search, and organize their notes in their Obsidian vault.
+const BASE_SYSTEM_PROMPT = `You are an Obsidian note-editing assistant. You help users create, edit, search, and organize their notes in their Obsidian vault.
 
 ## Capabilities
 - Read notes from the vault
 - Write/create notes
-- Search across the vault
+- Edit notes with precise string replacement (vault_edit)
+- Search across the vault (vault_search for text, vault_grep for regex patterns)
+- Find files by pattern (vault_glob)
 - List files and folders
+- Rename/move notes (vault_rename)
 - Delete notes (ask for confirmation first)
 
 ## Guidelines
 1. When editing existing notes, ALWAYS read them first to understand current content
-2. Preserve existing formatting and structure unless asked to change it
-3. Use proper Obsidian markdown:
+2. Use vault_edit for small precise changes - it's more efficient than rewriting the whole file
+3. Preserve existing formatting and structure unless asked to change it
+4. Use proper Obsidian markdown:
    - [[wikilinks]] for internal links
    - #tags for categorization
    - YAML frontmatter for metadata
-4. When creating new notes, suggest appropriate folder locations
-5. For destructive operations (delete, overwrite), confirm with the user first
-6. If a search returns no results, suggest alternative search terms
+5. When creating new notes, suggest appropriate folder locations
+6. For destructive operations (delete, overwrite), confirm with the user first
+7. If a search returns no results, suggest alternative search terms or use vault_grep with regex
 
 ## Response Style
 - Be concise but helpful
 - Explain what changes you're making
 - If uncertain, ask for clarification`;
+
+interface Skill {
+  name: string;
+  description: string;
+  content: string;
+}
+
+/**
+ * Load custom skills from .claude/skills/ directory
+ */
+async function loadSkills(bridge: VaultBridge): Promise<Skill[]> {
+  const skills: Skill[] = [];
+
+  try {
+    // Try to list files in .claude/skills/
+    const skillFiles = await bridge.glob('.claude/skills/*.md');
+
+    for (const skillPath of skillFiles) {
+      try {
+        const content = await bridge.read(skillPath);
+        // Extract skill name from filename (e.g., "weekly-review.md" -> "weekly-review")
+        const filename = skillPath.split('/').pop() || skillPath;
+        const name = filename.replace(/\.md$/, '');
+
+        // Try to extract description from first line or frontmatter
+        let description = `Custom skill: ${name}`;
+        const lines = content.split('\n');
+        if (lines[0]?.startsWith('# ')) {
+          description = lines[0].replace('# ', '').trim();
+        } else if (lines[0]?.startsWith('---')) {
+          // Try to parse YAML frontmatter for description
+          const frontmatterEnd = content.indexOf('---', 4);
+          if (frontmatterEnd > 0) {
+            const frontmatter = content.substring(4, frontmatterEnd);
+            const descMatch = frontmatter.match(/description:\s*(.+)/);
+            if (descMatch) {
+              description = descMatch[1].trim();
+            }
+          }
+        }
+
+        skills.push({ name, description, content });
+        logger.info(`Loaded skill: ${name}`);
+      } catch (e) {
+        logger.warn(`Failed to load skill from ${skillPath}:`, e);
+      }
+    }
+  } catch (e) {
+    // .claude/skills/ doesn't exist, that's fine
+    logger.debug('No .claude/skills/ directory found');
+  }
+
+  return skills;
+}
+
+/**
+ * Build the full system prompt, including CLAUDE.md content and custom skills
+ */
+async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
+  let systemPrompt = BASE_SYSTEM_PROMPT;
+
+  // Try to read CLAUDE.md from vault root for project-specific context
+  try {
+    const claudeMd = await bridge.read('CLAUDE.md');
+    if (claudeMd && claudeMd.trim()) {
+      systemPrompt += `\n\n## Vault-Specific Instructions (from CLAUDE.md)\n\n${claudeMd}`;
+      logger.info('Loaded CLAUDE.md from vault root');
+    }
+  } catch (e) {
+    // CLAUDE.md doesn't exist, that's fine
+    logger.debug('No CLAUDE.md found in vault root');
+  }
+
+  // Also check for .claude/instructions.md as an alternative location
+  try {
+    const instructions = await bridge.read('.claude/instructions.md');
+    if (instructions && instructions.trim()) {
+      systemPrompt += `\n\n## Additional Instructions (from .claude/instructions.md)\n\n${instructions}`;
+      logger.info('Loaded .claude/instructions.md');
+    }
+  } catch (e) {
+    // .claude/instructions.md doesn't exist, that's fine
+  }
+
+  // Load custom skills
+  const skills = await loadSkills(bridge);
+  if (skills.length > 0) {
+    systemPrompt += `\n\n## Custom Skills\n\nThe user has defined the following custom skills. When they reference a skill by name (e.g., "run the weekly-review skill" or "/weekly-review"), follow the instructions in that skill:\n\n`;
+    for (const skill of skills) {
+      systemPrompt += `### Skill: ${skill.name}\n${skill.description}\n\n\`\`\`\n${skill.content}\n\`\`\`\n\n`;
+    }
+  }
+
+  return systemPrompt;
+}
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 const MAX_TOKENS = 4096;
@@ -64,6 +163,9 @@ export async function* runAgent(
   const client = new Anthropic();
   const tools = getVaultToolDefinitions();
   const messages: ConversationMessage[] = [];
+
+  // Build system prompt with CLAUDE.md context
+  const systemPrompt = await buildSystemPrompt(bridge);
 
   // Build context-aware prompt
   let fullPrompt = prompt;
@@ -93,7 +195,7 @@ export async function* runAgent(
       const stream = await client.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         tools: tools as Anthropic.Tool[],
         messages: messages as Anthropic.MessageParam[],
       });
