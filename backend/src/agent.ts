@@ -142,7 +142,7 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
   return systemPrompt;
 }
 
-const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5-20250514';
+const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5-20251101';
 const MAX_TOKENS = 4096;
 const MAX_ITERATIONS = 10; // Prevent infinite tool loops
 
