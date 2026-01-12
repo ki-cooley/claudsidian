@@ -142,7 +142,7 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
   return systemPrompt;
 }
 
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5-20250514';
 const MAX_TOKENS = 4096;
 const MAX_ITERATIONS = 10; // Prevent infinite tool loops
 
@@ -158,14 +158,20 @@ export async function* runAgent(
   prompt: string,
   bridge: VaultBridge,
   context?: AgentContext,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  customSystemPrompt?: string
 ): AsyncGenerator<AgentEvent> {
   const client = new Anthropic();
   const tools = getVaultToolDefinitions();
   const messages: ConversationMessage[] = [];
 
   // Build system prompt with CLAUDE.md context
-  const systemPrompt = await buildSystemPrompt(bridge);
+  let systemPrompt = await buildSystemPrompt(bridge);
+
+  // Prepend custom system prompt if provided (from user settings)
+  if (customSystemPrompt && customSystemPrompt.trim()) {
+    systemPrompt = `${customSystemPrompt.trim()}\n\n${systemPrompt}`;
+  }
 
   // Build context-aware prompt
   let fullPrompt = prompt;
