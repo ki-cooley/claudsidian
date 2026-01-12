@@ -136,7 +136,9 @@ export async function* runMockAgent(
   prompt: string,
   bridge: VaultBridge,
   context?: AgentContext,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  _customSystemPrompt?: string,
+  _model?: string
 ): AsyncGenerator<AgentEvent> {
   logger.info('[MOCK] Running mock agent');
 

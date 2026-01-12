@@ -110,7 +110,9 @@ class ConnectionHandler {
         msg.prompt,
         vaultBridge,
         msg.context,
-        abortController.signal
+        abortController.signal,
+        msg.systemPrompt,
+        msg.model
       )) {
         if (abortController.signal.aborted) {
           logger.info(`Request ${msg.id} was cancelled`);

@@ -142,7 +142,7 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
   return systemPrompt;
 }
 
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5-20250514';
+const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5-20250514';
 const MAX_TOKENS = 4096;
 const MAX_ITERATIONS = 10; // Prevent infinite tool loops
 
@@ -159,8 +159,11 @@ export async function* runAgent(
   bridge: VaultBridge,
   context?: AgentContext,
   signal?: AbortSignal,
-  customSystemPrompt?: string
+  customSystemPrompt?: string,
+  model?: string
 ): AsyncGenerator<AgentEvent> {
+  const selectedModel = model || DEFAULT_MODEL;
+  logger.info(`Using model: ${selectedModel}`);
   const client = new Anthropic();
   const tools = getVaultToolDefinitions();
   const messages: ConversationMessage[] = [];
@@ -199,7 +202,7 @@ export async function* runAgent(
     try {
       // Create streaming request
       const stream = await client.messages.stream({
-        model: MODEL,
+        model: selectedModel,
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
         tools: tools as Anthropic.Tool[],

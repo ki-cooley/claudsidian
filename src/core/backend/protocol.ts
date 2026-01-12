@@ -43,6 +43,10 @@ export interface PromptMessage {
 	id: string;
 	prompt: string;
 	context?: AgentContext;
+	/** Custom system prompt to prepend to the agent's base system prompt */
+	systemPrompt?: string;
+	/** Model to use for this request (e.g., 'claude-opus-4-5-20250514') */
+	model?: string;
 }
 
 /** Response to an RPC request from server */
