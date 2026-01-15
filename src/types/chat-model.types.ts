@@ -95,6 +95,10 @@ export const chatModelSchema = z.discriminatedUnion('providerType', [
     providerType: z.literal('openai-compatible'),
     ...baseChatModelSchema.shape,
   }),
+  z.object({
+    providerType: z.literal('backend'),
+    ...baseChatModelSchema.shape,
+  }),
 ])
 
 export type ChatModel = z.infer<typeof chatModelSchema>

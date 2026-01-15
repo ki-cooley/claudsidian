@@ -38,9 +38,15 @@ function AddEmbeddingModelModalComponent({
   plugin,
   onClose,
 }: AddEmbeddingModelModalComponentProps) {
+  // Filter to providers that support embedding
+  const availableProviders = plugin.settings.providers.filter(
+    (p) => PROVIDER_TYPES_INFO[p.type].supportEmbedding,
+  )
+  const defaultProvider = availableProviders[0] ?? DEFAULT_PROVIDERS[0]
+
   const [formData, setFormData] = useState<Omit<EmbeddingModel, 'dimension'>>({
-    providerId: DEFAULT_PROVIDERS[0].id,
-    providerType: DEFAULT_PROVIDERS[0].type,
+    providerId: defaultProvider.id,
+    providerType: defaultProvider.type as Exclude<typeof defaultProvider.type, 'backend'>,
     id: '',
     model: '',
   })
@@ -158,7 +164,7 @@ function AddEmbeddingModelModalComponent({
             setFormData((prev) => ({
               ...prev,
               providerId: value,
-              providerType: provider.type,
+              providerType: provider.type as Exclude<typeof provider.type, 'backend'>,
             }))
           }}
         />

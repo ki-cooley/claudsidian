@@ -17,6 +17,8 @@ import { OpenAIAuthenticatedProvider } from './openai'
 import { OpenAICompatibleProvider } from './openaiCompatibleProvider'
 import { OpenRouterProvider } from './openRouterProvider'
 import { PerplexityProvider } from './perplexityProvider'
+import { BackendProvider } from '../backend/BackendProvider'
+import { webSocketClient } from '../backend/instance'
 
 /*
  * OpenAI, OpenAI-compatible, and Anthropic providers include token usage statistics
@@ -75,6 +77,9 @@ export function getProviderClient({
     }
     case 'openai-compatible': {
       return new OpenAICompatibleProvider(provider)
+    }
+    case 'backend': {
+      return new BackendProvider(provider, webSocketClient)
     }
   }
 }

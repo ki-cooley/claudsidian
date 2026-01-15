@@ -156,85 +156,128 @@ function ProviderFormComponent({
         </>
       )}
 
-      <ObsidianSetting
-        name="API Key"
-        desc="(leave blank if not required)"
-        required={providerTypeInfo.requireApiKey}
-      >
-        <ObsidianTextInput
-          value={formData.apiKey ?? ''}
-          placeholder="Enter your API Key"
-          onChange={(value: string) =>
-            setFormData((prev) => ({ ...prev, apiKey: value }))
-          }
-        />
-      </ObsidianSetting>
-
-      <ObsidianSetting
-        name="Base URL"
-        desc="(leave blank if using default)"
-        required={providerTypeInfo.requireBaseUrl}
-      >
-        <ObsidianTextInput
-          value={formData.baseUrl ?? ''}
-          placeholder="Enter base URL"
-          onChange={(value: string) =>
-            setFormData((prev) => ({ ...prev, baseUrl: value }))
-          }
-        />
-      </ObsidianSetting>
-
-      {providerTypeInfo.additionalSettings.map((setting) => (
-        <ObsidianSetting
-          key={setting.key}
-          name={setting.label}
-          desc={'description' in setting ? setting.description : undefined}
-          required={setting.required}
-        >
-          {setting.type === 'toggle' ? (
-            <ObsidianToggle
-              value={
-                (formData.additionalSettings as Record<string, boolean>)?.[
-                  setting.key
-                ] ?? false
-              }
-              onChange={(value: boolean) =>
-                setFormData(
-                  (prev) =>
-                    ({
-                      ...prev,
-                      additionalSettings: {
-                        ...(prev.additionalSettings ?? {}),
-                        [setting.key]: value,
-                      },
-                    }) as LLMProvider,
-                )
-              }
-            />
-          ) : (
+      {formData.type === 'backend' ? (
+        <>
+          <ObsidianSetting
+            name="Backend URL"
+            desc="WebSocket URL of the backend service"
+            required
+          >
             <ObsidianTextInput
-              value={
-                (formData.additionalSettings as Record<string, string>)?.[
-                  setting.key
-                ] ?? ''
-              }
-              placeholder={setting.placeholder}
+              value={(formData as { backendUrl?: string }).backendUrl ?? ''}
+              placeholder="wss://your-backend.example.com"
               onChange={(value: string) =>
-                setFormData(
-                  (prev) =>
-                    ({
-                      ...prev,
-                      additionalSettings: {
-                        ...(prev.additionalSettings ?? {}),
-                        [setting.key]: value,
-                      },
-                    }) as LLMProvider,
-                )
+                setFormData((prev) => ({ ...prev, backendUrl: value }))
               }
             />
-          )}
-        </ObsidianSetting>
-      ))}
+          </ObsidianSetting>
+
+          <ObsidianSetting
+            name="Auth Token"
+            desc="Authentication token for the backend"
+            required
+          >
+            <ObsidianTextInput
+              value={(formData as { authToken?: string }).authToken ?? ''}
+              placeholder="Enter your auth token"
+              onChange={(value: string) =>
+                setFormData((prev) => ({ ...prev, authToken: value }))
+              }
+            />
+          </ObsidianSetting>
+        </>
+      ) : (
+        <>
+          <ObsidianSetting
+            name="API Key"
+            desc="(leave blank if not required)"
+            required={providerTypeInfo.requireApiKey}
+          >
+            <ObsidianTextInput
+              value={formData.apiKey ?? ''}
+              placeholder="Enter your API Key"
+              onChange={(value: string) =>
+                setFormData((prev) => ({ ...prev, apiKey: value }))
+              }
+            />
+          </ObsidianSetting>
+
+          <ObsidianSetting
+            name="Base URL"
+            desc="(leave blank if using default)"
+            required={providerTypeInfo.requireBaseUrl}
+          >
+            <ObsidianTextInput
+              value={formData.baseUrl ?? ''}
+              placeholder="Enter base URL"
+              onChange={(value: string) =>
+                setFormData((prev) => ({ ...prev, baseUrl: value }))
+              }
+            />
+          </ObsidianSetting>
+        </>
+      )}
+
+      {formData.type !== 'backend' &&
+        providerTypeInfo.additionalSettings.map((setting) => (
+          <ObsidianSetting
+            key={setting.key}
+            name={setting.label}
+            desc={'description' in setting ? setting.description : undefined}
+            required={setting.required}
+          >
+            {setting.type === 'toggle' ? (
+              <ObsidianToggle
+                value={
+                  ('additionalSettings' in formData &&
+                    (formData.additionalSettings as Record<string, boolean>)?.[
+                      setting.key
+                    ]) ??
+                  false
+                }
+                onChange={(value: boolean) =>
+                  setFormData(
+                    (prev) =>
+                      ({
+                        ...prev,
+                        additionalSettings: {
+                          ...('additionalSettings' in prev
+                            ? prev.additionalSettings
+                            : {}),
+                          [setting.key]: value,
+                        },
+                      }) as LLMProvider,
+                  )
+                }
+              />
+            ) : (
+              <ObsidianTextInput
+                value={
+                  (('additionalSettings' in formData &&
+                    (formData.additionalSettings as Record<string, string>)?.[
+                      setting.key
+                    ]) ||
+                    '') as string
+                }
+                placeholder={setting.placeholder}
+                onChange={(value: string) =>
+                  setFormData(
+                    (prev) =>
+                      ({
+                        ...prev,
+                        additionalSettings: {
+                          ...('additionalSettings' in prev
+                            ? prev.additionalSettings
+                            : {}),
+                          [setting.key]: value,
+                        },
+                      }) as LLMProvider,
+                  )
+                }
+              />
+            )}
+          </ObsidianSetting>
+        ))}
 
       <ObsidianSetting>
         <ObsidianButton

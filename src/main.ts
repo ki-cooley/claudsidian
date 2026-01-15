@@ -17,6 +17,10 @@ import {
 import { parseSmartComposerSettings } from './settings/schema/settings'
 import { SmartComposerSettingTab } from './settings/SettingTab'
 import { getMentionableBlockData } from './utils/obsidian'
+import { webSocketClient } from './core/backend/instance'
+import { VaultRpcHandler } from './core/backend/VaultRpcHandler'
+import { ConflictManager } from './core/backend/ConflictManager'
+import type { RpcRequestMessage } from './core/backend/protocol'
 
 export default class SmartComposerPlugin extends Plugin {
   settings: SmartComposerSettings
@@ -25,6 +29,8 @@ export default class SmartComposerPlugin extends Plugin {
   mcpManager: McpManager | null = null
   dbManager: DatabaseManager | null = null
   ragEngine: RAGEngine | null = null
+  vaultRpcHandler: VaultRpcHandler | null = null
+  conflictManager: ConflictManager | null = null
   private dbManagerInitPromise: Promise<DatabaseManager> | null = null
   private ragEngineInitPromise: Promise<RAGEngine> | null = null
   private timeoutIds: ReturnType<typeof setTimeout>[] = [] // Use ReturnType instead of number
@@ -32,11 +38,42 @@ export default class SmartComposerPlugin extends Plugin {
   async onload() {
     await this.loadSettings()
 
+    // Initialize backend components
+    this.conflictManager = new ConflictManager(this.app)
+    this.vaultRpcHandler = new VaultRpcHandler(this.app)
+
+    // Wire RPC handler to respond to backend requests
+    webSocketClient.on('rpc_request', async (msg: unknown) => {
+      const rpcMsg = msg as RpcRequestMessage
+      console.log(
+        `[Claudsidian] RPC request received: ${rpcMsg.method}`,
+        rpcMsg.params,
+      )
+      try {
+        const result = await this.vaultRpcHandler!.handleRpc(
+          rpcMsg.method,
+          rpcMsg.params,
+        )
+        console.log(`[Claudsidian] RPC result for ${rpcMsg.method}:`, result)
+        webSocketClient.sendRpcResponse(rpcMsg.id, result)
+      } catch (error) {
+        console.error('[Claudsidian] RPC handler error:', error)
+        webSocketClient.sendRpcResponse(rpcMsg.id, undefined, {
+          code: 'RPC_ERROR',
+          message:
+            error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    })
+
+    // Auto-connect to backend if configured
+    void this.connectBackend()
+
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this))
     this.registerView(APPLY_VIEW_TYPE, (leaf) => new ApplyView(leaf))
 
     // This creates an icon in the left ribbon.
-    this.addRibbonIcon('wand-sparkles', 'Open smart composer', () =>
+    this.addRibbonIcon('wand-sparkles', 'Open Claudsidian chat', () =>
       this.openChatView(),
     )
 
@@ -135,6 +172,11 @@ export default class SmartComposerPlugin extends Plugin {
     // clear all timers
     this.timeoutIds.forEach((id) => clearTimeout(id))
     this.timeoutIds = []
+
+    // Backend cleanup
+    webSocketClient.disconnect()
+    this.vaultRpcHandler = null
+    this.conflictManager = null
 
     // RagEngine cleanup
     this.ragEngine?.cleanup()
@@ -334,8 +376,39 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
     if (leaves.length === 0 || !(leaves[0].view instanceof ChatView)) {
       return
     }
-    new Notice('Reloading "smart-composer" due to migration', 1000)
+    new Notice('Reloading Claudsidian due to migration', 1000)
     leaves[0].detach()
     await this.activateChatView()
+  }
+
+  async connectBackend() {
+    const backendProvider = this.settings.providers.find(
+      (p) => p.type === 'backend',
+    )
+    if (!backendProvider || backendProvider.type !== 'backend') {
+      console.log('[SmartComposer] No backend provider configured')
+      return
+    }
+
+    if (!backendProvider.backendUrl || !backendProvider.authToken) {
+      console.warn(
+        '[SmartComposer] Backend provider missing URL or auth token',
+      )
+      return
+    }
+
+    try {
+      console.log('[SmartComposer] Connecting to backend...')
+      await webSocketClient.connect(
+        backendProvider.backendUrl,
+        backendProvider.authToken,
+      )
+      new Notice('Connected to backend')
+    } catch (error) {
+      console.error('[SmartComposer] Failed to connect to backend:', error)
+      new Notice(
+        'Failed to connect to backend. Check console for details.',
+      )
+    }
   }
 }

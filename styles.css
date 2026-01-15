@@ -929,9 +929,9 @@ button.smtcmp-chat-input-model-select {
 
 .smtcmp-template-menu-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--size-4-1);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--size-2-1);
   width: 100%;
 
   .smtcmp-template-menu-item-delete {
@@ -946,6 +946,44 @@ button.smtcmp-chat-input-model-select {
       opacity: 1;
     }
   }
+}
+
+.smtcmp-slash-command-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.smtcmp-slash-command-name {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.smtcmp-slash-command-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-s);
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.smtcmp-badge-skill {
+  background-color: var(--color-purple);
+}
+
+.smtcmp-badge-command {
+  background-color: var(--color-green);
+}
+
+.smtcmp-slash-command-desc {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
 }
 
 .smtcmp-assistant-message-actions {

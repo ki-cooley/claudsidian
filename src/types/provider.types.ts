@@ -89,7 +89,22 @@ export const llmProviderSchema = z.discriminatedUnion('type', [
       })
       .optional(),
   }),
+  z.object({
+    type: z.literal('backend'),
+    id: z.string().min(1, 'id is required'),
+    backendUrl: z
+      .string({
+        required_error: 'Backend URL is required',
+      })
+      .min(1, 'Backend URL is required'),
+    authToken: z
+      .string({
+        required_error: 'Auth token is required',
+      })
+      .min(1, 'Auth token is required'),
+  }),
 ])
 
 export type LLMProvider = z.infer<typeof llmProviderSchema>
 export type LLMProviderType = LLMProvider['type']
+export type BackendProviderConfig = Extract<LLMProvider, { type: 'backend' }>

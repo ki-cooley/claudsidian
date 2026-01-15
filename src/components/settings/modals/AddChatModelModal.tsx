@@ -33,9 +33,15 @@ function AddChatModelModalComponent({
   plugin,
   onClose,
 }: AddChatModelModalComponentProps) {
+  // Filter out backend provider since it doesn't support chat models directly
+  const availableProviders = plugin.settings.providers.filter(
+    (p) => p.type !== 'backend',
+  )
+  const defaultProvider = availableProviders[0] ?? DEFAULT_PROVIDERS[0]
+
   const [formData, setFormData] = useState<ChatModel>({
-    providerId: DEFAULT_PROVIDERS[0].id,
-    providerType: DEFAULT_PROVIDERS[0].type,
+    providerId: defaultProvider.id,
+    providerType: defaultProvider.type,
     id: '',
     model: '',
     promptLevel: PromptLevel.Default,
@@ -90,15 +96,10 @@ function AddChatModelModalComponent({
         <ObsidianDropdown
           value={formData.providerId}
           options={Object.fromEntries(
-            plugin.settings.providers.map((provider) => [
-              provider.id,
-              provider.id,
-            ]),
+            availableProviders.map((provider) => [provider.id, provider.id]),
           )}
           onChange={(value: string) => {
-            const provider = plugin.settings.providers.find(
-              (p) => p.id === value,
-            )
+            const provider = availableProviders.find((p) => p.id === value)
             if (!provider) {
               new Notice(`Provider with ID ${value} not found`)
               return

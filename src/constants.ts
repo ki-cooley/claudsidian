@@ -8,12 +8,12 @@ export const APPLY_VIEW_TYPE = 'smtcmp-apply-view'
 export const PGLITE_DB_PATH = '.smtcmp_vector_db.tar.gz'
 
 // Default model ids
-export const DEFAULT_CHAT_MODEL_ID = 'claude-sonnet-4.5'
-export const DEFAULT_APPLY_MODEL_ID = 'gpt-4.1-mini'
+export const DEFAULT_CHAT_MODEL_ID = 'backend-agent'
+export const DEFAULT_APPLY_MODEL_ID = 'backend-agent'
 
 // Recommended model ids
-export const RECOMMENDED_MODELS_FOR_CHAT = ['claude-sonnet-4.5', 'gpt-4.1']
-export const RECOMMENDED_MODELS_FOR_APPLY = ['gpt-4.1-mini']
+export const RECOMMENDED_MODELS_FOR_CHAT = ['backend-agent', 'claude-sonnet-4.5', 'gpt-4.1']
+export const RECOMMENDED_MODELS_FOR_APPLY = ['backend-agent', 'gpt-4.1-mini']
 export const RECOMMENDED_MODELS_FOR_EMBEDDING = [
   'openai/text-embedding-3-small',
 ]
@@ -147,6 +147,14 @@ export const PROVIDER_TYPES_INFO = {
       },
     ],
   },
+  backend: {
+    label: 'Backend',
+    defaultProviderId: 'backend',
+    requireApiKey: false,
+    requireBaseUrl: false,
+    supportEmbedding: false,
+    additionalSettings: [],
+  },
 } as const satisfies Record<
   LLMProviderType,
   {
@@ -216,6 +224,12 @@ export const DEFAULT_PROVIDERS: readonly LLMProvider[] = [
     type: 'morph',
     id: PROVIDER_TYPES_INFO.morph.defaultProviderId,
   },
+  {
+    type: 'backend',
+    id: PROVIDER_TYPES_INFO.backend.defaultProviderId,
+    backendUrl: '',
+    authToken: '',
+  },
 ]
 
 /**
@@ -224,6 +238,12 @@ export const DEFAULT_PROVIDERS: readonly LLMProvider[] = [
  * 2. If there's same model id in user's settings, it's data should be overwritten by default model
  */
 export const DEFAULT_CHAT_MODELS: readonly ChatModel[] = [
+  {
+    providerType: 'backend',
+    providerId: PROVIDER_TYPES_INFO.backend.defaultProviderId,
+    id: 'backend-agent',
+    model: 'backend-agent',
+  },
   {
     providerType: 'anthropic',
     providerId: PROVIDER_TYPES_INFO.anthropic.defaultProviderId,

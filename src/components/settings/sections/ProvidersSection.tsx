@@ -110,40 +110,53 @@ export function ProvidersSection({ app, plugin }: ProvidersSectionProps) {
             </tr>
           </thead>
           <tbody>
-            {settings.providers.map((provider) => (
-              <tr key={provider.id}>
-                <td>{provider.id}</td>
-                <td>{PROVIDER_TYPES_INFO[provider.type].label}</td>
-                <td
-                  className="smtcmp-settings-table-api-key"
-                  onClick={() => {
-                    new EditProviderModal(app, plugin, provider).open()
-                  }}
-                >
-                  {provider.apiKey ? '••••••••' : 'Set API key'}
-                </td>
-                <td>
-                  <div className="smtcmp-settings-actions">
-                    <button
-                      onClick={() => {
-                        new EditProviderModal(app, plugin, provider).open()
-                      }}
-                      className="clickable-icon"
-                    >
-                      <Settings />
-                    </button>
-                    {!DEFAULT_PROVIDERS.some((v) => v.id === provider.id) && (
+            {settings.providers.map((provider) => {
+              const hasCredentials =
+                provider.type === 'backend'
+                  ? !!(provider as { authToken?: string }).authToken
+                  : !!provider.apiKey
+
+              return (
+                <tr key={provider.id}>
+                  <td>{provider.id}</td>
+                  <td>{PROVIDER_TYPES_INFO[provider.type].label}</td>
+                  <td
+                    className="smtcmp-settings-table-api-key"
+                    onClick={() => {
+                      new EditProviderModal(app, plugin, provider).open()
+                    }}
+                  >
+                    {hasCredentials
+                      ? '••••••••'
+                      : provider.type === 'backend'
+                        ? 'Set auth token'
+                        : 'Set API key'}
+                  </td>
+                  <td>
+                    <div className="smtcmp-settings-actions">
                       <button
-                        onClick={() => handleDeleteProvider(provider)}
+                        onClick={() => {
+                          new EditProviderModal(app, plugin, provider).open()
+                        }}
                         className="clickable-icon"
                       >
-                        <Trash2 />
+                        <Settings />
                       </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      {!DEFAULT_PROVIDERS.some(
+                        (v) => v.id === provider.id,
+                      ) && (
+                        <button
+                          onClick={() => handleDeleteProvider(provider)}
+                          className="clickable-icon"
+                        >
+                          <Trash2 />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
           <tfoot>
             <tr>

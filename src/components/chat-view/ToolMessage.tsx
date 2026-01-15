@@ -57,9 +57,20 @@ const ToolMessage = memo(function ToolMessage({
   conversationId: string
   onMessageUpdate: (message: ChatToolMessage) => void
 }) {
+  // Filter out backend tool calls - they clutter the UI and their results
+  // are shown inline as formatted content instead
+  const visibleToolCalls = message.toolCalls.filter(
+    (toolCall) => !toolCall.request.name.startsWith('backend__')
+  )
+
+  // If all tool calls are backend tools, don't render the container
+  if (visibleToolCalls.length === 0) {
+    return null
+  }
+
   return (
     <div className="smtcmp-toolcall-container">
-      {message.toolCalls.map((toolCall, index) => (
+      {visibleToolCalls.map((toolCall, index) => (
         <div
           key={toolCall.request.id}
           className={clsx(index > 0 && 'smtcmp-toolcall-border-top')}
@@ -107,14 +118,27 @@ function ToolCallItem({
     response.status === ToolCallResponseStatus.PendingApproval,
   )
 
-  const { serverName, toolName } = useMemo(() => {
+  const { serverName, toolName, isBackendTool } = useMemo(() => {
+    // Check if this is a backend tool (executed on backend, shown for transparency)
+    if (request.name.startsWith('backend__')) {
+      return {
+        serverName: 'backend',
+        toolName: request.name.replace('backend__', ''),
+        isBackendTool: true,
+      }
+    }
+
     try {
-      return parseToolName(request.name)
+      return {
+        ...parseToolName(request.name),
+        isBackendTool: false,
+      }
     } catch (error) {
       if (error instanceof InvalidToolNameException) {
         return {
           serverName: null,
           toolName: request.name,
+          isBackendTool: false,
         }
       }
       throw error
@@ -171,53 +195,54 @@ function ToolCallItem({
           )}
         </div>
       )}
-      {(response.status === ToolCallResponseStatus.PendingApproval ||
-        response.status === ToolCallResponseStatus.Running) && (
-        <div className="smtcmp-toolcall-footer">
-          {response.status === ToolCallResponseStatus.PendingApproval && (
-            <div className="smtcmp-toolcall-footer-actions">
-              <SplitButton
-                primaryText="Allow"
-                onPrimaryClick={() => {
-                  handleToolCall()
-                  setIsOpen(false)
-                }}
-                menuOptions={[
-                  {
-                    label: 'Always allow this tool',
-                    onClick: () => {
-                      handleToolCall()
-                      handleAllowAutoExecution()
-                      setIsOpen(false)
+      {!isBackendTool &&
+        (response.status === ToolCallResponseStatus.PendingApproval ||
+          response.status === ToolCallResponseStatus.Running) && (
+          <div className="smtcmp-toolcall-footer">
+            {response.status === ToolCallResponseStatus.PendingApproval && (
+              <div className="smtcmp-toolcall-footer-actions">
+                <SplitButton
+                  primaryText="Allow"
+                  onPrimaryClick={() => {
+                    handleToolCall()
+                    setIsOpen(false)
+                  }}
+                  menuOptions={[
+                    {
+                      label: 'Always allow this tool',
+                      onClick: () => {
+                        handleToolCall()
+                        handleAllowAutoExecution()
+                        setIsOpen(false)
+                      },
                     },
-                  },
-                  {
-                    label: 'Allow for this chat',
-                    onClick: () => {
-                      handleToolCall()
-                      handleAllowForConversation()
-                      setIsOpen(false)
+                    {
+                      label: 'Allow for this chat',
+                      onClick: () => {
+                        handleToolCall()
+                        handleAllowForConversation()
+                        setIsOpen(false)
+                      },
                     },
-                  },
-                ]}
-              />
-              <button
-                onClick={() => {
-                  handleReject()
-                  setIsOpen(false)
-                }}
-              >
-                Reject
-              </button>
-            </div>
-          )}
-          {response.status === ToolCallResponseStatus.Running && (
-            <div className="smtcmp-toolcall-footer-actions">
-              <button onClick={handleAbort}>Abort</button>
-            </div>
-          )}
-        </div>
-      )}
+                  ]}
+                />
+                <button
+                  onClick={() => {
+                    handleReject()
+                    setIsOpen(false)
+                  }}
+                >
+                  Reject
+                </button>
+              </div>
+            )}
+            {response.status === ToolCallResponseStatus.Running && (
+              <div className="smtcmp-toolcall-footer-actions">
+                <button onClick={handleAbort}>Abort</button>
+              </div>
+            )}
+          </div>
+        )}
     </div>
   )
 }

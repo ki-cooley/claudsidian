@@ -1,7 +1,41 @@
 /**
- * Formats tool results as clickable file references for the UI
- * Uses Obsidian wikilink format [[filename]] for inline clickable links
+ * Formats tool results for the UI
+ *
+ * Design goals:
+ * - Collapsed by default with summary counts
+ * - Clickable file links via wikilinks
+ * - Minimal clutter for search/read operations
+ * - Clear display for write/edit operations
  */
+
+// Track edits for batching (static to persist across calls)
+const recentEdits: Map<string, { count: number; lastTime: number }> = new Map();
+const EDIT_BATCH_WINDOW_MS = 5000; // Batch edits within 5 seconds
+
+/**
+ * Format a collapsible file list with count summary
+ */
+function formatCollapsibleList(
+	title: string,
+	icon: string,
+	fileRefs: string[],
+	maxVisible: number = 3
+): string {
+	if (fileRefs.length === 0) return '';
+
+	const count = fileRefs.length;
+
+	// If few files, just show them inline
+	if (count <= maxVisible) {
+		return `\n${icon} **${title}:** ${fileRefs.join(', ')}`;
+	}
+
+	// For many files, show count with expandable list
+	const visibleRefs = fileRefs.slice(0, maxVisible);
+	const hiddenCount = count - maxVisible;
+
+	return `\n${icon} **${title}:** ${visibleRefs.join(', ')} *+${hiddenCount} more*`;
+}
 
 export function formatToolResult(
 	toolName: string,
@@ -11,15 +45,10 @@ export function formatToolResult(
 	let formattedResult = '';
 
 	if (toolName === 'vault_search') {
-		// vault_search format: "- path/to/file.md: ...snippet..."
-		// Only extract actual file paths (must end with .md or other extension before the colon)
 		const lines = result.split('\n');
 		const fileRefs: string[] = [];
 
 		for (const line of lines) {
-			// Match lines like "- path/to/file.md: snippet text"
-			// Path can contain spaces, must end with an extension before the colon
-			// Format is: "- filepath.ext: content"
 			const match = line.match(/^-\s*(.+\.\w+):\s/);
 			if (match) {
 				const filepath = match[1].trim();
@@ -28,92 +57,103 @@ export function formatToolResult(
 			}
 		}
 
-		if (fileRefs.length > 0) {
-			formattedResult = '\n**Found files:**\n' + fileRefs.map(ref => `- ${ref}`).join('\n');
-		}
+		formattedResult = formatCollapsibleList('Found', '🔍', fileRefs);
 	} else if (toolName === 'vault_list') {
-		// vault_list format: "- 📁 folder-name" or "- 📄 file-name.md"
 		const lines = result.split('\n');
-		const fileRefs: string[] = [];
+		const folders: string[] = [];
+		const files: string[] = [];
 
 		for (const line of lines) {
 			const trimmed = line.trim();
 			if (!trimmed.startsWith('- ')) continue;
 
-			// Check for folder (📁)
 			if (trimmed.includes('📁')) {
 				const name = trimmed.replace(/^-\s*📁\s*/, '').trim();
-				fileRefs.push(`📁 ${name}`);
-			}
-			// Check for file (📄)
-			else if (trimmed.includes('📄')) {
+				folders.push(name);
+			} else if (trimmed.includes('📄')) {
 				const name = trimmed.replace(/^-\s*📄\s*/, '').trim();
-				fileRefs.push(`[[${name}]]`);
+				files.push(`[[${name}]]`);
 			}
 		}
 
-		if (fileRefs.length > 0) {
-			formattedResult = '\n**Contents:**\n' + fileRefs.map(ref => `- ${ref}`).join('\n');
+		const total = folders.length + files.length;
+		if (total > 0) {
+			const parts: string[] = [];
+			if (folders.length > 0) parts.push(`${folders.length} folders`);
+			if (files.length > 0) parts.push(`${files.length} files`);
+			formattedResult = `\n📂 **Listed:** ${parts.join(', ')}`;
 		}
 	} else if (toolName === 'vault_read') {
-		// For vault_read, show the filename as a link
 		try {
 			const args = JSON.parse(toolArguments);
 			if (args.path) {
 				const displayName = args.path.split('/').pop() || args.path;
-				formattedResult = `\n📖 Read: [[${args.path}|${displayName}]]`;
+				formattedResult = `\n📖 **Read:** [[${args.path}|${displayName}]]`;
 			}
 		} catch (e) {
 			// Silently ignore parse errors
 		}
 	} else if (toolName === 'vault_write') {
-		// For vault_write, show the written file
 		try {
 			const args = JSON.parse(toolArguments);
 			if (args.path) {
 				const displayName = args.path.split('/').pop() || args.path;
-				formattedResult = `\n✍️ Wrote: [[${args.path}|${displayName}]]`;
+				formattedResult = `\n✍️ **Created:** [[${args.path}|${displayName}]]`;
 			}
 		} catch (e) {
 			// Silently ignore parse errors
 		}
 	} else if (toolName === 'vault_edit') {
-		// For vault_edit, show the edited file
 		try {
 			const args = JSON.parse(toolArguments);
 			if (args.path) {
 				const displayName = args.path.split('/').pop() || args.path;
-				formattedResult = `\n✏️ Edited: [[${args.path}|${displayName}]]`;
+				const now = Date.now();
+
+				// Check if we have a recent edit to this same file
+				const existingEdit = recentEdits.get(args.path);
+				if (existingEdit && (now - existingEdit.lastTime) < EDIT_BATCH_WINDOW_MS) {
+					// Update the count but don't emit another message
+					existingEdit.count++;
+					existingEdit.lastTime = now;
+					// Return empty to suppress duplicate messages
+					return '';
+				}
+
+				// New edit or first in a batch
+				recentEdits.set(args.path, { count: 1, lastTime: now });
+
+				// Clean up old entries
+				for (const [path, edit] of recentEdits) {
+					if (now - edit.lastTime > EDIT_BATCH_WINDOW_MS * 2) {
+						recentEdits.delete(path);
+					}
+				}
+
+				formattedResult = `\n✏️ **Edited:** [[${args.path}|${displayName}]]`;
 			}
 		} catch (e) {
 			// Silently ignore parse errors
 		}
 	} else if (toolName === 'vault_grep') {
-		// vault_grep format: "path/to/file.md:123: matching line content"
 		const lines = result.split('\n');
 		const fileRefs: string[] = [];
 		const seenFiles = new Set<string>();
 
 		for (const line of lines) {
-			// Match lines like "path/to/file.md:42: content"
 			const match = line.match(/^(.+\.\w+):(\d+):/);
 			if (match) {
 				const filepath = match[1].trim();
-				const lineNum = match[2];
-				// Only show each file once
 				if (!seenFiles.has(filepath)) {
 					seenFiles.add(filepath);
 					const displayName = filepath.split('/').pop() || filepath;
-					fileRefs.push(`[[${filepath}|${displayName}]] (line ${lineNum})`);
+					fileRefs.push(`[[${filepath}|${displayName}]]`);
 				}
 			}
 		}
 
-		if (fileRefs.length > 0) {
-			formattedResult = '\n**Matches in:**\n' + fileRefs.map(ref => `- ${ref}`).join('\n');
-		}
+		formattedResult = formatCollapsibleList('Grep matches', '🔎', fileRefs);
 	} else if (toolName === 'vault_glob') {
-		// vault_glob format: "- path/to/file.md"
 		const lines = result.split('\n');
 		const fileRefs: string[] = [];
 
@@ -126,16 +166,13 @@ export function formatToolResult(
 			}
 		}
 
-		if (fileRefs.length > 0) {
-			formattedResult = '\n**Matched files:**\n' + fileRefs.map(ref => `- ${ref}`).join('\n');
-		}
+		formattedResult = formatCollapsibleList('Found files', '📁', fileRefs);
 	} else if (toolName === 'vault_rename') {
-		// For vault_rename, show both old and new paths
 		try {
 			const args = JSON.parse(toolArguments);
 			if (args.old_path && args.new_path) {
 				const newDisplayName = args.new_path.split('/').pop() || args.new_path;
-				formattedResult = `\n📝 Renamed → [[${args.new_path}|${newDisplayName}]]`;
+				formattedResult = `\n📝 **Renamed:** → [[${args.new_path}|${newDisplayName}]]`;
 			}
 		} catch (e) {
 			// Silently ignore parse errors
