@@ -167,12 +167,12 @@ export async function* runAgent(
   logger.info(`Using model: ${selectedModel}`);
   const client = new Anthropic();
 
-  // Combine vault tools with built-in web search tool
+  // Combine vault tools with built-in web search tool (v2 - added name field)
   const vaultTools = getVaultToolDefinitions();
-  const tools: (Anthropic.Tool | { type: string; name?: string; max_uses?: number })[] = [
+  const tools: (Anthropic.Tool | { type: string; name: string; max_uses?: number })[] = [
     ...vaultTools as Anthropic.Tool[],
-    // Built-in web search tool
-    { type: 'web_search_20250305', max_uses: 5 },
+    // Built-in web search tool - requires type and name fields
+    { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
   ];
 
   const messages: ConversationMessage[] = [];

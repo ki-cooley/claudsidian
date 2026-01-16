@@ -1,5 +1,6 @@
 FROM node:22-slim
 
+# Cache bust: 2026-01-16-v2
 WORKDIR /app
 
 # Copy package files
