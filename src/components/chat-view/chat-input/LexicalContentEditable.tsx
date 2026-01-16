@@ -113,6 +113,8 @@ export default function LexicalContentEditable({
             }}
             onFocus={onFocus}
             ref={contentEditableRef}
+            // Mobile keyboard hint to show "Send" button instead of Enter
+            enterKeyHint="send"
           />
         }
         ErrorBoundary={LexicalErrorBoundary}

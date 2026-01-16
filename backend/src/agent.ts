@@ -29,6 +29,7 @@ const BASE_SYSTEM_PROMPT = `You are an Obsidian note-editing assistant. You help
 - List files and folders
 - Rename/move notes (vault_rename)
 - Delete notes (ask for confirmation first)
+- Search the web for current information (web_search) - useful for looking up documentation, news, or any external information
 
 ## Guidelines
 1. When editing existing notes, ALWAYS read them first to understand current content
@@ -165,7 +166,15 @@ export async function* runAgent(
   const selectedModel = model || DEFAULT_MODEL;
   logger.info(`Using model: ${selectedModel}`);
   const client = new Anthropic();
-  const tools = getVaultToolDefinitions();
+
+  // Combine vault tools with built-in web search tool
+  const vaultTools = getVaultToolDefinitions();
+  const tools: (Anthropic.Tool | { type: string; name?: string; max_uses?: number })[] = [
+    ...vaultTools as Anthropic.Tool[],
+    // Built-in web search tool
+    { type: 'web_search_20250305', max_uses: 5 },
+  ];
+
   const messages: ConversationMessage[] = [];
 
   // Build system prompt with CLAUDE.md context
@@ -201,11 +210,12 @@ export async function* runAgent(
 
     try {
       // Create streaming request
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const stream = await client.messages.stream({
         model: selectedModel,
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
-        tools: tools as Anthropic.Tool[],
+        tools: tools as any, // Mix of Anthropic.Tool and built-in tool types
         messages: messages as Anthropic.MessageParam[],
       });
 

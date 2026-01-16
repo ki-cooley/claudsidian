@@ -1,4 +1,4 @@
-import { Check, CopyIcon, Eye, Loader2, Play } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, CopyIcon, Eye, Loader2, Play } from 'lucide-react'
 import { PropsWithChildren, useMemo, useState } from 'react'
 
 import { useApp } from '../../contexts/app-context'
@@ -7,6 +7,9 @@ import { openMarkdownFile } from '../../utils/obsidian'
 
 import { ObsidianMarkdown } from './ObsidianMarkdown'
 import { MemoizedSyntaxHighlighterWrapper } from './SyntaxHighlighterWrapper'
+
+// Max lines to show before truncating
+const MAX_LINES_COLLAPSED = 15
 
 export default function MarkdownCodeComponent({
   onApply,
@@ -25,10 +28,23 @@ export default function MarkdownCodeComponent({
 
   const [isPreviewMode, setIsPreviewMode] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
 
   const wrapLines = useMemo(() => {
     return !language || ['markdown'].includes(language)
   }, [language])
+
+  const fullContent = String(children)
+  const lines = fullContent.split('\n')
+  const totalLines = lines.length
+  const shouldTruncate = totalLines > MAX_LINES_COLLAPSED
+
+  const displayContent = useMemo(() => {
+    if (!shouldTruncate || isExpanded) {
+      return fullContent
+    }
+    return lines.slice(0, MAX_LINES_COLLAPSED).join('\n')
+  }, [fullContent, lines, shouldTruncate, isExpanded])
 
   const handleCopy = async () => {
     try {
@@ -112,7 +128,7 @@ export default function MarkdownCodeComponent({
       </div>
       {isPreviewMode ? (
         <div className="smtcmp-code-block-obsidian-markdown">
-          <ObsidianMarkdown content={String(children)} scale="sm" />
+          <ObsidianMarkdown content={displayContent} scale="sm" />
         </div>
       ) : (
         <MemoizedSyntaxHighlighterWrapper
@@ -121,8 +137,26 @@ export default function MarkdownCodeComponent({
           hasFilename={!!filename}
           wrapLines={wrapLines}
         >
-          {String(children)}
+          {displayContent}
         </MemoizedSyntaxHighlighterWrapper>
+      )}
+      {shouldTruncate && (
+        <button
+          className="smtcmp-code-block-expand-button"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp size={12} />
+              <span>Show less</span>
+            </>
+          ) : (
+            <>
+              <ChevronDown size={12} />
+              <span>Show {totalLines - MAX_LINES_COLLAPSED} more lines</span>
+            </>
+          )}
+        </button>
       )}
     </div>
   )

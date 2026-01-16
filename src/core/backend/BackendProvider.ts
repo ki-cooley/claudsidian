@@ -53,12 +53,14 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				: undefined;
 
 		// Create async generator to yield chunks
+		// If model is "backend-agent", let backend use its default model
+		const modelToUse = model.model === 'backend-agent' ? undefined : model.model;
 		const generator = this.createStreamGenerator(
 			prompt,
 			undefined,
 			options,
 			systemPrompt,
-			model.model // Pass the model ID from settings
+			modelToUse
 		);
 
 		return generator;

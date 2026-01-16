@@ -197,7 +197,11 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
 
     const handleSubmit = (options: { useVaultSearch?: boolean } = {}) => {
       const content = editorRef.current?.getEditorState()?.toJSON()
-      content && onSubmit(content, options.useVaultSearch)
+      if (content) {
+        // Blur input to hide mobile keyboard after submit
+        contentEditableRef.current?.blur()
+        onSubmit(content, options.useVaultSearch)
+      }
     }
 
     return (
