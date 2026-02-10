@@ -11,6 +11,7 @@ import {
   executeVaultTool,
   type ToolDefinition,
 } from './mcp-tools.js';
+import { mcpClientManager } from './mcp-client.js';
 import { logger } from './utils.js';
 import type {
   VaultBridge,
@@ -167,13 +168,19 @@ export async function* runAgent(
   logger.info(`Using model: ${selectedModel}`);
   const client = new Anthropic();
 
-  // Combine vault tools with built-in web search tool (v2 - added name field)
+  // Combine vault tools with MCP tools and built-in web search tool
   const vaultTools = getVaultToolDefinitions();
+  const mcpTools = mcpClientManager.getToolDefinitions();
   const tools: (Anthropic.Tool | { type: string; name: string; max_uses?: number })[] = [
     ...vaultTools as Anthropic.Tool[],
+    ...mcpTools as Anthropic.Tool[],
     // Built-in web search tool - requires type and name fields
     { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
   ];
+
+  if (mcpTools.length > 0) {
+    logger.info(`Including ${mcpTools.length} MCP tool(s): ${mcpTools.map(t => t.name).join(', ')}`);
+  }
 
   const messages: ConversationMessage[] = [];
 
@@ -299,11 +306,10 @@ export async function* runAgent(
             input: toolUse.input,
           };
 
-          const result = await executeVaultTool(
-            toolUse.name,
-            toolUse.input,
-            bridge
-          );
+          // Route to MCP client or vault tool handler
+          const result = mcpClientManager.hasTool(toolUse.name)
+            ? await mcpClientManager.callTool(toolUse.name, toolUse.input)
+            : await executeVaultTool(toolUse.name, toolUse.input, bridge);
 
           yield {
             type: 'tool_end',

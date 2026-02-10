@@ -7,6 +7,7 @@
 
 import 'dotenv/config';
 import { startServer } from './server.js';
+import { mcpClientManager } from './mcp-client.js';
 import { logger } from './utils.js';
 
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
@@ -74,6 +75,14 @@ function main() {
 
   const server = startServer();
   setupGracefulShutdown(server);
+
+  // Connect to external MCP servers after server is listening
+  // (non-blocking so healthcheck passes while SSE connects)
+  mcpClientManager.initialize().then(() => {
+    logger.info('MCP client initialization complete');
+  }).catch((e) => {
+    logger.error('MCP client initialization failed (non-fatal):', e);
+  });
 
   logger.info('Backend ready');
 }
