@@ -15,14 +15,14 @@
     "test:auto": "tsx test/automated-test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "ws": "^8.18.0",
-    "zod": "^3.23.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.38",
     "dotenv": "^16.4.0",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/node": "^22.0.0",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.5.0",

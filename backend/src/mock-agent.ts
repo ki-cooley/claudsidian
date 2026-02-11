@@ -11,7 +11,7 @@ import type {
   AgentContext,
   AgentEvent,
 } from './protocol.js';
-import { executeVaultTool } from './mcp-tools.js';
+import { executeVaultTool } from './vault-tools.js';
 
 const MOCK_DELAY_MS = 50; // Delay between streaming chunks
 

@@ -7,22 +7,21 @@
 
 import 'dotenv/config';
 import { startServer } from './server.js';
-import { mcpClientManager } from './mcp-client.js';
 import { logger } from './utils.js';
 
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
 
 // Verify required environment variables
 function checkEnv() {
-  // In mock mode, we don't need the API key
+  // In mock mode, we don't need credentials
   if (!MOCK_MODE) {
-    const required = ['ANTHROPIC_API_KEY'];
-    const missing = required.filter((key) => !process.env[key]);
-
-    if (missing.length > 0) {
-      logger.error(`Missing required environment variables: ${missing.join(', ')}`);
+    const hasOAuth = !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
+    if (!hasOAuth && !hasApiKey) {
+      logger.error('Missing auth: set CLAUDE_CODE_OAUTH_TOKEN (subscription) or ANTHROPIC_API_KEY');
       process.exit(1);
     }
+    logger.info(`  Auth: ${hasOAuth ? 'OAuth token (subscription)' : 'API key'}`);
   }
 
   // Log configuration (without sensitive values)
@@ -31,7 +30,7 @@ function checkEnv() {
   logger.info(`  PORT: ${process.env.PORT || 3001}`);
   logger.info(`  AUTH_TOKEN: ${process.env.AUTH_TOKEN ? '***' : 'dev-token (default)'}`);
   if (!MOCK_MODE) {
-    logger.info(`  CLAUDE_MODEL: ${process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514'}`);
+    logger.info(`  CLAUDE_MODEL: ${process.env.CLAUDE_MODEL || 'claude-opus-4-6'}`);
   }
   logger.info(`  LOG_LEVEL: ${process.env.LOG_LEVEL || 'info'}`);
 }
@@ -75,14 +74,6 @@ function main() {
 
   const server = startServer();
   setupGracefulShutdown(server);
-
-  // Connect to external MCP servers after server is listening
-  // (non-blocking so healthcheck passes while SSE connects)
-  mcpClientManager.initialize().then(() => {
-    logger.info('MCP client initialization complete');
-  }).catch((e) => {
-    logger.error('MCP client initialization failed (non-fatal):', e);
-  });
 
   logger.info('Backend ready');
 }
