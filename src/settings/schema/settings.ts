@@ -32,7 +32,8 @@ export function parseSmartComposerSettings(
 ): SmartComposerSettings {
   try {
     const migratedData = migrateSettings(data as Record<string, unknown>)
-    return smartComposerSettingsSchema.parse(migratedData)
+    const result = smartComposerSettingsSchema.parse(migratedData)
+    return result
   } catch (error) {
     console.warn('Invalid settings provided, using defaults:', error)
     return smartComposerSettingsSchema.parse({})

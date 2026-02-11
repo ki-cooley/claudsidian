@@ -7,16 +7,19 @@
 
 import { App, TFile, TFolder, Notice } from 'obsidian';
 import type { SearchResult, FileInfo, GrepResult } from './protocol';
+import { getEditHistory } from './EditHistory';
 
 export class VaultRpcHandler {
 	constructor(private app: App) {}
 
 	/**
 	 * Handle an RPC request from the backend
+	 * @param activityId - Optional activity ID for tracking edits
 	 */
 	async handleRpc(
 		method: string,
-		params: Record<string, unknown>
+		params: Record<string, unknown>,
+		activityId?: string
 	): Promise<unknown> {
 		switch (method) {
 			case 'vault_read':
@@ -24,13 +27,15 @@ export class VaultRpcHandler {
 			case 'vault_write':
 				return this.vaultWrite(
 					params.path as string,
-					params.content as string
+					params.content as string,
+					activityId
 				);
 			case 'vault_edit':
 				return this.vaultEdit(
 					params.path as string,
 					params.old_string as string,
-					params.new_string as string
+					params.new_string as string,
+					activityId
 				);
 			case 'vault_search':
 				return this.vaultSearch(
@@ -51,10 +56,11 @@ export class VaultRpcHandler {
 			case 'vault_rename':
 				return this.vaultRename(
 					params.old_path as string,
-					params.new_path as string
+					params.new_path as string,
+					activityId
 				);
 			case 'vault_delete':
-				return this.vaultDelete(params.path as string);
+				return this.vaultDelete(params.path as string, activityId);
 			default:
 				throw new Error(`Unknown RPC method: ${method}`);
 		}
@@ -84,17 +90,31 @@ export class VaultRpcHandler {
 	 */
 	private async vaultWrite(
 		path: string,
-		content: string
+		content: string,
+		activityId?: string
 	): Promise<{ success: boolean }> {
 		const existingFile = this.app.vault.getAbstractFileByPath(path);
 
 		if (existingFile instanceof TFile) {
-			// File exists, modify it
+			// File exists - record snapshot before overwriting
+			if (activityId) {
+				try {
+					const oldContent = await this.app.vault.read(existingFile);
+					getEditHistory(this.app).recordBefore(path, oldContent, activityId);
+				} catch (e) {
+					console.warn('[VaultRpcHandler] Failed to record snapshot:', e);
+				}
+			}
+			// Modify the file
 			await this.app.vault.modify(existingFile, content);
 		} else if (existingFile instanceof TFolder) {
 			throw new Error(`Path is a folder, not a file: ${path}`);
 		} else {
 			// File doesn't exist, create it
+			// Record empty snapshot for new files (so revert = delete)
+			if (activityId) {
+				getEditHistory(this.app).recordBefore(path, '', activityId);
+			}
 			// First, ensure parent folders exist
 			const folderPath = path.substring(0, path.lastIndexOf('/'));
 			if (folderPath) {
@@ -113,7 +133,8 @@ export class VaultRpcHandler {
 	private async vaultEdit(
 		path: string,
 		oldString: string,
-		newString: string
+		newString: string,
+		activityId?: string
 	): Promise<{ success: boolean }> {
 		const file = this.app.vault.getAbstractFileByPath(path);
 
@@ -140,6 +161,15 @@ export class VaultRpcHandler {
 			throw new Error(
 				`String appears ${occurrences} times in file. Provide more context to make it unique.`
 			);
+		}
+
+		// Record snapshot before editing
+		if (activityId) {
+			try {
+				getEditHistory(this.app).recordBefore(path, content, activityId);
+			} catch (e) {
+				console.warn('[VaultRpcHandler] Failed to record snapshot:', e);
+			}
 		}
 
 		// Replace the string
@@ -349,12 +379,24 @@ export class VaultRpcHandler {
 	 */
 	private async vaultRename(
 		oldPath: string,
-		newPath: string
+		newPath: string,
+		activityId?: string
 	): Promise<{ success: boolean }> {
 		const file = this.app.vault.getAbstractFileByPath(oldPath);
 
 		if (!file) {
 			throw new Error(`File not found: ${oldPath}`);
+		}
+
+		// Record snapshot before rename (stores old path for revert)
+		if (activityId && file instanceof TFile) {
+			try {
+				const content = await this.app.vault.read(file);
+				// Store with special marker to indicate this is a rename snapshot
+				getEditHistory(this.app).recordBefore(oldPath, content, activityId);
+			} catch (e) {
+				console.warn('[VaultRpcHandler] Failed to record snapshot:', e);
+			}
 		}
 
 		// Ensure parent folder of new path exists
@@ -374,11 +416,24 @@ export class VaultRpcHandler {
 	/**
 	 * Delete a file (move to trash)
 	 */
-	private async vaultDelete(path: string): Promise<{ success: boolean }> {
+	private async vaultDelete(
+		path: string,
+		activityId?: string
+	): Promise<{ success: boolean }> {
 		const file = this.app.vault.getAbstractFileByPath(path);
 
 		if (!file) {
 			throw new Error(`File not found: ${path}`);
+		}
+
+		// Record snapshot before delete (for potential restore)
+		if (activityId && file instanceof TFile) {
+			try {
+				const content = await this.app.vault.read(file);
+				getEditHistory(this.app).recordBefore(path, content, activityId);
+			} catch (e) {
+				console.warn('[VaultRpcHandler] Failed to record snapshot:', e);
+			}
 		}
 
 		// Move to system trash

@@ -20,6 +20,7 @@ import { getMentionableBlockData } from './utils/obsidian'
 import { webSocketClient } from './core/backend/instance'
 import { VaultRpcHandler } from './core/backend/VaultRpcHandler'
 import { ConflictManager } from './core/backend/ConflictManager'
+import { initEditHistory } from './core/backend/EditHistory'
 import type { RpcRequestMessage } from './core/backend/protocol'
 
 export default class SmartComposerPlugin extends Plugin {
@@ -41,27 +42,29 @@ export default class SmartComposerPlugin extends Plugin {
     // Initialize backend components
     this.conflictManager = new ConflictManager(this.app)
     this.vaultRpcHandler = new VaultRpcHandler(this.app)
+    initEditHistory(this.app, 5) // Store up to 5 versions per file for revert
 
     // Wire RPC handler to respond to backend requests
+    // Note: tool_start/tool_end events are sent by the backend server itself,
+    // so we don't need to emit them here. We just handle the RPC request.
     webSocketClient.on('rpc_request', async (msg: unknown) => {
       const rpcMsg = msg as RpcRequestMessage
-      console.log(
-        `[Claudsidian] RPC request received: ${rpcMsg.method}`,
-        rpcMsg.params,
-      )
+
       try {
+        // Pass RPC id as activityId for edit history tracking
         const result = await this.vaultRpcHandler!.handleRpc(
           rpcMsg.method,
           rpcMsg.params,
+          rpcMsg.id, // activityId for revert functionality
         )
-        console.log(`[Claudsidian] RPC result for ${rpcMsg.method}:`, result)
+
         webSocketClient.sendRpcResponse(rpcMsg.id, result)
       } catch (error) {
         console.error('[Claudsidian] RPC handler error:', error)
+
         webSocketClient.sendRpcResponse(rpcMsg.id, undefined, {
           code: 'RPC_ERROR',
-          message:
-            error instanceof Error ? error.message : 'Unknown error',
+          message: error instanceof Error ? error.message : 'Unknown error',
         })
       }
     })
@@ -196,8 +199,9 @@ export default class SmartComposerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = parseSmartComposerSettings(await this.loadData())
-    await this.saveData(this.settings) // Save updated settings
+    const rawData = await this.loadData()
+    this.settings = parseSmartComposerSettings(rawData)
+    await this.saveData(this.settings)
   }
 
   async setSettings(newSettings: SmartComposerSettings) {
@@ -385,8 +389,8 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
     const backendProvider = this.settings.providers.find(
       (p) => p.type === 'backend',
     )
+
     if (!backendProvider || backendProvider.type !== 'backend') {
-      console.log('[SmartComposer] No backend provider configured')
       return
     }
 

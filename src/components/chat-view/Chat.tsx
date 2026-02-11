@@ -676,6 +676,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
                 )}
               conversationId={currentConversationId}
               isApplying={applyMutation.isPending}
+              isStreaming={submitChatMutation.isPending && index === groupedChatMessages.length - 1}
               onApply={handleApply}
               onToolMessageUpdate={handleToolMessageUpdate}
             />

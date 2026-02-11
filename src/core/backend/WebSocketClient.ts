@@ -217,6 +217,26 @@ export class WebSocketClient {
 	}
 
 	/**
+	 * Emit a tool start event to all active handlers
+	 * Note: In normal operation, tool_start/tool_end events come from the backend
+	 * server over WebSocket, so this is mainly for testing or alternative flows.
+	 */
+	emitToolStart(toolName: string, toolInput: Record<string, unknown>): void {
+		for (const handlers of this.activeHandlers.values()) {
+			handlers.onToolStart?.(toolName, toolInput);
+		}
+	}
+
+	/**
+	 * Emit a tool end event to all active handlers
+	 */
+	emitToolEnd(toolName: string, result: string): void {
+		for (const handlers of this.activeHandlers.values()) {
+			handlers.onToolEnd?.(toolName, result);
+		}
+	}
+
+	/**
 	 * Register an event handler
 	 */
 	on(event: string, handler: EventHandler): void {

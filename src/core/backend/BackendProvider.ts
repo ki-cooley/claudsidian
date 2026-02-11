@@ -6,7 +6,9 @@
  */
 
 import { BaseLLMProvider } from '../llm/base';
+import { LLMRateLimitExceededException } from '../llm/exception';
 import type { ChatModel } from '../../types/chat-model.types';
+import type { ActivityEvent, ActivityType } from '../../types/chat';
 import type {
 	LLMOptions,
 	LLMRequestNonStreaming,
@@ -18,8 +20,29 @@ import type {
 	ToolCallDelta,
 } from '../../types/llm/response';
 import type { BackendProviderConfig } from '../../types/provider.types';
-import { formatToolResult } from './tool-result-formatter';
+import { parseToolResult } from './tool-result-formatter';
 import type { WebSocketClient } from './WebSocketClient';
+
+/**
+ * Map tool names to activity types
+ */
+function getActivityType(toolName: string): ActivityType {
+	const mapping: Record<string, ActivityType> = {
+		vault_read: 'vault_read',
+		vault_write: 'vault_write',
+		vault_edit: 'vault_edit',
+		vault_search: 'vault_search',
+		vault_grep: 'vault_grep',
+		vault_glob: 'vault_glob',
+		vault_list: 'vault_list',
+		vault_rename: 'vault_rename',
+		vault_delete: 'vault_delete',
+		web_search: 'web_search',
+		search_cookbooks: 'search_cookbooks',
+		list_cookbook_sources: 'list_cookbook_sources',
+	};
+	return mapping[toolName] || 'tool_call';
+}
 
 export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 	constructor(
@@ -142,10 +165,16 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				name: string;
 				arguments: string;
 				result?: string;
+				activityId: string;
 			}
 		> = new Map();
 		let isComplete = false;
-		let errorOccurred = false;
+		// Using an object wrapper to avoid TypeScript's control flow narrowing issues in async generators
+		const errorState = { error: null as { code: string; message: string } | null };
+
+		// Track current thinking activity for timer
+		let currentThinkingId: string | null = null;
+		let thinkingStartTime: number | null = null;
 
 		// Create a queue for messages
 		const messageQueue: LLMResponseStreaming[] = [];
@@ -185,14 +214,16 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 					// Create a tool call entry with backend__ prefix for UI display
 					const index = toolCalls.size;
 					const toolId = `backend-${requestId}-${index}`;
+					const activityId = `activity-${requestId}-${index}`;
 
 					toolCalls.set(index, {
 						id: toolId,
 						name: `backend__${name}`, // Add prefix so UI knows it's from backend
 						arguments: JSON.stringify(input),
+						activityId,
 					});
 
-					// Send tool call delta to show in UI
+					// Send tool call delta to show in UI (legacy)
 					const toolDelta: ToolCallDelta = {
 						index,
 						id: toolId,
@@ -203,13 +234,29 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 						},
 					};
 
+					// Create activity event for Cursor-style UI
+					const activity: ActivityEvent = {
+						id: activityId,
+						type: getActivityType(name),
+						status: 'running',
+						startTime: Date.now(),
+						toolName: name,
+						toolInput: input,
+						filePath: (input.path as string) || (input.old_path as string),
+						oldPath: input.old_path as string,
+						newPath: input.new_path as string,
+					};
+
 					enqueueChunk({
 						id: requestId,
 						object: 'chat.completion.chunk',
 						model: 'backend',
 						choices: [
 							{
-								delta: { tool_calls: [toolDelta] },
+								delta: {
+									tool_calls: [toolDelta],
+									activity,
+								},
 								finish_reason: null,
 							},
 						],
@@ -217,43 +264,72 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				},
 
 				onToolEnd: (name: string, result: string) => {
-					// Store result and send it to UI as clickable file references
+					// Store result and send completed activity
 					for (const tool of Array.from(toolCalls.values())) {
 						if (tool.name === `backend__${name}` && !tool.result) {
 							tool.result = result;
 
-							// Format tool results with clickable file references
-							const formattedResult = formatToolResult(name, result, tool.arguments);
+							// Parse tool result to extract structured data
+							const parsedResult = parseToolResult(name, result, tool.arguments);
 
-							// Only send formatted result if we have file references
-							if (formattedResult) {
-								enqueueChunk({
-									id: requestId,
-									object: 'chat.completion.chunk',
-									model: 'backend',
-									choices: [
-										{
-											delta: {
-												content: `\n${formattedResult}\n`,
-											},
-											finish_reason: null,
-										},
-									],
-								});
-							}
+							// Create completed activity event
+							const activity: ActivityEvent = {
+								id: tool.activityId,
+								type: getActivityType(name),
+								status: parsedResult.isError ? 'error' : 'complete',
+								startTime: 0, // Will be merged with start event
+								endTime: Date.now(),
+								toolName: name,
+								toolResult: result,
+								errorMessage: parsedResult.isError ? result : undefined,
+								filePath: parsedResult.filePath,
+								resultCount: parsedResult.resultCount,
+								results: parsedResult.results,
+								diff: parsedResult.diff,
+							};
+
+							enqueueChunk({
+								id: requestId,
+								object: 'chat.completion.chunk',
+								model: 'backend',
+								choices: [
+									{
+										delta: { activity },
+										finish_reason: null,
+									},
+								],
+							});
 							break;
 						}
 					}
 				},
 
 				onThinking: (text: string) => {
+					// Start new thinking activity if not already active
+					if (!currentThinkingId) {
+						currentThinkingId = `thinking-${requestId}-${Date.now()}`;
+						thinkingStartTime = Date.now();
+					}
+
+					// Create thinking activity event
+					const activity: ActivityEvent = {
+						id: currentThinkingId,
+						type: 'thinking',
+						status: 'running',
+						startTime: thinkingStartTime!,
+						thinkingContent: text,
+					};
+
 					const chunk: LLMResponseStreaming = {
 						id: requestId,
 						object: 'chat.completion.chunk',
 						model: 'backend',
 						choices: [
 							{
-								delta: { reasoning: text },
+								delta: {
+									reasoning: text,
+									activity,
+								},
 								finish_reason: null,
 							},
 						],
@@ -262,6 +338,30 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				},
 
 				onComplete: (result: string) => {
+					// Finalize any pending thinking activity
+					if (currentThinkingId && thinkingStartTime) {
+						const thinkingActivity: ActivityEvent = {
+							id: currentThinkingId,
+							type: 'thinking',
+							status: 'complete',
+							startTime: thinkingStartTime,
+							endTime: Date.now(),
+						};
+						enqueueChunk({
+							id: requestId,
+							object: 'chat.completion.chunk',
+							model: 'backend',
+							choices: [
+								{
+									delta: { activity: thinkingActivity },
+									finish_reason: null,
+								},
+							],
+						});
+						currentThinkingId = null;
+						thinkingStartTime = null;
+					}
+
 					const chunk: LLMResponseStreaming = {
 						id: requestId,
 						object: 'chat.completion.chunk',
@@ -287,7 +387,7 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 					console.error(
 						`[BackendProvider] Error: ${code} - ${message}`
 					);
-					errorOccurred = true;
+					errorState.error = { code, message };
 					isComplete = true;
 
 					const chunk: LLMResponseStreaming = {
@@ -331,8 +431,14 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			}
 		}
 
-		if (errorOccurred) {
-			throw new Error('Backend error occurred');
+		if (errorState.error) {
+			// Check for rate limit error (API_ERROR_429)
+			if (errorState.error.code === 'API_ERROR_429' || errorState.error.message.includes('rate limit')) {
+				throw new LLMRateLimitExceededException(
+					errorState.error.message || 'Rate limit exceeded. Please try again later.'
+				);
+			}
+			throw new Error(errorState.error.message || 'Backend error occurred');
 		}
 	}
 

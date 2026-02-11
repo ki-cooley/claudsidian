@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 import { BaseLLMProvider } from '../../core/llm/base'
 import { McpManager } from '../../core/mcp/mcpManager'
-import { ChatMessage, ChatToolMessage } from '../../types/chat'
+import { ActivityEvent, ChatMessage, ChatToolMessage } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
 import { RequestTool } from '../../types/llm/request'
 import {
@@ -248,6 +248,7 @@ export class ResponseGenerator {
     const reasoning = chunk.choices[0]?.delta?.reasoning
     const toolCalls = chunk.choices[0]?.delta?.tool_calls
     const annotations = chunk.choices[0]?.delta?.annotations
+    const activity = chunk.choices[0]?.delta?.activity
 
     const updatedToolCalls = toolCalls
       ? this.mergeToolCallDeltas(toolCalls, responseToolCalls)
@@ -292,6 +293,9 @@ export class ResponseGenerator {
                 message.annotations,
                 annotations,
               ),
+              activities: activity
+                ? this.mergeActivities(message.activities, activity)
+                : message.activities,
               metadata: {
                 ...message.metadata,
                 usage: chunk.usage ?? message.metadata?.usage,
@@ -375,5 +379,44 @@ export class ResponseGenerator {
       }
     }
     return mergedAnnotations
+  }
+
+  /**
+   * Merge activity events - updates existing activities or adds new ones
+   */
+  private mergeActivities(
+    prevActivities?: ActivityEvent[],
+    newActivity?: ActivityEvent,
+  ): ActivityEvent[] | undefined {
+    if (!newActivity) return prevActivities
+    if (!prevActivities) return [newActivity]
+
+    // Check if this activity already exists (by id)
+    const existingIndex = prevActivities.findIndex((a) => a.id === newActivity.id)
+
+    if (existingIndex >= 0) {
+      // Update existing activity - merge fields
+      const existing = prevActivities[existingIndex]
+      const merged: ActivityEvent = {
+        ...existing,
+        ...newActivity,
+        // Preserve startTime from original
+        startTime: existing.startTime || newActivity.startTime,
+        // For thinking, append content
+        thinkingContent:
+          newActivity.type === 'thinking' && existing.thinkingContent
+            ? existing.thinkingContent + (newActivity.thinkingContent || '')
+            : newActivity.thinkingContent || existing.thinkingContent,
+      }
+
+      return [
+        ...prevActivities.slice(0, existingIndex),
+        merged,
+        ...prevActivities.slice(existingIndex + 1),
+      ]
+    }
+
+    // Add new activity
+    return [...prevActivities, newActivity]
   }
 }

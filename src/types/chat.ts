@@ -8,6 +8,59 @@ import { Annotation, ResponseUsage } from './llm/response'
 import { Mentionable, SerializedMentionable } from './mentionable'
 import { ToolCallRequest, ToolCallResponse } from './tool-call.types'
 
+/**
+ * Activity types for the Cursor-style activity accordion
+ */
+export type ActivityType =
+  | 'thinking'
+  | 'vault_read'
+  | 'vault_write'
+  | 'vault_edit'
+  | 'vault_search'
+  | 'vault_grep'
+  | 'vault_glob'
+  | 'vault_list'
+  | 'vault_rename'
+  | 'vault_delete'
+  | 'web_search'
+  | 'search_cookbooks'
+  | 'list_cookbook_sources'
+  | 'tool_call' // Generic fallback for unknown tools
+
+export type ActivityStatus = 'running' | 'complete' | 'error'
+
+/**
+ * Represents a single activity event (tool call, thinking, etc.)
+ */
+export interface ActivityEvent {
+  id: string
+  type: ActivityType
+  status: ActivityStatus
+  startTime: number
+  endTime?: number
+  // Tool-specific fields
+  toolName?: string
+  toolInput?: Record<string, unknown>
+  toolResult?: string
+  errorMessage?: string
+  // Thinking-specific
+  thinkingContent?: string
+  // File operation-specific
+  filePath?: string
+  oldPath?: string // For rename
+  newPath?: string // For rename
+  // Diff info for write/edit operations
+  diff?: {
+    additions: number
+    deletions: number
+    oldContent?: string
+    newContent?: string
+  }
+  // Search results
+  resultCount?: number
+  results?: string[] // File paths or search results
+}
+
 export type ChatUserMessage = {
   role: 'user'
   content: SerializedEditorState | null
@@ -24,6 +77,7 @@ export type ChatAssistantMessage = {
   reasoning?: string
   annotations?: Annotation[]
   toolCallRequests?: ToolCallRequest[]
+  activities?: ActivityEvent[] // Cursor-style activity tracking
   id: string
   metadata?: {
     usage?: ResponseUsage
@@ -65,6 +119,7 @@ export type SerializedChatAssistantMessage = {
   reasoning?: string
   annotations?: Annotation[]
   toolCallRequests?: ToolCallRequest[]
+  activities?: ActivityEvent[] // Cursor-style activity tracking
   id: string
   metadata?: {
     usage?: ResponseUsage
