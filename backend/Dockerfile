@@ -1,7 +1,13 @@
 FROM node:22-slim
 
-# Cache bust: 2026-01-16-v2
+# Cache bust: 2026-02-11-v1
 WORKDIR /app
+
+# Install system dependencies required by Claude Agent SDK CLI
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -22,6 +28,8 @@ RUN npm prune --production
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3001
+# Ensure HOME is writable for Claude Agent SDK CLI config
+ENV HOME=/tmp/claude-home
 
 # Expose port
 EXPOSE 3001

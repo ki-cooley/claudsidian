@@ -273,11 +273,14 @@ export async function* runAgent(
       }
     }
   } catch (err) {
-    logger.error('Agent error:', err);
+    const errMsg = err instanceof Error ? err.message : 'Unknown error';
+    const errStack = err instanceof Error ? err.stack : '';
+    logger.error('Agent error:', errMsg);
+    logger.error('Agent error stack:', errStack);
     yield {
       type: 'error',
       code: 'AGENT_ERROR',
-      message: err instanceof Error ? err.message : 'Unknown error',
+      message: errMsg,
     };
   }
 }
