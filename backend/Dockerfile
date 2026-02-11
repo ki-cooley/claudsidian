@@ -30,6 +30,7 @@ ENV NODE_ENV=production
 ENV PORT=3001
 # Ensure HOME is writable for Claude Agent SDK CLI config
 ENV HOME=/tmp/claude-home
+RUN mkdir -p /tmp/claude-home/.claude
 
 # Expose port
 EXPOSE 3001
