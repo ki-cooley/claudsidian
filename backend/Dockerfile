@@ -25,12 +25,17 @@ RUN npm run build
 # Remove dev dependencies
 RUN npm prune --production
 
+# Create non-root user (Agent SDK refuses --dangerously-skip-permissions as root)
+RUN useradd --create-home --shell /bin/bash claude
+
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3001
-# Ensure HOME is writable for Claude Agent SDK CLI config
-ENV HOME=/tmp/claude-home
-RUN mkdir -p /tmp/claude-home/.claude
+ENV HOME=/home/claude
+RUN mkdir -p /home/claude/.claude && chown -R claude:claude /home/claude /app
+
+# Switch to non-root user
+USER claude
 
 # Expose port
 EXPOSE 3001
