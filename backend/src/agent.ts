@@ -216,6 +216,31 @@ export async function* runAgent(
     };
   }
 
+  // Track tools that have been started but not yet ended
+  // (vault tools push their own tool_end via eventQueue; external MCP tools don't)
+  const pendingTools: string[] = [];
+
+  function* drainToolEvents(): Generator<AgentEvent> {
+    while (eventQueue.length > 0) {
+      const event = eventQueue.shift()!;
+      // Remove from pending if this is a tool_end for a tracked tool
+      if (event.type === 'tool_end') {
+        const idx = pendingTools.indexOf(event.name);
+        if (idx >= 0) pendingTools.splice(idx, 1);
+      }
+      yield event;
+    }
+  }
+
+  function* closePendingTools(): Generator<AgentEvent> {
+    // Emit synthetic tool_end for any tools that didn't get one
+    // (external MCP tools handled internally by the SDK)
+    while (pendingTools.length > 0) {
+      const name = pendingTools.shift()!;
+      yield { type: 'tool_end', name, result: '' };
+    }
+  }
+
   try {
     for await (const message of query({
       prompt: singlePrompt(),
@@ -233,13 +258,14 @@ export async function* runAgent(
         },
       },
     })) {
-      // Drain tool_end events pushed by tool handlers
-      while (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
-      }
+      // Drain tool_end events pushed by vault tool handlers
+      yield* drainToolEvents();
 
       switch (message.type) {
         case 'stream_event': {
+          // Text streaming means all pending tools have completed
+          yield* closePendingTools();
+
           const event = message.event;
           if (event.type === 'content_block_delta' && 'text' in event.delta) {
             yield { type: 'text_delta', text: (event.delta as any).text };
@@ -248,12 +274,17 @@ export async function* runAgent(
         }
 
         case 'assistant': {
+          // Close any pending tools from the previous turn
+          yield* closePendingTools();
+
           // Emit tool_start for each tool_use block in the assistant message
           for (const block of message.message.content) {
             if (block.type === 'tool_use') {
+              const name = cleanToolName(block.name);
+              pendingTools.push(name);
               yield {
                 type: 'tool_start',
-                name: cleanToolName(block.name),
+                name,
                 input: block.input as Record<string, unknown>,
               };
             }
@@ -262,10 +293,9 @@ export async function* runAgent(
         }
 
         case 'result': {
-          // Drain any remaining tool events
-          while (eventQueue.length > 0) {
-            yield eventQueue.shift()!;
-          }
+          // Close any remaining pending tools
+          yield* drainToolEvents();
+          yield* closePendingTools();
 
           if (message.subtype === 'success') {
             yield { type: 'complete', result: message.result || '' };
@@ -281,7 +311,6 @@ export async function* runAgent(
         }
 
         default:
-          logger.debug(`Unhandled SDK message type: ${message.type}`, JSON.stringify(message).substring(0, 200));
           break;
       }
     }
