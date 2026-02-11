@@ -9,6 +9,7 @@
 
 import { ChevronDown, ChevronRight, Undo2 } from 'lucide-react'
 import { memo, useCallback, useState } from 'react'
+import { TFile } from 'obsidian'
 
 import type { ActivityEvent } from '../../types/chat'
 import { getEditHistory } from '../../core/backend/EditHistory'
@@ -99,6 +100,14 @@ const EditDiffBlock = memo(function EditDiffBlock({
   const [isReverting, setIsReverting] = useState(false)
   const [reverted, setReverted] = useState(false)
 
+  const handleOpenFile = useCallback(() => {
+    if (!app || !activity.filePath) return
+    const file = app.vault.getAbstractFileByPath(activity.filePath)
+    if (file instanceof TFile) {
+      app.workspace.openLinkText(activity.filePath, '', false)
+    }
+  }, [app, activity.filePath])
+
   const handleRevert = useCallback(async () => {
     if (!app || isReverting || reverted) return
 
@@ -150,7 +159,17 @@ const EditDiffBlock = memo(function EditDiffBlock({
           {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
         <span className="smtcmp-edit-diff-filename">
-          {operationLabel} [[{displayName}]]
+          {operationLabel}{' '}
+          <a
+            className="smtcmp-activity-file-link"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleOpenFile()
+            }}
+            title={activity.filePath}
+          >
+            [[{displayName}]]
+          </a>
         </span>
         <span className="smtcmp-edit-diff-stats">
           {additions > 0 && <span className="smtcmp-diff-stat-add">+{additions}</span>}

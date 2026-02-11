@@ -65,6 +65,11 @@ export class WebSocketClient {
 	>();
 	private messageQueue: ClientMessage[] = [];
 	private isConnecting = false;
+	private pendingActivityIds: {
+		toolName: string;
+		filePath: string;
+		activityId: string;
+	}[] = [];
 
 	/**
 	 * Connect to the backend WebSocket server
@@ -237,6 +242,41 @@ export class WebSocketClient {
 	}
 
 	/**
+	 * Track an activity ID from a tool_start event.
+	 * This is consumed by the RPC handler to link edit snapshots to the correct activity.
+	 */
+	trackActivityStart(
+		toolName: string,
+		input: Record<string, unknown>,
+		activityId: string
+	): void {
+		const filePath =
+			(input.path as string) || (input.old_path as string) || '';
+		this.pendingActivityIds.push({ toolName, filePath, activityId });
+	}
+
+	/**
+	 * Consume the activity ID for a given RPC method and params.
+	 * Returns the matching activity ID if found, otherwise undefined.
+	 */
+	consumeActivityId(
+		method: string,
+		params: Record<string, unknown>
+	): string | undefined {
+		const filePath =
+			(params.path as string) || (params.old_path as string) || '';
+		const idx = this.pendingActivityIds.findIndex(
+			(a) => a.toolName === method && a.filePath === filePath
+		);
+		if (idx !== -1) {
+			const { activityId } = this.pendingActivityIds[idx];
+			this.pendingActivityIds.splice(idx, 1);
+			return activityId;
+		}
+		return undefined;
+	}
+
+	/**
 	 * Register an event handler
 	 */
 	on(event: string, handler: EventHandler): void {
@@ -391,7 +431,7 @@ export class WebSocketClient {
 			if (this.isConnected) {
 				this.send({ type: 'ping' });
 			}
-		}, 30000); // Ping every 30 seconds
+		}, 25000); // Ping every 25 seconds (server timeout is 90s)
 	}
 
 	private stopPingInterval(): void {

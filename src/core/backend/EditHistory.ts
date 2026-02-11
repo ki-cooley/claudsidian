@@ -85,13 +85,20 @@ export class EditHistory {
 
 		try {
 			const file = this.app.vault.getAbstractFileByPath(path);
-			if (file && 'stat' in file) {
-				await this.app.vault.modify(file as any, snapshot.content);
-				// Remove this and all newer snapshots after revert
-				this.snapshots.set(path, snapshots.slice(0, snapshotIndex));
-				return true;
+			if (!file || !('stat' in file)) {
+				return false;
 			}
-			return false;
+
+			if (snapshot.content === '') {
+				// Empty snapshot means the file didn't exist before — delete it to revert
+				await this.app.vault.trash(file as any, true);
+			} else {
+				await this.app.vault.modify(file as any, snapshot.content);
+			}
+
+			// Remove this and all newer snapshots after revert
+			this.snapshots.set(path, snapshots.slice(0, snapshotIndex));
+			return true;
 		} catch (error) {
 			console.error('[EditHistory] Failed to revert:', error);
 			return false;

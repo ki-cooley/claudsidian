@@ -51,11 +51,13 @@ export default class SmartComposerPlugin extends Plugin {
       const rpcMsg = msg as RpcRequestMessage
 
       try {
-        // Pass RPC id as activityId for edit history tracking
+        // Look up the activity ID tracked by BackendProvider's onToolStart.
+        // This links the edit snapshot to the correct ActivityEvent for Undo.
+        const activityId = webSocketClient.consumeActivityId(rpcMsg.method, rpcMsg.params) || rpcMsg.id
         const result = await this.vaultRpcHandler!.handleRpc(
           rpcMsg.method,
           rpcMsg.params,
-          rpcMsg.id, // activityId for revert functionality
+          activityId,
         )
 
         webSocketClient.sendRpcResponse(rpcMsg.id, result)

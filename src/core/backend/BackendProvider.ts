@@ -247,6 +247,9 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 						newPath: input.new_path as string,
 					};
 
+					// Track the activity ID so the RPC handler can link snapshots to this activity
+					this.wsClient.trackActivityStart(name, input, activityId);
+
 					enqueueChunk({
 						id: requestId,
 						object: 'chat.completion.chunk',
