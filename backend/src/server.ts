@@ -41,28 +41,30 @@ interface PendingRpc {
 class ConnectionHandler {
   private pendingRpcs = new Map<string, PendingRpc>();
   private activeRequests = new Map<string, AbortController>();
-  private isAlive = true;
+  private lastActivity = Date.now();
 
   constructor(private ws: WebSocket) {
-    ws.on('message', (data) => this.handleMessage(data.toString()));
+    ws.on('message', (data) => {
+      this.lastActivity = Date.now();
+      this.handleMessage(data.toString());
+    });
     ws.on('close', () => this.cleanup());
     ws.on('error', (err) => logger.error('WebSocket error:', err));
-    ws.on('pong', () => {
-      this.isAlive = true;
-    });
   }
 
   /**
-   * Check if the connection is still alive (for heartbeat)
+   * Check if the connection is still alive based on last message activity.
+   * Uses application-level pings (not protocol-level) since Railway's proxy
+   * doesn't forward WebSocket ping/pong frames.
    */
   checkAlive(): boolean {
-    if (!this.isAlive) {
-      logger.warn('Connection heartbeat timeout, terminating');
+    const inactiveMs = Date.now() - this.lastActivity;
+    // Allow 90 seconds of inactivity (plugin sends app-level pings every 30s)
+    if (inactiveMs > 90000) {
+      logger.warn(`Connection inactive for ${Math.round(inactiveMs / 1000)}s, terminating`);
       this.ws.terminate();
       return false;
     }
-    this.isAlive = false;
-    this.ws.ping();
     return true;
   }
 
