@@ -143,6 +143,16 @@ const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
 const MAX_TURNS = 10;
 
 /**
+ * Strip MCP prefix from tool names for cleaner display.
+ * e.g., "mcp__vault-tools__vault_read" → "vault_read"
+ *       "mcp__cookbook-research__search_cookbooks" → "search_cookbooks"
+ */
+function cleanToolName(name: string): string {
+  const match = name.match(/^mcp__[^_]+__(.+)$/);
+  return match ? match[1] : name;
+}
+
+/**
  * Run the agent with streaming responses using the Claude Agent SDK
  */
 export async function* runAgent(
@@ -243,7 +253,7 @@ export async function* runAgent(
             if (block.type === 'tool_use') {
               yield {
                 type: 'tool_start',
-                name: block.name,
+                name: cleanToolName(block.name),
                 input: block.input as Record<string, unknown>,
               };
             }
@@ -270,8 +280,8 @@ export async function* runAgent(
           break;
         }
 
-        // Ignore other message types (system init, user replay, etc.)
         default:
+          logger.debug(`Unhandled SDK message type: ${message.type}`, JSON.stringify(message).substring(0, 200));
           break;
       }
     }
