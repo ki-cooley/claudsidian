@@ -142,6 +142,16 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
 const MAX_TURNS = 10;
 
+// Debug: test CLI binary on startup
+import { execSync } from 'child_process';
+try {
+  const cliPath = new URL('../node_modules/@anthropic-ai/claude-agent-sdk/cli.js', import.meta.url).pathname;
+  const cliTest = execSync(`node ${cliPath} --version 2>&1`, { timeout: 10000 }).toString().trim();
+  logger.info(`Agent SDK CLI test: ${cliTest}`);
+} catch (e: any) {
+  logger.error(`Agent SDK CLI test failed: exit=${e.status} stdout=${e.stdout?.toString().substring(0, 500)} stderr=${e.stderr?.toString().substring(0, 500)}`);
+}
+
 /**
  * Run the agent with streaming responses using the Claude Agent SDK
  */
