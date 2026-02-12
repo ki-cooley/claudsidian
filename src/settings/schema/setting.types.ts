@@ -75,6 +75,9 @@ export const smartComposerSettingsSchema = z.object({
       servers: [],
     }),
 
+  // External resource directory (vault-relative path to PDFs/cookbooks)
+  externalResourceDir: z.string().catch(''),
+
   // Chat options
   chatOptions: z
     .object({

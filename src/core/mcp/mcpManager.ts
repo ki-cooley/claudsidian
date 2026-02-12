@@ -1,5 +1,4 @@
 import isEqual from 'lodash.isequal'
-import { Platform } from 'obsidian'
 
 import { SmartComposerSettings } from '../../settings/schema/setting.types'
 import {
@@ -24,7 +23,10 @@ import {
 export class McpManager {
   static readonly TOOL_NAME_DELIMITER = '__' // Delimiter for tool name construction (serverName__toolName)
 
-  public readonly disabled = !Platform.isDesktop // MCP should be disabled on mobile since it doesn't support node.js
+  // Local MCP servers using stdio transport may not work on mobile (no Node.js subprocess).
+  // Remote MCP via backend provider works on all platforms.
+  // Instead of blanket-disabling, let individual transports fail gracefully.
+  public readonly disabled = false
 
   private settings: SmartComposerSettings
   private unsubscribeFromSettings: () => void
@@ -57,9 +59,13 @@ export class McpManager {
       return
     }
 
-    // Get default environment variables
-    const { shellEnvSync } = await import('shell-env')
-    this.defaultEnv = shellEnvSync()
+    // Get default environment variables (may fail on mobile - non-fatal)
+    try {
+      const { shellEnvSync } = await import('shell-env')
+      this.defaultEnv = shellEnvSync()
+    } catch {
+      this.defaultEnv = {}
+    }
 
     // Create MCP servers
     const servers = await Promise.all(

@@ -163,19 +163,20 @@ export default function AssistantToolMessageGroupItem({
       if (message.role === 'tool' && message.toolCalls) {
         for (const toolCall of message.toolCalls) {
           const toolName = toolCall.request.name
-          if (!toolName.startsWith('backend__') && !toolName.startsWith('vault_')) {
-            continue
-          }
 
           const activityId = `tool-${toolCall.request.id}`
           if (seenIds.has(activityId)) continue
           seenIds.add(activityId)
 
           const cleanName = toolName.replace('backend__', '')
-          let activityType: ActivityEvent['type'] = 'tool_call'
-          if (cleanName.startsWith('vault_')) {
-            activityType = cleanName as ActivityEvent['type']
+          const toolTypeMapping: Record<string, ActivityEvent['type']> = {
+            search_cookbooks: 'search_cookbooks',
+            list_cookbook_sources: 'list_cookbook_sources',
+            web_search: 'web_search',
           }
+          let activityType: ActivityEvent['type'] =
+            toolTypeMapping[cleanName] ||
+            (cleanName.startsWith('vault_') ? cleanName as ActivityEvent['type'] : 'tool_call')
 
           let toolInput: Record<string, unknown> = {}
           try {
@@ -219,7 +220,17 @@ export default function AssistantToolMessageGroupItem({
       }
     }
 
-    return { allActivities: activities, editActivities: edits }
+    // Deduplicate edit activities by filePath + type, preferring entries with diff data
+    const dedupedEdits = new Map<string, ActivityEvent>()
+    for (const edit of edits) {
+      const key = `${edit.filePath || edit.id}:${edit.type}`
+      const existing = dedupedEdits.get(key)
+      if (!existing || (edit.diff && !existing.diff)) {
+        dedupedEdits.set(key, edit)
+      }
+    }
+
+    return { allActivities: activities, editActivities: Array.from(dedupedEdits.values()) }
   }, [messages])
 
   return (

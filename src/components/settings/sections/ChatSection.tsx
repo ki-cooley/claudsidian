@@ -137,6 +137,21 @@ export function ChatSection() {
           }}
         />
       </ObsidianSetting>
+
+      <ObsidianSetting
+        name="External resource directory"
+        desc="Vault-relative path to directory containing external PDFs and resources (e.g., 'cookbooks/'). Used for linking citations to source files."
+      >
+        <ObsidianTextInput
+          value={settings.externalResourceDir}
+          onChange={async (value) => {
+            await setSettings({
+              ...settings,
+              externalResourceDir: value,
+            })
+          }}
+        />
+      </ObsidianSetting>
     </div>
   )
 }
