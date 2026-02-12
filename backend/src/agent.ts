@@ -45,9 +45,10 @@ When the user asks about cooking techniques, recipes, ingredients, or food scien
 - ALWAYS include exact citations from the results: source book name, page numbers, and section
 - When the user asks about a specific book, use the \`sources\` parameter to filter: sources="The Professional Chef"
 - For multiple specific sources: sources="ChefSteps, Modernist Cuisine"
-- Citations from the tool include clickable links — preserve them in your response:
-  - PDF sources: include the source name and page numbers as given
-  - Web sources (ChefSteps): include the markdown URL link as given
+- **CRITICAL: Citation format rules — copy these EXACTLY as they appear in tool results:**
+  - PDF citations start with \`[[cookbooks/filename.pdf#page=N]]\` — this is an Obsidian wikilink that opens the PDF to the exact page. You MUST include this exact text in your response for every PDF citation. Example: \`[[cookbooks/CIA professional chef.pdf#page=304]] CIA professional chef, pp. 285-286\`
+  - ChefSteps citations use markdown links like \`[ChefSteps: title](https://...)\` — preserve these as-is
+  - Do NOT rewrite, summarize, or strip the \`[[...]]\` wikilinks — they are clickable deep links
 - Include multiple sources when available for a comprehensive answer
 - Quote key passages directly when they're particularly informative
 
