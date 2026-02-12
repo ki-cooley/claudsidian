@@ -371,6 +371,15 @@ export class WebSocketClient {
 		}
 		this.pendingRpcs.clear();
 
+		// Notify all active stream handlers so generators don't hang
+		for (const [id, handlers] of this.activeHandlers) {
+			handlers.onError?.(
+				'DISCONNECTED',
+				'Connection closed unexpectedly'
+			);
+		}
+		this.activeHandlers.clear();
+
 		// Attempt reconnection if not a normal closure
 		if (event.code !== 1000 && this.config) {
 			this.attemptReconnect();

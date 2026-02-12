@@ -180,6 +180,14 @@ class ConnectionHandler {
         message: err instanceof Error ? err.message : 'Unknown error',
       });
     } finally {
+      // Safety net: always send a complete event so the client never hangs.
+      // If the agent already sent one, the client handler was already deleted
+      // and this is a harmless no-op.
+      this.send({
+        type: 'complete',
+        requestId: msg.id,
+        result: '',
+      });
       this.activeRequests.delete(msg.id);
     }
   }

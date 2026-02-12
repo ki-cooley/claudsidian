@@ -415,22 +415,53 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 
 		// Yield chunks as they arrive
 		while (!isComplete || messageQueue.length > 0) {
-			if (messageQueue.length > 0) {
-				yield messageQueue.shift()!;
-			} else {
-				// Wait for next chunk
-				const chunk = await new Promise<LLMResponseStreaming>(
-					(resolve) => {
-						resolveNext = resolve;
-					}
-				);
-				yield chunk;
-			}
-
-			// Check for abort
+			// Check for abort before waiting
 			if (options?.signal?.aborted) {
 				this.wsClient.cancelRequest(requestId);
 				break;
+			}
+
+			if (messageQueue.length > 0) {
+				yield messageQueue.shift()!;
+			} else {
+				// Wait for next chunk, racing against abort signal
+				const chunk = await new Promise<LLMResponseStreaming | null>(
+					(resolve) => {
+						let resolved = false;
+						resolveNext = (msg) => {
+							if (!resolved) {
+								resolved = true;
+								resolve(msg);
+							}
+						};
+
+						// Race: also resolve with null when abort signal fires
+						if (options?.signal) {
+							if (options.signal.aborted) {
+								resolved = true;
+								resolve(null);
+								return;
+							}
+							options.signal.addEventListener(
+								'abort',
+								() => {
+									if (!resolved) {
+										resolved = true;
+										resolve(null);
+									}
+								},
+								{ once: true }
+							);
+						}
+					}
+				);
+
+				// Null means aborted
+				if (chunk === null) {
+					this.wsClient.cancelRequest(requestId);
+					break;
+				}
+				yield chunk;
 			}
 		}
 
