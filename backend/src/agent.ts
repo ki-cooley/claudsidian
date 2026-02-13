@@ -287,6 +287,7 @@ export async function* runAgent(
         abortController,
         permissionMode: 'bypassPermissions' as const,
         includePartialMessages: true,
+        thinking: { type: 'adaptive' },
         stderr: (data: string) => {
           heartbeat(); // stderr output = activity
           logger.warn(`CLI stderr: ${data.trimEnd()}`);
