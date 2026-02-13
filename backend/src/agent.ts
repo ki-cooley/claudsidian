@@ -154,8 +154,8 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
 }
 
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
-const MAX_TURNS = 10;
-const INACTIVITY_TIMEOUT_MS = 300_000; // 5 minutes of no activity = dead
+const MAX_TURNS = 25; // Complex cookbook queries need many tool calls
+const INACTIVITY_TIMEOUT_MS = 600_000; // 10 minutes of no activity = dead
 
 /**
  * Strip MCP prefix from tool names for cleaner display.
@@ -283,6 +283,7 @@ export async function* runAgent(
         abortController,
         permissionMode: 'bypassPermissions' as const,
         includePartialMessages: true,
+        thinking: { type: 'enabled', budgetTokens: 10000 },
         stderr: (data: string) => {
           heartbeat(); // stderr output = activity
           logger.warn(`CLI stderr: ${data.trimEnd()}`);
@@ -301,6 +302,10 @@ export async function* runAgent(
           // New content block starting = previous turn's tools are done
           if (message.event.type === 'content_block_start') {
             yield* closePendingTools();
+            const block = (message.event as any).content_block;
+            if (block?.type === 'thinking') {
+              logger.info('[Thinking] Block started');
+            }
           }
 
           // Stream text and thinking deltas in real time
@@ -309,6 +314,7 @@ export async function* runAgent(
             if (delta?.type === 'text_delta') {
               yield { type: 'text_delta', text: delta.text };
             } else if (delta?.type === 'thinking_delta') {
+              logger.info(`[Thinking] delta: ${(delta.thinking || '').substring(0, 80)}...`);
               yield { type: 'thinking', text: delta.thinking };
             }
           }
@@ -340,9 +346,11 @@ export async function* runAgent(
           yield* closePendingTools();
 
           if (message.subtype === 'success') {
+            logger.info('Agent completed successfully');
             yield { type: 'complete', result: message.result || '' };
           } else {
             const errors = 'errors' in message ? (message as any).errors : [];
+            logger.error(`Agent stopped: ${message.subtype}`, errors);
             yield {
               type: 'error',
               code: message.subtype,

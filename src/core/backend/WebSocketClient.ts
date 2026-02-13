@@ -336,7 +336,9 @@ export class WebSocketClient {
 			case 'complete': {
 				const handler = this.activeHandlers.get(msg.requestId);
 				handler?.onComplete?.(msg.result);
-				this.activeHandlers.delete(msg.requestId);
+				// Delay handler cleanup to allow lingering tool_end events to arrive
+				// (external MCP tool_end events may be sent slightly after complete)
+				setTimeout(() => this.activeHandlers.delete(msg.requestId), 1000);
 				break;
 			}
 			case 'error': {

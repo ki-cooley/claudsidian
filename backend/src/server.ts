@@ -98,6 +98,7 @@ class ConnectionHandler {
   private async handlePrompt(msg: PromptMessage) {
     const abortController = new AbortController();
     this.activeRequests.set(msg.id, abortController);
+    let completeSent = false;
 
     logger.info(`Processing prompt request ${msg.id}`);
 
@@ -153,6 +154,7 @@ class ConnectionHandler {
             });
             break;
           case 'complete':
+            completeSent = true;
             this.send({
               type: 'complete',
               requestId: msg.id,
@@ -180,14 +182,16 @@ class ConnectionHandler {
         message: err instanceof Error ? err.message : 'Unknown error',
       });
     } finally {
-      // Safety net: always send a complete event so the client never hangs.
-      // If the agent already sent one, the client handler was already deleted
-      // and this is a harmless no-op.
-      this.send({
-        type: 'complete',
-        requestId: msg.id,
-        result: '',
-      });
+      // Safety net: only send complete if the agent didn't already send one.
+      // Previously this always fired, which could race with tool_end events
+      // and cause the client to delete handlers before processing them.
+      if (!completeSent) {
+        this.send({
+          type: 'complete',
+          requestId: msg.id,
+          result: '',
+        });
+      }
       this.activeRequests.delete(msg.id);
     }
   }
@@ -225,7 +229,7 @@ class ConnectionHandler {
     params: Record<string, unknown>
   ): Promise<T> {
     const id = randomUUID();
-    const RPC_TIMEOUT = 30000; // 30 seconds
+    const RPC_TIMEOUT = 60000; // 60 seconds
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
