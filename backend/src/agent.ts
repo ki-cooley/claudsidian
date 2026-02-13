@@ -56,7 +56,9 @@ When the user asks about cooking techniques, recipes, ingredients, or food scien
 - Be concise but helpful
 - Explain what changes you're making
 - When citing cookbook sources, always include the exact page numbers and preserve any links from the tool results
-- If uncertain, ask for clarification`;
+- If uncertain, ask for clarification
+- When integrating research results, present the final synthesis — avoid restating the same finding in multiple formats within one response
+- For complex multi-topic research, work in batches of 5-8 tool calls at a time rather than launching dozens in parallel. Complete one batch, synthesize results, then proceed to the next batch.`;
 
 interface Skill {
   name: string;
@@ -154,7 +156,7 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
 }
 
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
-const MAX_TURNS = 25; // Complex cookbook queries need many tool calls
+const MAX_TURNS = 50; // Complex research queries can use 30-40+ tool calls
 const INACTIVITY_TIMEOUT_MS = 600_000; // 10 minutes of no activity = dead
 
 /**
@@ -353,6 +355,12 @@ export async function* runAgent(
             completedSuccessfully = true;
             logger.info('Agent completed successfully');
             yield { type: 'complete', result: message.result || '' };
+          } else if (message.subtype === 'error_max_turns') {
+            completedSuccessfully = true; // Partial result is still valid
+            logger.warn(`Agent hit max turns limit (${MAX_TURNS})`);
+            // Send any partial result, then add a note about the truncation
+            yield { type: 'text_delta', text: '\n\n---\n*Response was truncated because the query required too many steps. You can ask me to continue where I left off.*\n' };
+            yield { type: 'complete', result: (message as any).result || '' };
           } else {
             const errors = 'errors' in message ? (message as any).errors : [];
             logger.error(`Agent stopped: ${message.subtype}`, errors);
