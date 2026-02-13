@@ -155,6 +155,7 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
 
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
 const MAX_TURNS = 10;
+const MESSAGE_TIMEOUT_MS = 120_000; // 2 minutes per SDK message
 
 /**
  * Strip MCP prefix from tool names for cleaner display.
@@ -255,8 +256,37 @@ export async function* runAgent(
     }
   }
 
+  // Helper: wrap an async iterator with a per-message timeout.
+  // If no message arrives within timeoutMs, the abort controller fires
+  // and the iterator throws, breaking the hang.
+  async function* withMessageTimeout<T>(
+    iter: AsyncIterable<T>,
+    timeoutMs: number,
+    abort: AbortController,
+  ): AsyncGenerator<T> {
+    const asyncIter = iter[Symbol.asyncIterator]();
+    while (true) {
+      const result = await Promise.race([
+        asyncIter.next(),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => {
+            logger.error(`Message timeout after ${timeoutMs / 1000}s — aborting agent`);
+            abort.abort();
+            reject(new Error(`Agent timed out waiting for SDK response (${timeoutMs / 1000}s)`));
+          }, timeoutMs);
+          // Allow GC if iterator completes first
+          (timer as any).unref?.();
+          // Clear timeout if abort fires from another source
+          abort.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+        }),
+      ]);
+      if (result.done) break;
+      yield result.value;
+    }
+  }
+
   try {
-    for await (const message of query({
+    const queryStream = query({
       prompt: singlePrompt(),
       options: {
         model: selectedModel,
@@ -271,7 +301,9 @@ export async function* runAgent(
           logger.warn(`CLI stderr: ${data.trimEnd()}`);
         },
       },
-    })) {
+    });
+
+    for await (const message of withMessageTimeout(queryStream, MESSAGE_TIMEOUT_MS, abortController)) {
       // Drain tool_end events pushed by vault tool handlers
       yield* drainToolEvents();
 
