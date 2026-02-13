@@ -170,7 +170,7 @@ const EditDiffBlock = memo(function EditDiffBlock({
             }}
             title={activity.filePath}
           >
-            [[{displayName}]]
+            {displayName}
           </a>
         </span>
         <span className="smtcmp-edit-diff-stats">

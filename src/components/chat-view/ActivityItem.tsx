@@ -59,7 +59,7 @@ function FileLink({ filePath, displayName }: { filePath: string; displayName?: s
       onClick={handleClick}
       title={filePath}
     >
-      [[{name}]]
+      {name}
     </span>
   )
 }

@@ -81,11 +81,11 @@ function getActivityLabel(activity: ActivityEvent): string {
 
   switch (activity.type) {
     case 'vault_read':
-      return `Read [[${displayName}]]`
+      return `Read ${displayName}`
     case 'vault_write':
-      return `Created [[${displayName}]]`
+      return `Created ${displayName}`
     case 'vault_edit':
-      return `Edited [[${displayName}]]`
+      return `Edited ${displayName}`
     case 'vault_search':
       return `Searched "${activity.toolInput?.query || ''}"`
     case 'vault_grep':
@@ -97,7 +97,7 @@ function getActivityLabel(activity: ActivityEvent): string {
     case 'vault_rename':
       return `Moved ${activity.oldPath?.split('/').pop()} → ${activity.newPath?.split('/').pop()}`
     case 'vault_delete':
-      return `Deleted [[${displayName}]]`
+      return `Deleted ${displayName}`
     case 'web_search':
       return `Web search: "${activity.toolInput?.query || ''}"`
     case 'search_cookbooks':
