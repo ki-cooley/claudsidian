@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 import { BaseLLMProvider } from '../../core/llm/base'
 import { McpManager } from '../../core/mcp/mcpManager'
-import { ActivityEvent, ChatMessage, ChatToolMessage } from '../../types/chat'
+import { ActivityEvent, ChatMessage, ChatToolMessage, ContentBlock } from '../../types/chat'
 import { ChatModel } from '../../types/chat-model.types'
 import { RequestTool } from '../../types/llm/request'
 import {
@@ -249,6 +249,7 @@ export class ResponseGenerator {
     const toolCalls = chunk.choices[0]?.delta?.tool_calls
     const annotations = chunk.choices[0]?.delta?.annotations
     const activity = chunk.choices[0]?.delta?.activity
+    const contentBlock = chunk.choices[0]?.delta?.contentBlock
 
     const updatedToolCalls = toolCalls
       ? this.mergeToolCallDeltas(toolCalls, responseToolCalls)
@@ -296,6 +297,9 @@ export class ResponseGenerator {
               activities: activity
                 ? this.mergeActivities(message.activities, activity)
                 : message.activities,
+              contentBlocks: contentBlock
+                ? this.mergeContentBlocks(message.contentBlocks, contentBlock)
+                : message.contentBlocks,
               metadata: {
                 ...message.metadata,
                 usage: chunk.usage ?? message.metadata?.usage,
@@ -379,6 +383,38 @@ export class ResponseGenerator {
       }
     }
     return mergedAnnotations
+  }
+
+  /**
+   * Merge content blocks - coalesces adjacent text or adjacent activity groups
+   */
+  private mergeContentBlocks(
+    prevBlocks?: ContentBlock[],
+    newBlock?: ContentBlock,
+  ): ContentBlock[] | undefined {
+    if (!newBlock) return prevBlocks
+    if (!prevBlocks) return [newBlock]
+
+    const last = prevBlocks[prevBlocks.length - 1]
+
+    // Coalesce adjacent text blocks
+    if (newBlock.type === 'text' && last?.type === 'text') {
+      return [
+        ...prevBlocks.slice(0, -1),
+        { type: 'text' as const, text: last.text + newBlock.text },
+      ]
+    }
+
+    // Coalesce adjacent activity groups
+    if (newBlock.type === 'activity_group' && last?.type === 'activity_group') {
+      return [
+        ...prevBlocks.slice(0, -1),
+        { type: 'activity_group' as const, activityIds: [...last.activityIds, ...newBlock.activityIds] },
+      ]
+    }
+
+    // Different type = new block
+    return [...prevBlocks, newBlock]
   }
 
   /**

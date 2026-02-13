@@ -1,7 +1,7 @@
 // These types are based on the OpenRouter API specification
 // https://openrouter.ai/docs/api-reference/overview#responses
 
-import type { ActivityEvent } from '../chat'
+import type { ActivityEvent, ContentBlock } from '../chat'
 
 export type LLMResponseBase = {
   id: string
@@ -50,6 +50,7 @@ type StreamingChoice = {
     annotations?: Annotation[]
     tool_calls?: ToolCallDelta[]
     activity?: ActivityEvent // For Cursor-style activity streaming
+    contentBlock?: ContentBlock // For interspersed layout
   }
   error?: Error
 }

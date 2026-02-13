@@ -7,13 +7,14 @@
  * - Undo button for revert
  */
 
-import { ChevronDown, ChevronRight, Undo2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, Undo2 } from 'lucide-react'
 import { memo, useCallback, useState } from 'react'
 import { TFile } from 'obsidian'
 
 import type { ActivityEvent } from '../../types/chat'
 import { getEditHistory } from '../../core/backend/EditHistory'
 import { useApp } from '../../contexts/app-context'
+import { ObsidianMarkdown } from './ObsidianMarkdown'
 
 export interface EditDiffBlockProps {
   activity: ActivityEvent
@@ -97,6 +98,7 @@ const EditDiffBlock = memo(function EditDiffBlock({
 }: EditDiffBlockProps) {
   const app = useApp()
   const [isOpen, setIsOpen] = useState(true)
+  const [isPreviewMode, setIsPreviewMode] = useState(true)
   const [isReverting, setIsReverting] = useState(false)
   const [reverted, setReverted] = useState(false)
 
@@ -176,6 +178,17 @@ const EditDiffBlock = memo(function EditDiffBlock({
           {deletions > 0 && <span className="smtcmp-diff-stat-del">-{deletions}</span>}
         </span>
         <div className="smtcmp-edit-diff-actions">
+          <button
+            className="clickable-icon smtcmp-edit-diff-view-toggle"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsPreviewMode(!isPreviewMode)
+            }}
+            title={isPreviewMode ? 'View raw diff' : 'View rendered'}
+          >
+            <Eye size={12} />
+            {isPreviewMode ? 'Raw' : 'Rendered'}
+          </button>
           {!reverted && (
             <button
               className="smtcmp-edit-diff-revert"
@@ -198,10 +211,19 @@ const EditDiffBlock = memo(function EditDiffBlock({
 
       {isOpen && activity.diff && (
         <div className="smtcmp-edit-diff-body">
-          <DiffContent
-            oldContent={activity.diff.oldContent}
-            newContent={activity.diff.newContent}
-          />
+          {isPreviewMode ? (
+            <div className="smtcmp-edit-diff-rendered">
+              <ObsidianMarkdown
+                content={activity.diff.newContent || activity.diff.oldContent || ''}
+                scale="sm"
+              />
+            </div>
+          ) : (
+            <DiffContent
+              oldContent={activity.diff.oldContent}
+              newContent={activity.diff.newContent}
+            />
+          )}
         </div>
       )}
     </div>

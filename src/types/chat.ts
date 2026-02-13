@@ -61,6 +61,15 @@ export interface ActivityEvent {
   results?: string[] // File paths or search results
 }
 
+/**
+ * A block of content in the chronological stream.
+ * Text blocks coalesce adjacent text deltas.
+ * Activity groups coalesce adjacent tool calls.
+ */
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'activity_group'; activityIds: string[] }
+
 export type ChatUserMessage = {
   role: 'user'
   content: SerializedEditorState | null
@@ -74,6 +83,7 @@ export type ChatUserMessage = {
 export type ChatAssistantMessage = {
   role: 'assistant'
   content: string
+  contentBlocks?: ContentBlock[] // Chronological sequence of text and activity groups
   reasoning?: string
   annotations?: Annotation[]
   toolCallRequests?: ToolCallRequest[]
@@ -116,6 +126,7 @@ export type SerializedChatUserMessage = {
 export type SerializedChatAssistantMessage = {
   role: 'assistant'
   content: string
+  contentBlocks?: ContentBlock[] // Chronological sequence of text and activity groups
   reasoning?: string
   annotations?: Annotation[]
   toolCallRequests?: ToolCallRequest[]

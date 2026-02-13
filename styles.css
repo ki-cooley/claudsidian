@@ -2097,6 +2097,17 @@ button.smtcmp-chat-input-model-select {
   }
 }
 
+/* Interspersed Content Layout */
+.smtcmp-interspersed-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smtcmp-interspersed-group {
+  margin: 4px 0;
+}
+
 /* Edit Diff Block */
 .smtcmp-edit-blocks {
   display: flex;
@@ -2195,10 +2206,23 @@ button.smtcmp-chat-input-model-select {
   padding: var(--size-2-2) var(--size-4-1);
 }
 
+.smtcmp-edit-diff-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+  padding: var(--size-2-1) var(--size-2-2);
+}
+
 .smtcmp-edit-diff-body {
   border-top: var(--input-border-width) solid var(--background-modifier-border);
   max-height: 300px;
   overflow-y: auto;
+}
+
+.smtcmp-edit-diff-rendered {
+  padding: var(--size-4-2);
 }
 
 .smtcmp-diff-content {

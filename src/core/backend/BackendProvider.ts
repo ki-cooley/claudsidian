@@ -8,7 +8,7 @@
 import { BaseLLMProvider } from '../llm/base';
 import { LLMRateLimitExceededException } from '../llm/exception';
 import type { ChatModel } from '../../types/chat-model.types';
-import type { ActivityEvent, ActivityType } from '../../types/chat';
+import type { ActivityEvent, ActivityType, ContentBlock } from '../../types/chat';
 import type {
 	LLMOptions,
 	LLMRequestNonStreaming,
@@ -191,11 +191,48 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			}
 		};
 
+		// Interspersed layout: track current block type for content boundaries
+		let currentBlockType: 'text' | 'activity_group' | null = null;
+		let currentTextBlock = '';
+		let currentActivityGroup: string[] = [];
+
+		const enqueueContentBlock = (block: ContentBlock) => {
+			enqueueChunk({
+				id: requestId,
+				object: 'chat.completion.chunk',
+				model: 'backend',
+				choices: [{ delta: { contentBlock: block }, finish_reason: null }],
+			});
+		};
+
+		const flushTextBlock = () => {
+			if (currentBlockType === 'text' && currentTextBlock) {
+				enqueueContentBlock({ type: 'text', text: currentTextBlock });
+				currentTextBlock = '';
+			}
+		};
+
+		const flushActivityGroup = () => {
+			if (currentBlockType === 'activity_group' && currentActivityGroup.length > 0) {
+				enqueueContentBlock({ type: 'activity_group', activityIds: [...currentActivityGroup] });
+				currentActivityGroup = [];
+			}
+		};
+
 		// Set up event handlers and send prompt
 		const requestId = await this.wsClient.sendPrompt(
 			prompt,
 			{
 				onTextDelta: (text: string) => {
+					// Track block boundary: close pending activity group when text starts
+					if (currentBlockType !== 'text') {
+						flushActivityGroup();
+						currentBlockType = 'text';
+						currentTextBlock = '';
+					}
+					currentTextBlock += text;
+
+					// Emit text delta for live streaming display
 					const chunk: LLMResponseStreaming = {
 						id: requestId,
 						object: 'chat.completion.chunk',
@@ -211,10 +248,17 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				},
 
 				onToolStart: (name: string, input: Record<string, unknown>) => {
+					// Track block boundary: flush pending text when tool starts
+					flushTextBlock();
+					currentBlockType = 'activity_group';
+
 					// Create a tool call entry with backend__ prefix for UI display
 					const index = toolCalls.size;
 					const toolId = `backend-${requestId}-${index}`;
 					const activityId = `activity-${requestId}-${index}`;
+
+					// Add to current activity group for interspersed layout
+					currentActivityGroup.push(activityId);
 
 					toolCalls.set(index, {
 						id: toolId,
@@ -310,8 +354,12 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				onThinking: (text: string) => {
 					// Start new thinking activity if not already active
 					if (!currentThinkingId) {
+						// Track block boundary: thinking acts as an activity
+						flushTextBlock();
+						currentBlockType = 'activity_group';
 						currentThinkingId = `thinking-${requestId}-${Date.now()}`;
 						thinkingStartTime = Date.now();
+						currentActivityGroup.push(currentThinkingId);
 					}
 
 					// Create thinking activity event
@@ -341,6 +389,10 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				},
 
 				onComplete: (result: string) => {
+					// Flush any pending content blocks for interspersed layout
+					flushTextBlock();
+					flushActivityGroup();
+
 					// Finalize any pending thinking activity
 					if (currentThinkingId && thinkingStartTime) {
 						const thinkingActivity: ActivityEvent = {

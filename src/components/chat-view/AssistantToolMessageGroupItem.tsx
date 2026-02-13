@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import React, { useMemo } from 'react'
 
 import {
   ActivityEvent,
@@ -13,6 +13,7 @@ import AssistantMessageContent from './AssistantMessageContent'
 import AssistantMessageReasoning from './AssistantMessageReasoning'
 import AssistantToolMessageGroupActions from './AssistantToolMessageGroupActions'
 import EditDiffBlock from './EditDiffBlock'
+import InterspersedContent from './InterspersedContent'
 import ToolMessage from './ToolMessage'
 
 /**
@@ -233,73 +234,104 @@ export default function AssistantToolMessageGroupItem({
     return { allActivities: activities, editActivities: Array.from(dedupedEdits.values()) }
   }, [messages])
 
+  // Check if any message in the group has interspersed content blocks
+  const hasContentBlocks = messages.some(
+    (m) => m.role === 'assistant' && m.contentBlocks && m.contentBlocks.length > 0,
+  )
+
   return (
     <div className="smtcmp-assistant-tool-message-group">
-      {/* Activity accordion (Cursor-style) - shows before content */}
-      {allActivities.length > 0 && (
-        <ActivityAccordion activities={allActivities} isStreaming={isStreaming} />
-      )}
-
-      {/* Edit diff blocks for file modifications */}
-      {editActivities.length > 0 && (
-        <div className="smtcmp-edit-blocks">
-          {editActivities.map((activity) => (
-            <EditDiffBlock key={activity.id} activity={activity} />
-          ))}
-        </div>
-      )}
-
-      {messages.map((message) => {
-        if (message.role === 'assistant') {
-          // Get display content - filters out tool result summaries when we have activities
-          const displayContent = getDisplayContent(
-            message.content || '',
-            allActivities.length > 0,
-          )
-
-          // Don't render if content is empty after filtering
-          if (!message.reasoning && !message.annotations && !displayContent) {
-            return null
-          }
-
-          return (
-            <div key={message.id} className="smtcmp-chat-messages-assistant">
-              {message.reasoning && (
-                <AssistantMessageReasoning reasoning={message.reasoning} />
-              )}
-              {message.annotations && (
-                <AssistantMessageAnnotations
-                  annotations={message.annotations}
-                />
-              )}
-              {displayContent && (
-                <AssistantMessageContent
-                  content={displayContent}
+      {hasContentBlocks ? (
+        // Interspersed layout: text and activities in chronological order
+        messages.map((message) => {
+          if (message.role === 'assistant' && message.contentBlocks && message.contentBlocks.length > 0) {
+            return (
+              <React.Fragment key={message.id}>
+                {message.reasoning && (
+                  <AssistantMessageReasoning reasoning={message.reasoning} />
+                )}
+                {message.annotations && (
+                  <AssistantMessageAnnotations
+                    annotations={message.annotations}
+                  />
+                )}
+                <InterspersedContent
+                  contentBlocks={message.contentBlocks}
+                  activities={allActivities}
+                  isStreaming={isStreaming}
                   contextMessages={contextMessages}
-                  handleApply={onApply}
                   isApplying={isApplying}
+                  onApply={onApply}
                 />
-              )}
-            </div>
-          )
-        }
-
-        // For tool messages, only show if we don't have activities
-        // (activities replace the old ToolMessage display)
-        if (allActivities.length > 0) {
+              </React.Fragment>
+            )
+          }
           return null
-        }
+        })
+      ) : (
+        // Legacy grouped layout for old conversations / non-backend providers
+        <>
+          {allActivities.length > 0 && (
+            <ActivityAccordion activities={allActivities} isStreaming={isStreaming} />
+          )}
 
-        return (
-          <div key={message.id}>
-            <ToolMessage
-              message={message}
-              conversationId={conversationId}
-              onMessageUpdate={onToolMessageUpdate}
-            />
-          </div>
-        )
-      })}
+          {editActivities.length > 0 && (
+            <div className="smtcmp-edit-blocks">
+              {editActivities.map((activity) => (
+                <EditDiffBlock key={activity.id} activity={activity} />
+              ))}
+            </div>
+          )}
+
+          {messages.map((message) => {
+            if (message.role === 'assistant') {
+              const displayContent = getDisplayContent(
+                message.content || '',
+                allActivities.length > 0,
+              )
+
+              if (!message.reasoning && !message.annotations && !displayContent) {
+                return null
+              }
+
+              return (
+                <div key={message.id} className="smtcmp-chat-messages-assistant">
+                  {message.reasoning && (
+                    <AssistantMessageReasoning reasoning={message.reasoning} />
+                  )}
+                  {message.annotations && (
+                    <AssistantMessageAnnotations
+                      annotations={message.annotations}
+                    />
+                  )}
+                  {displayContent && (
+                    <AssistantMessageContent
+                      content={displayContent}
+                      contextMessages={contextMessages}
+                      handleApply={onApply}
+                      isApplying={isApplying}
+                    />
+                  )}
+                </div>
+              )
+            }
+
+            if (allActivities.length > 0) {
+              return null
+            }
+
+            return (
+              <div key={message.id}>
+                <ToolMessage
+                  message={message}
+                  conversationId={conversationId}
+                  onMessageUpdate={onToolMessageUpdate}
+                />
+              </div>
+            )
+          })}
+        </>
+      )}
       {messages.length > 0 && (
         <AssistantToolMessageGroupActions messages={messages} />
       )}
