@@ -271,9 +271,6 @@ export async function* runAgent(
   }, 15_000);
   (activityCheck as any).unref?.();
 
-  // Track tool_use IDs already started via stream events (avoid duplicate tool_start)
-  const streamStartedToolIds = new Set<string>();
-
   try {
     const queryStream = query({
       prompt: singlePrompt(),
@@ -301,25 +298,14 @@ export async function* runAgent(
 
       switch (message.type) {
         case 'stream_event': {
-          const event = message.event;
-
-          // Early tool_start from content_block_start (before full assistant message)
-          if (event.type === 'content_block_start') {
-            const block = (event as any).content_block;
-            if (block?.type === 'tool_use') {
-              const name = cleanToolName(block.name);
-              streamStartedToolIds.add(block.id);
-              pendingTools.push(name);
-              yield { type: 'tool_start', name, input: block.input || {} };
-            } else {
-              // New text or thinking block = previous turn's tools are done
-              yield* closePendingTools();
-            }
+          // New content block starting = previous turn's tools are done
+          if (message.event.type === 'content_block_start') {
+            yield* closePendingTools();
           }
 
           // Stream text and thinking deltas in real time
-          if (event.type === 'content_block_delta') {
-            const delta = (event as any).delta;
+          if (message.event.type === 'content_block_delta') {
+            const delta = (message.event as any).delta;
             if (delta?.type === 'text_delta') {
               yield { type: 'text_delta', text: delta.text };
             } else if (delta?.type === 'thinking_delta') {
@@ -333,20 +319,16 @@ export async function* runAgent(
           // Close any pending tools from the previous turn
           yield* closePendingTools();
 
-          // Emit tool_start for tool_use blocks NOT already started via stream events
+          // Emit tool_start for each tool_use block (with full input)
           for (const block of message.message.content) {
             if (block.type === 'tool_use') {
               const name = cleanToolName(block.name);
-              if (!streamStartedToolIds.has(block.id)) {
-                // Fallback: emit tool_start if stream event was missed
-                pendingTools.push(name);
-                yield {
-                  type: 'tool_start',
-                  name,
-                  input: block.input as Record<string, unknown>,
-                };
-              }
-              streamStartedToolIds.delete(block.id);
+              pendingTools.push(name);
+              yield {
+                type: 'tool_start',
+                name,
+                input: block.input as Record<string, unknown>,
+              };
             }
           }
           break;
@@ -375,6 +357,10 @@ export async function* runAgent(
       }
     }
   } catch (err) {
+    // Close any pending tools so the UI doesn't show stuck "running" states
+    yield* drainToolEvents();
+    yield* closePendingTools();
+
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
     const errStack = err instanceof Error ? err.stack : '';
     logger.error('Agent error:', errMsg);
