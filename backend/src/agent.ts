@@ -240,6 +240,10 @@ export async function* runAgent(
   // (vault tools push their own tool_end via eventQueue; external MCP tools don't)
   const pendingTools: string[] = [];
 
+  // Track if the agent completed successfully so we can suppress the
+  // "process exited with code 1" error the SDK throws after completion
+  let completedSuccessfully = false;
+
   function* drainToolEvents(): Generator<AgentEvent> {
     while (eventQueue.length > 0) {
       const event = eventQueue.shift()!;
@@ -283,7 +287,6 @@ export async function* runAgent(
         abortController,
         permissionMode: 'bypassPermissions' as const,
         includePartialMessages: true,
-        thinking: { type: 'enabled', budgetTokens: 10000 },
         stderr: (data: string) => {
           heartbeat(); // stderr output = activity
           logger.warn(`CLI stderr: ${data.trimEnd()}`);
@@ -346,6 +349,7 @@ export async function* runAgent(
           yield* closePendingTools();
 
           if (message.subtype === 'success') {
+            completedSuccessfully = true;
             logger.info('Agent completed successfully');
             yield { type: 'complete', result: message.result || '' };
           } else {
@@ -371,13 +375,20 @@ export async function* runAgent(
 
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
     const errStack = err instanceof Error ? err.stack : '';
-    logger.error('Agent error:', errMsg);
-    logger.error('Agent error stack:', errStack);
-    yield {
-      type: 'error',
-      code: 'AGENT_ERROR',
-      message: errMsg,
-    };
+
+    // The SDK throws "process exited with code 1" after the agent has already
+    // completed successfully. Suppress this spurious error.
+    if (completedSuccessfully && errMsg.includes('exited with code')) {
+      logger.warn(`Ignoring post-completion SDK error: ${errMsg}`);
+    } else {
+      logger.error('Agent error:', errMsg);
+      logger.error('Agent error stack:', errStack);
+      yield {
+        type: 'error',
+        code: 'AGENT_ERROR',
+        message: errMsg,
+      };
+    }
   } finally {
     clearInterval(activityCheck);
   }
