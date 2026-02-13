@@ -155,7 +155,7 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
 
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
 const MAX_TURNS = 10;
-const MESSAGE_TIMEOUT_MS = 120_000; // 2 minutes per SDK message
+const INACTIVITY_TIMEOUT_MS = 300_000; // 5 minutes of no activity = dead
 
 /**
  * Strip MCP prefix from tool names for cleaner display.
@@ -183,7 +183,12 @@ export async function* runAgent(
 
   // Shared event queue — tool handlers push tool_end events here
   const eventQueue: AgentEvent[] = [];
-  const vaultServer = createVaultMcpServer(bridge, eventQueue);
+
+  // Activity tracker — updated by vault tool handlers, SDK iterator messages, and stderr
+  const activity = { lastTs: Date.now() };
+  const heartbeat = () => { activity.lastTs = Date.now(); };
+
+  const vaultServer = createVaultMcpServer(bridge, eventQueue, heartbeat);
 
   // AbortController for the SDK (forward external signal)
   const abortController = new AbortController();
@@ -256,34 +261,18 @@ export async function* runAgent(
     }
   }
 
-  // Helper: wrap an async iterator with a per-message timeout.
-  // If no message arrives within timeoutMs, the abort controller fires
-  // and the iterator throws, breaking the hang.
-  async function* withMessageTimeout<T>(
-    iter: AsyncIterable<T>,
-    timeoutMs: number,
-    abort: AbortController,
-  ): AsyncGenerator<T> {
-    const asyncIter = iter[Symbol.asyncIterator]();
-    while (true) {
-      const result = await Promise.race([
-        asyncIter.next(),
-        new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => {
-            logger.error(`Message timeout after ${timeoutMs / 1000}s — aborting agent`);
-            abort.abort();
-            reject(new Error(`Agent timed out waiting for SDK response (${timeoutMs / 1000}s)`));
-          }, timeoutMs);
-          // Allow GC if iterator completes first
-          (timer as any).unref?.();
-          // Clear timeout if abort fires from another source
-          abort.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
-        }),
-      ]);
-      if (result.done) break;
-      yield result.value;
+  // Periodic inactivity check — aborts agent if no activity for INACTIVITY_TIMEOUT_MS
+  const activityCheck = setInterval(() => {
+    const elapsed = Date.now() - activity.lastTs;
+    if (elapsed > INACTIVITY_TIMEOUT_MS) {
+      logger.error(`No activity for ${Math.round(elapsed / 1000)}s — aborting agent`);
+      abortController.abort();
     }
-  }
+  }, 15_000);
+  (activityCheck as any).unref?.();
+
+  // Track tool_use IDs already started via stream events (avoid duplicate tool_start)
+  const streamStartedToolIds = new Set<string>();
 
   try {
     const queryStream = query({
@@ -298,23 +287,44 @@ export async function* runAgent(
         permissionMode: 'bypassPermissions' as const,
         includePartialMessages: true,
         stderr: (data: string) => {
+          heartbeat(); // stderr output = activity
           logger.warn(`CLI stderr: ${data.trimEnd()}`);
         },
       },
     });
 
-    for await (const message of withMessageTimeout(queryStream, MESSAGE_TIMEOUT_MS, abortController)) {
+    for await (const message of queryStream) {
+      heartbeat(); // SDK yielded a message = alive
+
       // Drain tool_end events pushed by vault tool handlers
       yield* drainToolEvents();
 
       switch (message.type) {
         case 'stream_event': {
-          // Text streaming means all pending tools have completed
-          yield* closePendingTools();
-
           const event = message.event;
-          if (event.type === 'content_block_delta' && 'text' in event.delta) {
-            yield { type: 'text_delta', text: (event.delta as any).text };
+
+          // Early tool_start from content_block_start (before full assistant message)
+          if (event.type === 'content_block_start') {
+            const block = (event as any).content_block;
+            if (block?.type === 'tool_use') {
+              const name = cleanToolName(block.name);
+              streamStartedToolIds.add(block.id);
+              pendingTools.push(name);
+              yield { type: 'tool_start', name, input: block.input || {} };
+            } else {
+              // New text or thinking block = previous turn's tools are done
+              yield* closePendingTools();
+            }
+          }
+
+          // Stream text and thinking deltas in real time
+          if (event.type === 'content_block_delta') {
+            const delta = (event as any).delta;
+            if (delta?.type === 'text_delta') {
+              yield { type: 'text_delta', text: delta.text };
+            } else if (delta?.type === 'thinking_delta') {
+              yield { type: 'thinking', text: delta.thinking };
+            }
           }
           break;
         }
@@ -323,16 +333,20 @@ export async function* runAgent(
           // Close any pending tools from the previous turn
           yield* closePendingTools();
 
-          // Emit tool_start for each tool_use block in the assistant message
+          // Emit tool_start for tool_use blocks NOT already started via stream events
           for (const block of message.message.content) {
             if (block.type === 'tool_use') {
               const name = cleanToolName(block.name);
-              pendingTools.push(name);
-              yield {
-                type: 'tool_start',
-                name,
-                input: block.input as Record<string, unknown>,
-              };
+              if (!streamStartedToolIds.has(block.id)) {
+                // Fallback: emit tool_start if stream event was missed
+                pendingTools.push(name);
+                yield {
+                  type: 'tool_start',
+                  name,
+                  input: block.input as Record<string, unknown>,
+                };
+              }
+              streamStartedToolIds.delete(block.id);
             }
           }
           break;
@@ -370,5 +384,7 @@ export async function* runAgent(
       code: 'AGENT_ERROR',
       message: errMsg,
     };
+  } finally {
+    clearInterval(activityCheck);
   }
 }

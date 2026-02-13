@@ -122,7 +122,7 @@ export async function executeVaultTool(
  * Create an SDK MCP server with all vault tools bound to a VaultBridge.
  * Tool handlers push tool_end events to the shared queue for the agent generator.
  */
-export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent[]) {
+export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent[], heartbeat?: () => void) {
   return createSdkMcpServer({
     name: 'vault-tools',
     version: '1.0.0',
@@ -134,6 +134,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           path: z.string().describe('Path relative to vault root, e.g. "folder/note.md" or "note.md"'),
         },
         async (args) => {
+          heartbeat?.();
           const content = await bridge.read(args.path);
           eventQueue.push({ type: 'tool_end', name: 'vault_read', result: content });
           return { content: [{ type: 'text' as const, text: content }] };
@@ -148,6 +149,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           content: z.string().describe('Full markdown content to write'),
         },
         async (args) => {
+          heartbeat?.();
           await bridge.write(args.path, args.content);
           const result = `Successfully wrote ${args.content.length} characters to ${args.path}`;
           eventQueue.push({ type: 'tool_end', name: 'vault_write', result });
@@ -164,6 +166,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           new_string: z.string().describe('Text to replace it with'),
         },
         async (args) => {
+          heartbeat?.();
           await bridge.edit(args.path, args.old_string, args.new_string);
           const result = `Successfully edited ${args.path}`;
           eventQueue.push({ type: 'tool_end', name: 'vault_edit', result });
@@ -179,6 +182,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           limit: z.number().optional().describe('Maximum results to return (default: 20)'),
         },
         async (args) => {
+          heartbeat?.();
           const limit = args.limit ?? 20;
           const results = await bridge.search(args.query, limit);
           let result: string;
@@ -205,6 +209,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           limit: z.number().optional().describe('Maximum results to return (default: 50)'),
         },
         async (args) => {
+          heartbeat?.();
           const folder = args.folder || '';
           const filePattern = args.file_pattern || '*.md';
           const limit = args.limit ?? 50;
@@ -230,6 +235,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           pattern: z.string().describe('Glob pattern, e.g. "**/*.md", "daily/*.md", "projects/**/*"'),
         },
         async (args) => {
+          heartbeat?.();
           const files = await bridge.glob(args.pattern);
           let result: string;
           if (files.length === 0) {
@@ -250,6 +256,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           folder: z.string().optional().describe('Folder path relative to vault root, empty for root'),
         },
         async (args) => {
+          heartbeat?.();
           const folder = args.folder || '';
           const items = await bridge.list(folder);
           let result: string;
@@ -274,6 +281,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           new_path: z.string().describe('New path for the note'),
         },
         async (args) => {
+          heartbeat?.();
           await bridge.rename(args.old_path, args.new_path);
           const result = `Renamed ${args.old_path} → ${args.new_path}`;
           eventQueue.push({ type: 'tool_end', name: 'vault_rename', result });
@@ -288,6 +296,7 @@ export function createVaultMcpServer(bridge: VaultBridge, eventQueue: AgentEvent
           path: z.string().describe('Path of the note to delete'),
         },
         async (args) => {
+          heartbeat?.();
           await bridge.delete(args.path);
           const result = `Deleted ${args.path}`;
           eventQueue.push({ type: 'tool_end', name: 'vault_delete', result });
