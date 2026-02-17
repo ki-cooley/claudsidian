@@ -557,11 +557,12 @@ ${customInstruction}
 
   private async getMemoryMessage(): Promise<RequestMessage | null> {
     try {
-      const memoryFile = this.app.vault.getAbstractFileByPath('.claude/memory.md')
-      if (!memoryFile || !(memoryFile instanceof TFile)) {
+      // Use adapter API since Obsidian doesn't index dotfiles
+      const adapter = this.app.vault.adapter
+      if (!(await adapter.exists('.claude/memory.md'))) {
         return null
       }
-      const content = await readTFileContent(memoryFile, this.app.vault)
+      const content = await adapter.read('.claude/memory.md')
       if (!content?.trim()) {
         return null
       }
