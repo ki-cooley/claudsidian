@@ -22,6 +22,7 @@ import { VaultRpcHandler } from './core/backend/VaultRpcHandler'
 import { ConflictManager } from './core/backend/ConflictManager'
 import { initEditHistory } from './core/backend/EditHistory'
 import type { RpcRequestMessage } from './core/backend/protocol'
+import { StreamStateManager } from './core/backend/StreamStateManager'
 
 export default class SmartComposerPlugin extends Plugin {
   settings: SmartComposerSettings
@@ -32,6 +33,7 @@ export default class SmartComposerPlugin extends Plugin {
   ragEngine: RAGEngine | null = null
   vaultRpcHandler: VaultRpcHandler | null = null
   conflictManager: ConflictManager | null = null
+  streamStateManager: StreamStateManager = new StreamStateManager()
   private dbManagerInitPromise: Promise<DatabaseManager> | null = null
   private ragEngineInitPromise: Promise<RAGEngine> | null = null
   private timeoutIds: ReturnType<typeof setTimeout>[] = [] // Use ReturnType instead of number
@@ -197,6 +199,9 @@ export default class SmartComposerPlugin extends Plugin {
     // DatabaseManager cleanup
     this.dbManager?.cleanup()
     this.dbManager = null
+
+    // StreamStateManager cleanup
+    this.streamStateManager.cleanup()
 
     // McpManager cleanup
     this.mcpManager?.cleanup()

@@ -16,6 +16,7 @@ import { ApplyViewState } from '../../ApplyView'
 import { APPLY_VIEW_TYPE } from '../../constants'
 import { useApp } from '../../contexts/app-context'
 import { useMcp } from '../../contexts/mcp-context'
+import { usePlugin } from '../../contexts/plugin-context'
 import { useRAG } from '../../contexts/rag-context'
 import { useSettings } from '../../contexts/settings-context'
 import {
@@ -77,6 +78,7 @@ export type ChatRef = {
   openNewChat: (selectedBlock?: MentionableBlockData) => void
   addSelectionToChat: (selectedBlock: MentionableBlockData) => void
   focusMessage: () => void
+  flushSave: () => void
 }
 
 export type ChatProps = {
@@ -85,6 +87,7 @@ export type ChatProps = {
 
 const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
   const app = useApp()
+  const plugin = usePlugin()
   const { settings } = useSettings()
   const { getRAGEngine } = useRAG()
   const { getMcpManager } = useMcp()
@@ -143,11 +146,15 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     scrollContainerRef: chatMessagesRef,
   })
 
-  const { abortActiveStreams, submitChatMutation } = useChatStreamManager({
+  const { abortActiveStreams, detachActiveStream, submitChatMutation } = useChatStreamManager({
     setChatMessages,
     autoScrollToBottom,
     promptGenerator,
   })
+
+  // Ref to access currentConversationId in cleanup effects
+  const currentConversationIdRef = useRef(currentConversationId)
+  currentConversationIdRef.current = currentConversationId
 
   const registerChatUserInputRef = (
     id: string,
@@ -449,6 +456,41 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Rehydrate from StreamStateManager on mount
+  useEffect(() => {
+    const convId = currentConversationIdRef.current
+    const state = plugin.streamStateManager.attachStream(convId)
+    if (state) {
+      setChatMessages([...state.baseMessages, ...state.responseMessages])
+      if (!state.isComplete) {
+        // Re-subscribe to the still-running ResponseGenerator for live updates
+        const unsub = state.responseGenerator.subscribe((msgs) => {
+          setChatMessages([...state.baseMessages, ...msgs])
+          requestAnimationFrame(() => autoScrollToBottom())
+        })
+        return () => unsub()
+      }
+    }
+    // Scroll to bottom on mount whenever there are messages
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        forceScrollToBottom()
+      })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Detach stream on unmount so it keeps running while sidebar is closed
+  useEffect(() => {
+    return () => {
+      if (submitChatMutation.isPending) {
+        detachActiveStream(currentConversationIdRef.current)
+      }
+      createOrUpdateConversation.flush?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const updateConversationAsync = async () => {
       try {
@@ -571,6 +613,9 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     focusMessage: () => {
       if (!focusedMessageId) return
       chatUserInputRefs.current.get(focusedMessageId)?.focus()
+    },
+    flushSave: () => {
+      createOrUpdateConversation.flush?.()
     },
   }))
 
