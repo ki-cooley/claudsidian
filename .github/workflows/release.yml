@@ -4,49 +4,48 @@ on:
   push:
     tags:
       - '*'
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: '20.x'
 
-      - name: Set Tag variable
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine version tag
+        id: version
         run: |
-          echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
-
-      - name: Bump version
-        run: npm run version $TAG
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            # Auto-generate tag from manifest version + short SHA
+            BASE_VERSION=$(node -p "require('./manifest.json').version")
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            TAG="${BASE_VERSION}-${SHORT_SHA}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build plugin
-        run: |
-          npm install
-          npm run build
+        run: npm run build
 
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --title="$tag" \
+          gh release create "$RELEASE_TAG" \
+            --title="$RELEASE_TAG" \
+            --generate-notes \
             main.js manifest.json styles.css
-
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          commit-message: 'version bump: ${{ env.TAG }}'
-          title: 'Version bump: ${{ env.TAG }}'
-          body: |
-            Automated version bump after release ${{ env.TAG }}
-
-            This PR was automatically created by the release workflow.
-          branch: 'version-bump/${{ env.TAG }}'
-          base: 'main'
-          delete-branch: true
