@@ -50,6 +50,7 @@ export class ChatView extends ItemView {
   }
 
   async onClose() {
+    this.chatRef.current?.flushSave?.()
     this.root?.unmount()
   }
 

@@ -16,10 +16,10 @@ import {
 import { useChatManager } from './useJsonManagers'
 
 type UseChatHistory = {
-  createOrUpdateConversation: (
+  createOrUpdateConversation: ((
     id: string,
     messages: ChatMessage[],
-  ) => Promise<void> | undefined
+  ) => Promise<void> | undefined) & { flush?: () => void }
   deleteConversation: (id: string) => Promise<void>
   getChatMessagesById: (id: string) => Promise<ChatMessage[] | null>
   updateConversationTitle: (id: string, title: string) => Promise<void>
@@ -142,9 +142,11 @@ const serializeChatMessage = (message: ChatMessage): SerializedChatMessage => {
       return {
         role: 'assistant',
         content: message.content,
+        contentBlocks: message.contentBlocks,
         reasoning: message.reasoning,
         annotations: message.annotations,
         toolCallRequests: message.toolCallRequests,
+        activities: message.activities,
         id: message.id,
         metadata: message.metadata,
       }
@@ -178,9 +180,11 @@ const deserializeChatMessage = (
       return {
         role: 'assistant',
         content: message.content,
+        contentBlocks: message.contentBlocks,
         reasoning: message.reasoning,
         annotations: message.annotations,
         toolCallRequests: message.toolCallRequests,
+        activities: message.activities,
         id: message.id,
         metadata: message.metadata,
       }

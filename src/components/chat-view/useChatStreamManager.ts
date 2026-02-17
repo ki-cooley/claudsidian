@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef } from 'react'
 
 import { useApp } from '../../contexts/app-context'
 import { useMcp } from '../../contexts/mcp-context'
+import { usePlugin } from '../../contexts/plugin-context'
 import { useSettings } from '../../contexts/settings-context'
 import {
   LLMAPIKeyInvalidException,
@@ -25,6 +26,7 @@ type UseChatStreamManagerParams = {
 
 export type UseChatStreamManager = {
   abortActiveStreams: () => void
+  detachActiveStream: (conversationId: string) => void
   submitChatMutation: UseMutationResult<
     void,
     Error,
@@ -38,17 +40,59 @@ export function useChatStreamManager({
   promptGenerator,
 }: UseChatStreamManagerParams): UseChatStreamManager {
   const app = useApp()
+  const plugin = usePlugin()
   const { settings, setSettings } = useSettings()
   const { getMcpManager } = useMcp()
 
   const activeStreamAbortControllersRef = useRef<AbortController[]>([])
+  const activeResponseGeneratorRef = useRef<ResponseGenerator | null>(null)
+  const activeBaseMessagesRef = useRef<ChatMessage[]>([])
+  const activeConversationIdRef = useRef<string | null>(null)
 
   const abortActiveStreams = useCallback(() => {
     for (const abortController of activeStreamAbortControllersRef.current) {
       abortController.abort()
     }
     activeStreamAbortControllersRef.current = []
+    activeResponseGeneratorRef.current = null
+    activeBaseMessagesRef.current = []
+    activeConversationIdRef.current = null
   }, [])
+
+  /**
+   * Hand the active stream to the StreamStateManager without aborting it.
+   * Called when the sidebar closes while streaming.
+   */
+  const detachActiveStream = useCallback(
+    (conversationId: string) => {
+      const generator = activeResponseGeneratorRef.current
+      if (!generator || activeConversationIdRef.current !== conversationId) {
+        return
+      }
+
+      // Get current response messages by reading the latest from setChatMessages
+      // We need to extract the response messages (everything after baseMessages)
+      let currentResponseMessages: ChatMessage[] = []
+      setChatMessages((current) => {
+        const baseLen = activeBaseMessagesRef.current.length
+        currentResponseMessages = current.slice(baseLen)
+        return current // Don't modify state
+      })
+
+      plugin.streamStateManager.detachStream(
+        conversationId,
+        activeBaseMessagesRef.current,
+        generator,
+        currentResponseMessages,
+      )
+
+      // Clear local refs but don't abort
+      activeResponseGeneratorRef.current = null
+      activeBaseMessagesRef.current = []
+      activeConversationIdRef.current = null
+    },
+    [plugin.streamStateManager, setChatMessages],
+  )
 
   const { providerClient, model } = useMemo(() => {
     try {
@@ -118,6 +162,11 @@ export function useChatStreamManager({
           abortSignal: abortController.signal,
         })
 
+        // Track the active stream for potential detachment
+        activeResponseGeneratorRef.current = responseGenerator
+        activeBaseMessagesRef.current = chatMessages
+        activeConversationIdRef.current = conversationId
+
         unsubscribeResponseGenerator = responseGenerator.subscribe(
           (responseMessages) => {
             setChatMessages((prevChatMessages) => {
@@ -155,6 +204,16 @@ export function useChatStreamManager({
           activeStreamAbortControllersRef.current.filter(
             (controller) => controller !== abortController,
           )
+
+        // Notify StreamStateManager that this stream is complete
+        plugin.streamStateManager.markComplete(conversationId)
+
+        // Clear tracking refs
+        if (activeConversationIdRef.current === conversationId) {
+          activeResponseGeneratorRef.current = null
+          activeBaseMessagesRef.current = []
+          activeConversationIdRef.current = null
+        }
       }
     },
     onError: (error) => {
@@ -175,6 +234,7 @@ export function useChatStreamManager({
 
   return {
     abortActiveStreams,
+    detachActiveStream,
     submitChatMutation,
   }
 }
