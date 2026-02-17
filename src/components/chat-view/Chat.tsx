@@ -169,6 +169,12 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       }
       setCurrentConversationId(conversationId)
       setChatMessages(conversation)
+      // Scroll to latest message after React renders the loaded conversation
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          forceScrollToBottom()
+        })
+      })
       const newInputMessage = getNewInputMessage(app)
       setInputMessage(newInputMessage)
       setFocusedMessageId(newInputMessage.id)
@@ -426,6 +432,17 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       conversationId: currentConversationId,
     })
   }, [submitChatMutation, chatMessages, currentConversationId])
+
+  // Scroll to bottom when mobile keyboard opens/closes
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const handleResize = () => {
+      requestAnimationFrame(() => autoScrollToBottom())
+    }
+    vv.addEventListener('resize', handleResize)
+    return () => vv.removeEventListener('resize', handleResize)
+  }, [autoScrollToBottom])
 
   useEffect(() => {
     setFocusedMessageId(inputMessage.id)
@@ -712,6 +729,11 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
         }}
         onSubmit={(content, useVaultSearch) => {
           if (editorStateToPlainText(content).trim() === '') return
+          const imageMentionables = inputMessage.mentionables.filter(m => m.type === 'image')
+          console.log('[ImageFlow] onSubmit: inputMessage has', inputMessage.mentionables.length, 'mentionables,', imageMentionables.length, 'images')
+          if (imageMentionables.length > 0) {
+            console.log('[ImageFlow] Image names:', imageMentionables.map(m => m.type === 'image' ? m.name : '').join(', '))
+          }
           handleUserMessageSubmit({
             inputChatMessages: [...chatMessages, { ...inputMessage, content }],
             useVaultSearch,

@@ -40,6 +40,8 @@ export interface PromptMessage {
   systemPrompt?: string;
   /** Model to use for this request (e.g., 'claude-opus-4-5-20250514') */
   model?: string;
+  /** Images to include as multimodal content */
+  images?: Array<{ mimeType: string; base64Data: string }>;
 }
 
 /** Response to an RPC request from server */

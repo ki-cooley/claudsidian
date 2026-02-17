@@ -64,9 +64,8 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			throw new Error('Backend not connected');
 		}
 
-		// Convert request messages to a prompt string
-		// The backend will handle the full conversation context
-		const prompt = this.convertRequestToPrompt(request);
+		// Extract prompt text and any images from the request
+		const { prompt, images } = this.extractPromptAndImages(request);
 
 		// Extract system prompt from messages if present
 		const systemMessage = request.messages.find((m) => m.role === 'system');
@@ -83,7 +82,8 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			undefined,
 			options,
 			systemPrompt,
-			modelToUse
+			modelToUse,
+			images
 		);
 
 		return generator;
@@ -155,7 +155,8 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 		context?: { currentFile?: string; selection?: string },
 		options?: LLMOptions,
 		systemPrompt?: string,
-		model?: string
+		model?: string,
+		images?: Array<{ mimeType: string; base64Data: string }>
 	): AsyncGenerator<LLMResponseStreaming> {
 		// State for accumulating responses
 		const toolCalls: Map<
@@ -462,7 +463,8 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			},
 			context,
 			systemPrompt,
-			model
+			model,
+			images
 		);
 
 		// Yield chunks as they arrive
@@ -529,18 +531,54 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 	}
 
 	/**
-	 * Convert request messages to a simple prompt string
-	 * The backend's agent will handle the full conversation context
+	 * Extract prompt text and images from request messages.
+	 * Images are sent separately as multimodal content blocks.
 	 */
-	private convertRequestToPrompt(
+	private extractPromptAndImages(
 		request: LLMRequestStreaming | LLMRequestNonStreaming
-	): string {
-		// For now, we'll send the entire message history as a JSON string
-		// The backend can parse this and use it with the agent
-		return JSON.stringify({
-			messages: request.messages,
+	): { prompt: string; images: Array<{ mimeType: string; base64Data: string }> } {
+		const images: Array<{ mimeType: string; base64Data: string }> = [];
+		console.log('[ImageFlow] extractPromptAndImages: scanning', request.messages.length, 'messages for images');
+
+		// Strip image content parts from messages, collect them separately
+		const messagesWithoutImages = request.messages.map((msg) => {
+			if (msg.role === 'user' && Array.isArray(msg.content)) {
+				const textParts: Array<{ type: 'text'; text: string }> = [];
+				for (const part of msg.content) {
+					if (part.type === 'image_url') {
+						// Parse data URL: "data:image/png;base64,..."
+						const dataUrl = part.image_url.url;
+						const match = dataUrl.match(
+							/^data:([^;]+);base64,(.+)$/
+						);
+						if (match) {
+							images.push({
+								mimeType: match[1],
+								base64Data: match[2],
+							});
+						}
+					} else {
+						textParts.push(part);
+					}
+				}
+				return {
+					...msg,
+					content:
+						textParts.length === 1
+							? textParts[0].text
+							: textParts,
+				};
+			}
+			return msg;
+		});
+
+		const prompt = JSON.stringify({
+			messages: messagesWithoutImages,
 			tools: request.tools,
 			tool_choice: request.tool_choice,
 		});
+
+		console.log('[ImageFlow] extractPromptAndImages: found', images.length, 'images, types:', images.map(i => i.mimeType).join(', '));
+		return { prompt, images };
 	}
 }

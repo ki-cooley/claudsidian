@@ -58,7 +58,14 @@ When the user asks about cooking techniques, recipes, ingredients, or food scien
 - When citing cookbook sources, always include the exact page numbers and preserve any links from the tool results
 - If uncertain, ask for clarification
 - When integrating research results, present the final synthesis — avoid restating the same finding in multiple formats within one response
-- For complex multi-topic research, work in batches of 5-8 tool calls at a time rather than launching dozens in parallel. Complete one batch, synthesize results, then proceed to the next batch.`;
+- For complex multi-topic research, work in batches of 5-8 tool calls at a time rather than launching dozens in parallel. Complete one batch, synthesize results, then proceed to the next batch.
+
+## Memory Management
+You have a persistent memory file (.claude/memory.md) loaded into your context.
+- After learning user preferences, project context, or important decisions, use vault_edit or vault_write to update .claude/memory.md
+- Keep it concise (<500 words), organized with ## headings
+- Sections: ## User Preferences, ## Projects, ## Key Decisions, ## Conventions
+- Don't store conversation-specific details — only persistent knowledge`;
 
 interface Skill {
   name: string;
@@ -143,6 +150,18 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
     // .claude/instructions.md doesn't exist, that's fine
   }
 
+  // Load persistent memory
+  try {
+    const memory = await bridge.read('.claude/memory.md');
+    if (memory && memory.trim()) {
+      systemPrompt += `\n\n## Persistent Memory\n\nThis is your long-term memory from past conversations. Use it for context continuity:\n\n${memory}`;
+      logger.info('Loaded .claude/memory.md');
+    }
+  } catch (e) {
+    // No memory file yet — will be created when agent first updates memory
+    logger.debug('No .claude/memory.md found');
+  }
+
   // Load custom skills
   const skills = await loadSkills(bridge);
   if (skills.length > 0) {
@@ -178,7 +197,8 @@ export async function* runAgent(
   context?: AgentContext,
   signal?: AbortSignal,
   customSystemPrompt?: string,
-  model?: string
+  model?: string,
+  images?: Array<{ mimeType: string; base64Data: string }>
 ): AsyncGenerator<AgentEvent> {
   const selectedModel = model || DEFAULT_MODEL;
   logger.info(`Using model: ${selectedModel}`);
@@ -229,10 +249,27 @@ export async function* runAgent(
   allowedTools.push('WebSearch');
 
   // Streaming input mode (required for mcpServers)
+  // Build the user message. When images are present, use multimodal content blocks.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const userMessage: any = { role: 'user', content: fullPrompt };
+  if (images && images.length > 0) {
+    userMessage.content = [
+      ...images.map((img) => ({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: img.mimeType,
+          data: img.base64Data,
+        },
+      })),
+      { type: 'text', text: fullPrompt },
+    ];
+  }
+
   async function* singlePrompt() {
     yield {
       type: 'user' as const,
-      message: { role: 'user' as const, content: fullPrompt },
+      message: userMessage,
       parent_tool_use_id: null,
       session_id: '',
     };

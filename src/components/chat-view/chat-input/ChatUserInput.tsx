@@ -148,6 +148,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
 
     const handleCreateImageMentionables = useCallback(
       (mentionableImages: MentionableImage[]) => {
+        console.log('[ImageFlow] handleCreateImageMentionables called with', mentionableImages.length, 'images')
         const newMentionableImages = mentionableImages.filter(
           (m) =>
             !mentionables.some(
@@ -157,6 +158,7 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
             ),
         )
         if (newMentionableImages.length === 0) return
+        console.log('[ImageFlow] Adding', newMentionableImages.length, 'new image mentionables, total mentionables will be:', mentionables.length + newMentionableImages.length)
         setMentionables([...mentionables, ...newMentionableImages])
         setDisplayedMentionableKey(
           getMentionableKey(
@@ -200,6 +202,10 @@ const ChatUserInput = forwardRef<ChatUserInputRef, ChatUserInputProps>(
       if (content) {
         // Blur input to hide mobile keyboard after submit
         contentEditableRef.current?.blur()
+        // iOS sometimes ignores blur on contenteditable
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur()
+        }
         onSubmit(content, options.useVaultSearch)
       }
     }

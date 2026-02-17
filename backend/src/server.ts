@@ -115,7 +115,8 @@ class ConnectionHandler {
         msg.context,
         abortController.signal,
         msg.systemPrompt,
-        msg.model
+        msg.model,
+        msg.images
       )) {
         if (abortController.signal.aborted) {
           logger.info(`Request ${msg.id} was cancelled`);
