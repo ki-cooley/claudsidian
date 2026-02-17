@@ -71,6 +71,9 @@ export default class SmartComposerPlugin extends Plugin {
       }
     })
 
+    // Ensure .claude/memory.md exists for persistent memory
+    void this.initMemoryFile()
+
     // Auto-connect to backend if configured
     void this.connectBackend()
 
@@ -385,6 +388,26 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
     new Notice('Reloading Claudsidian due to migration', 1000)
     leaves[0].detach()
     await this.activateChatView()
+  }
+
+  private async initMemoryFile() {
+    try {
+      const adapter = this.app.vault.adapter
+      // Use adapter (filesystem) API since Obsidian doesn't index dotfiles
+      if (!(await adapter.exists('.claude'))) {
+        await adapter.mkdir('.claude')
+      }
+      if (!(await adapter.exists('.claude/memory.md'))) {
+        await adapter.write(
+          '.claude/memory.md',
+          `## User Preferences\n\n## Projects\n\n## Key Decisions\n\n## Conventions\n`,
+        )
+        console.log('[Claudsidian] Created .claude/memory.md')
+      }
+    } catch (error) {
+      // Non-critical — memory will be created when agent first writes to it
+      console.debug('[Claudsidian] Could not initialize memory file:', error)
+    }
   }
 
   async connectBackend() {

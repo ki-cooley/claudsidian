@@ -140,6 +140,8 @@
   gap: var(--size-4-1);
   padding: var(--size-4-1);
   margin: calc(var(--size-4-1) * -1);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 
   .smtcmp-chat-messages-user {
     display: flex;

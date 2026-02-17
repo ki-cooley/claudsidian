@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-const PROGRAMMATIC_SCROLL_DEBOUNCE_MS = 50
-const SCROLL_AWAY_FROM_BOTTOM_THRESHOLD = 20
+const SCROLL_AWAY_FROM_BOTTOM_THRESHOLD = 50
+const USER_SCROLL_DEBOUNCE_MS = 150
 
 type UseAutoScrollProps = {
   scrollContainerRef: React.RefObject<HTMLElement>
@@ -9,20 +9,30 @@ type UseAutoScrollProps = {
 
 export function useAutoScroll({ scrollContainerRef }: UseAutoScrollProps) {
   const preventAutoScrollRef = useRef(false)
-  const lastProgrammaticScrollRef = useRef<number>(0)
+  const isUserScrollingRef = useRef(false)
+  const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current
     if (!scrollContainer) return
 
-    const handleScroll = () => {
-      // If the scroll event happened very close to our programmatic scroll, ignore it
-      if (
-        Date.now() - lastProgrammaticScrollRef.current <
-        PROGRAMMATIC_SCROLL_DEBOUNCE_MS
-      ) {
-        return
+    // Only user-initiated events (wheel, touchmove) should control auto-scroll.
+    // Content growth fires scroll events too, but those must NOT disable auto-scroll.
+    const handleUserScrollStart = () => {
+      isUserScrollingRef.current = true
+      if (userScrollTimeoutRef.current) {
+        clearTimeout(userScrollTimeoutRef.current)
       }
+      userScrollTimeoutRef.current = setTimeout(() => {
+        isUserScrollingRef.current = false
+      }, USER_SCROLL_DEBOUNCE_MS)
+    }
+
+    const handleScroll = () => {
+      // Only update auto-scroll state if a user interaction triggered this scroll
+      if (!isUserScrollingRef.current) return
 
       preventAutoScrollRef.current =
         scrollContainer.scrollHeight -
@@ -31,15 +41,27 @@ export function useAutoScroll({ scrollContainerRef }: UseAutoScrollProps) {
         SCROLL_AWAY_FROM_BOTTOM_THRESHOLD
     }
 
+    scrollContainer.addEventListener('wheel', handleUserScrollStart, {
+      passive: true,
+    })
+    scrollContainer.addEventListener('touchmove', handleUserScrollStart, {
+      passive: true,
+    })
     scrollContainer.addEventListener('scroll', handleScroll)
-    return () => scrollContainer.removeEventListener('scroll', handleScroll)
+    return () => {
+      scrollContainer.removeEventListener('wheel', handleUserScrollStart)
+      scrollContainer.removeEventListener('touchmove', handleUserScrollStart)
+      scrollContainer.removeEventListener('scroll', handleScroll)
+      if (userScrollTimeoutRef.current) {
+        clearTimeout(userScrollTimeoutRef.current)
+      }
+    }
   }, [scrollContainerRef])
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
       const scrollContainer = scrollContainerRef.current
       if (scrollContainer.scrollTop !== scrollContainer.scrollHeight) {
-        lastProgrammaticScrollRef.current = Date.now()
         scrollContainer.scrollTop = scrollContainer.scrollHeight
       }
     }

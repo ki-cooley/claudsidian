@@ -136,7 +136,7 @@ export function useChatStreamManager({
                 ...responseMessages,
               ]
             })
-            autoScrollToBottom()
+            requestAnimationFrame(() => autoScrollToBottom())
           },
         )
 

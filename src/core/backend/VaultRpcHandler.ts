@@ -13,6 +13,14 @@ export class VaultRpcHandler {
 	constructor(private app: App) {}
 
 	/**
+	 * Check if a path is a dotfile/dotfolder (starts with . in any segment).
+	 * Obsidian's vault API doesn't index these, so we must use the adapter.
+	 */
+	private isDotfilePath(path: string): boolean {
+		return path.split('/').some(segment => segment.startsWith('.'));
+	}
+
+	/**
 	 * Handle an RPC request from the backend
 	 * @param activityId - Optional activity ID for tracking edits
 	 */
@@ -70,6 +78,16 @@ export class VaultRpcHandler {
 	 * Read file content from vault
 	 */
 	private async vaultRead(path: string): Promise<{ content: string }> {
+		// Dotfiles aren't indexed by Obsidian — use adapter directly
+		if (this.isDotfilePath(path)) {
+			const adapter = this.app.vault.adapter;
+			if (!(await adapter.exists(path))) {
+				throw new Error(`File not found: ${path}`);
+			}
+			const content = await adapter.read(path);
+			return { content };
+		}
+
 		const file = this.app.vault.getAbstractFileByPath(path);
 
 		if (!file) {
@@ -93,6 +111,29 @@ export class VaultRpcHandler {
 		content: string,
 		activityId?: string
 	): Promise<{ success: boolean }> {
+		// Dotfiles aren't indexed by Obsidian — use adapter directly
+		if (this.isDotfilePath(path)) {
+			const adapter = this.app.vault.adapter;
+			const exists = await adapter.exists(path);
+			if (exists && activityId) {
+				try {
+					const oldContent = await adapter.read(path);
+					getEditHistory(this.app).recordBefore(path, oldContent, activityId);
+				} catch (e) {
+					console.warn('[VaultRpcHandler] Failed to record snapshot:', e);
+				}
+			} else if (!exists && activityId) {
+				getEditHistory(this.app).recordBefore(path, '', activityId);
+			}
+			// Ensure parent directory exists
+			const folderPath = path.substring(0, path.lastIndexOf('/'));
+			if (folderPath && !(await adapter.exists(folderPath))) {
+				await adapter.mkdir(folderPath);
+			}
+			await adapter.write(path, content);
+			return { success: true };
+		}
+
 		const existingFile = this.app.vault.getAbstractFileByPath(path);
 
 		if (existingFile instanceof TFile) {
@@ -136,6 +177,37 @@ export class VaultRpcHandler {
 		newString: string,
 		activityId?: string
 	): Promise<{ success: boolean }> {
+		// Dotfiles aren't indexed by Obsidian — use adapter directly
+		if (this.isDotfilePath(path)) {
+			const adapter = this.app.vault.adapter;
+			if (!(await adapter.exists(path))) {
+				throw new Error(`File not found: ${path}`);
+			}
+			const content = await adapter.read(path);
+
+			if (!content.includes(oldString)) {
+				throw new Error(
+					`String not found in file. Make sure old_string matches exactly (including whitespace).`
+				);
+			}
+			const occurrences = content.split(oldString).length - 1;
+			if (occurrences > 1) {
+				throw new Error(
+					`String appears ${occurrences} times in file. Provide more context to make it unique.`
+				);
+			}
+			if (activityId) {
+				try {
+					getEditHistory(this.app).recordBefore(path, content, activityId);
+				} catch (e) {
+					console.warn('[VaultRpcHandler] Failed to record snapshot:', e);
+				}
+			}
+			const newContent = content.replace(oldString, newString);
+			await adapter.write(path, newContent);
+			return { success: true };
+		}
+
 		const file = this.app.vault.getAbstractFileByPath(path);
 
 		if (!file) {
