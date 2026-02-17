@@ -175,7 +175,8 @@ export class WebSocketClient {
 		handlers: StreamingHandlers,
 		context?: AgentContext,
 		systemPrompt?: string,
-		model?: string
+		model?: string,
+		images?: Array<{ mimeType: string; base64Data: string }>
 	): Promise<string> {
 		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
 			throw new Error('Not connected to backend');
@@ -191,6 +192,7 @@ export class WebSocketClient {
 			context,
 			systemPrompt,
 			model,
+			...(images && images.length > 0 ? { images } : {}),
 		};
 
 		this.send(message);

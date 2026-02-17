@@ -100,9 +100,12 @@ export class PromptGenerator {
         ? await this.getCurrentFileMessage(currentFile)
         : undefined
 
+    const memoryMessage = await this.getMemoryMessage()
+
     const requestMessages: RequestMessage[] = [
       systemMessage,
       ...(customInstructionMessage ? [customInstructionMessage] : []),
+      ...(memoryMessage ? [memoryMessage] : []),
       ...(currentFileMessage ? [currentFileMessage] : []),
       ...this.getChatHistoryMessages({ messages: compiledMessages }),
       ...(shouldUseRAG && this.getModelPromptLevel() == PromptLevel.Default
@@ -268,6 +271,59 @@ ${message.annotations
       const query = editorStateToPlainText(message.content)
       let similaritySearchResults = undefined
 
+      // Backend provider: skip file reading and RAG — the agent has vault_read
+      if (this.isBackendProvider()) {
+        const imgCount = message.mentionables.filter(m => m.type === 'image').length
+        console.log('[ImageFlow] compileUserMessagePrompt (backend): mentionables =', message.mentionables.length, ', images =', imgCount)
+        const files = message.mentionables
+          .filter((m): m is MentionableFile => m.type === 'file')
+          .map((m) => m.file)
+        const folders = message.mentionables
+          .filter((m): m is MentionableFolder => m.type === 'folder')
+          .map((m) => m.folder)
+        const nestedFiles = folders.flatMap((folder) =>
+          getNestedFiles(folder, this.app.vault),
+        )
+        const allFiles = [...files, ...nestedFiles]
+
+        const filePrompt =
+          allFiles.length > 0
+            ? `## Referenced Files\nThe user mentioned these files. Use vault_read to read them if needed:\n${allFiles.map((f) => `- ${f.path}`).join('\n')}\n\n`
+            : ''
+
+        const blocks = message.mentionables.filter(
+          (m): m is MentionableBlock => m.type === 'block',
+        )
+        const blockPrompt = blocks
+          .map(({ file, content }) => {
+            return `\`\`\`${file.path}\n${content}\n\`\`\`\n`
+          })
+          .join('')
+
+        const imageDataUrls = message.mentionables
+          .filter((m): m is MentionableImage => m.type === 'image')
+          .map(({ data }) => data)
+
+        onQueryProgressChange?.({ type: 'idle' })
+
+        return {
+          promptContent: [
+            ...imageDataUrls.map(
+              (data): ContentPart => ({
+                type: 'image_url',
+                image_url: { url: data },
+              }),
+            ),
+            {
+              type: 'text',
+              text: `${filePrompt}${blockPrompt}\n\n${query}\n\n`,
+            },
+          ],
+          shouldUseRAG: false,
+        }
+      }
+
+      // Non-backend providers: original file reading + RAG behavior
       useVaultSearch =
         // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         useVaultSearch ||
@@ -499,9 +555,46 @@ ${customInstruction}
     }
   }
 
+  private async getMemoryMessage(): Promise<RequestMessage | null> {
+    try {
+      const memoryFile = this.app.vault.getAbstractFileByPath('.claude/memory.md')
+      if (!memoryFile || !(memoryFile instanceof TFile)) {
+        return null
+      }
+      const content = await readTFileContent(memoryFile, this.app.vault)
+      if (!content?.trim()) {
+        return null
+      }
+      return {
+        role: 'user',
+        content: `Here is persistent memory from past conversations. Use it for context continuity — there's no need to explicitly acknowledge it:
+<persistent_memory>
+${content}
+</persistent_memory>`,
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private static readonly TEXT_EXTENSIONS = new Set([
+    'md', 'txt', 'markdown', 'csv', 'json', 'yaml', 'yml', 'xml', 'html',
+    'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'java', 'c', 'cpp',
+    'h', 'hpp', 'rs', 'go', 'sh', 'bash', 'zsh', 'sql', 'r', 'lua', 'swift',
+    'kt', 'scala', 'toml', 'ini', 'cfg', 'conf', 'env', 'log', 'tex',
+    'bib', 'org', 'rst', 'adoc', 'mdx', 'svelte', 'vue', 'php',
+  ])
+
+  private isTextFile(file: TFile): boolean {
+    return PromptGenerator.TEXT_EXTENSIONS.has(file.extension.toLowerCase())
+  }
+
   private async getCurrentFileMessage(
     currentFile: TFile,
-  ): Promise<RequestMessage> {
+  ): Promise<RequestMessage | undefined> {
+    if (!this.isTextFile(currentFile)) {
+      return undefined
+    }
     const fileContent = await readTFileContent(currentFile, this.app.vault)
     return {
       role: 'user',
@@ -560,6 +653,13 @@ ${transcript.map((t) => `${t.offset}: ${t.text}`).join('\n')}`
 
     const response = await requestUrl({ url })
     return htmlToMarkdown(response.text)
+  }
+
+  public isBackendProvider(): boolean {
+    const chatModel = this.settings.chatModels.find(
+      (model) => model.id === this.settings.chatModelId,
+    )
+    return chatModel?.providerType === 'backend'
   }
 
   private getModelPromptLevel(): PromptLevel {
