@@ -239,8 +239,32 @@ export default function AssistantToolMessageGroupItem({
     (m) => m.role === 'assistant' && m.contentBlocks && m.contentBlocks.length > 0,
   )
 
+  // Determine if we're in the initial waiting state (streaming but nothing to show yet)
+  const hasAnyContent = messages.some((m) => {
+    if (m.role === 'assistant') {
+      return (
+        (m.content && m.content.length > 0) ||
+        (m.contentBlocks && m.contentBlocks.length > 0) ||
+        m.reasoning ||
+        m.annotations ||
+        (m.activities && m.activities.length > 0)
+      )
+    }
+    return m.role === 'tool'
+  })
+  const showThinkingIndicator = isStreaming && !hasAnyContent && allActivities.length === 0
+
   return (
     <div className="smtcmp-assistant-tool-message-group">
+      {showThinkingIndicator && (
+        <div className="smtcmp-thinking-indicator">
+          <div className="smtcmp-thinking-indicator-dots">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      )}
       {hasContentBlocks ? (
         // Interspersed layout: text and activities in chronological order
         messages.map((message) => {
@@ -248,7 +272,7 @@ export default function AssistantToolMessageGroupItem({
             return (
               <React.Fragment key={message.id}>
                 {message.reasoning && (
-                  <AssistantMessageReasoning reasoning={message.reasoning} />
+                  <AssistantMessageReasoning reasoning={message.reasoning} isStreaming={isStreaming} />
                 )}
                 {message.annotations && (
                   <AssistantMessageAnnotations
@@ -297,7 +321,7 @@ export default function AssistantToolMessageGroupItem({
               return (
                 <div key={message.id} className="smtcmp-chat-messages-assistant">
                   {message.reasoning && (
-                    <AssistantMessageReasoning reasoning={message.reasoning} />
+                    <AssistantMessageReasoning reasoning={message.reasoning} isStreaming={isStreaming} />
                   )}
                   {message.annotations && (
                     <AssistantMessageAnnotations
