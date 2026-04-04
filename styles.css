@@ -1928,6 +1928,46 @@ button.smtcmp-chat-input-model-select {
   padding-left: var(--size-4-4);
 }
 
+/* Thinking Indicator — shown while waiting for first token */
+.smtcmp-thinking-indicator {
+  display: flex;
+  align-items: center;
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+.smtcmp-thinking-indicator-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.smtcmp-thinking-indicator-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: smtcmp-thinking-pulse 1.4s ease-in-out infinite;
+}
+
+.smtcmp-thinking-indicator-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.smtcmp-thinking-indicator-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes smtcmp-thinking-pulse {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* Activity Accordion (Cursor-style) */
 .smtcmp-activity-accordion {
   display: flex;

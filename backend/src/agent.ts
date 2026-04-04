@@ -334,11 +334,23 @@ export async function* runAgent(
       },
     });
 
+    // The Agent SDK strips thinking blocks — it handles them internally and
+    // only forwards text/tool events. Emit a synthetic "thinking" event so
+    // the UI can show a thinking indicator during the wait for first content.
+    let emittedSyntheticThinking = false;
+
     for await (const message of queryStream) {
       heartbeat(); // SDK yielded a message = alive
 
       // Drain tool_end events pushed by vault tool handlers
       yield* drainToolEvents();
+
+      // Emit synthetic thinking event on the first SDK message (system/init)
+      // so the UI immediately shows a thinking indicator.
+      if (!emittedSyntheticThinking) {
+        emittedSyntheticThinking = true;
+        yield { type: 'thinking' as const, text: '' };
+      }
 
       switch (message.type) {
         case 'stream_event': {
