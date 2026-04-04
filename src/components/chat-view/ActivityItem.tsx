@@ -19,6 +19,7 @@ export interface ActivityItemProps {
   activity: ActivityEvent
   label: string
   icon: LucideIcon
+  isStreaming?: boolean
 }
 
 /**
@@ -68,13 +69,17 @@ const ActivityItem = memo(function ActivityItem({
   activity,
   label,
   icon: Icon,
+  isStreaming = true,
 }: ActivityItemProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [elapsed, setElapsed] = useState(0)
 
-  // Live timer for running activities
+  // Live timer for running activities.
+  // Stops when activity.status changes OR when streaming ends (defensive).
+  const isRunning = activity.status === 'running' && isStreaming
   useEffect(() => {
-    if (activity.status === 'running') {
+    if (isRunning) {
+      setElapsed(Date.now() - activity.startTime)
       const interval = setInterval(() => {
         setElapsed(Date.now() - activity.startTime)
       }, 1000)
@@ -82,7 +87,7 @@ const ActivityItem = memo(function ActivityItem({
     } else if (activity.endTime) {
       setElapsed(activity.endTime - activity.startTime)
     }
-  }, [activity.status, activity.startTime, activity.endTime])
+  }, [isRunning, activity.startTime, activity.endTime])
 
   // Check if this activity has expandable content
   const hasDetails =
@@ -93,7 +98,7 @@ const ActivityItem = memo(function ActivityItem({
   // Special handling for thinking - show timer in label
   const displayLabel =
     activity.type === 'thinking'
-      ? activity.status === 'running'
+      ? isRunning
         ? `Thinking for ${formatElapsed(elapsed)}...`
         : `Thought for ${formatElapsed(elapsed)}`
       : label
@@ -133,7 +138,7 @@ const ActivityItem = memo(function ActivityItem({
       className={clsx(
         'smtcmp-activity-item',
         `smtcmp-activity-item--${activity.type}`,
-        activity.status === 'running' && 'smtcmp-activity-item--running',
+        isRunning && 'smtcmp-activity-item--running',
         activity.status === 'error' && 'smtcmp-activity-item--error',
       )}
     >
@@ -157,7 +162,7 @@ const ActivityItem = memo(function ActivityItem({
           <Icon size={14} />
         </span>
         <span className="smtcmp-activity-item-label">{renderLabel()}</span>
-        {activity.status === 'running' && activity.type !== 'thinking' && (
+        {isRunning && activity.type !== 'thinking' && (
           <span className="smtcmp-activity-item-timer">{formatElapsed(elapsed)}</span>
         )}
       </div>

@@ -231,6 +231,7 @@ const ActivityAccordion = memo(function ActivityAccordion({
                   activity={activity}
                   label={getActivityLabel(activity)}
                   icon={getActivityIcon(activity.type)}
+                  isStreaming={isStreaming}
                 />
               ))}
             </div>
