@@ -3,6 +3,11 @@
  *
  * Handles connections from the Obsidian plugin, routes messages,
  * and manages the bidirectional RPC protocol.
+ *
+ * Sessions decouple agent lifetime from WebSocket connections:
+ * - Each prompt creates a Session that buffers all events
+ * - If the client disconnects, the agent keeps running
+ * - On reconnect, the client can resume and replay buffered events
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
@@ -12,18 +17,19 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { runAgent } from './agent.js';
 import { runMockAgent } from './mock-agent.js';
 import { logger } from './utils.js';
+import { SessionStore, Session, type RpcSender } from './session-store.js';
 
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
 import type {
   ClientMessage,
   ServerMessage,
+  AgentEvent,
   PromptMessage,
   RpcResponseMessage,
   CancelMessage,
-  VaultBridge,
-  SearchResult,
-  FileInfo,
-  GrepResult,
+  SessionResumeMessage,
+  SessionListMessage,
+  SessionCancelMessage,
 } from './protocol.js';
 
 const AUTH_TOKEN = process.env.AUTH_TOKEN || 'dev-token';
@@ -36,14 +42,22 @@ interface PendingRpc {
 }
 
 /**
- * Handles a single WebSocket connection
+ * Handles a single WebSocket connection.
+ *
+ * A connection may subscribe to multiple sessions. When the connection
+ * closes, sessions continue running — only the live-streaming link is severed.
  */
-class ConnectionHandler {
+class ConnectionHandler implements RpcSender {
   private pendingRpcs = new Map<string, PendingRpc>();
-  private activeRequests = new Map<string, AbortController>();
   private lastActivity = Date.now();
 
-  constructor(private ws: WebSocket) {
+  /** sessionId -> unsubscribe function for live event streaming */
+  private sessionSubs = new Map<string, () => void>();
+
+  constructor(
+    private ws: WebSocket,
+    private sessionStore: SessionStore,
+  ) {
     ws.on('message', (data) => {
       this.lastActivity = Date.now();
       this.handleMessage(data.toString());
@@ -52,14 +66,8 @@ class ConnectionHandler {
     ws.on('error', (err) => logger.error('WebSocket error:', err));
   }
 
-  /**
-   * Check if the connection is still alive based on last message activity.
-   * Uses application-level pings (not protocol-level) since Railway's proxy
-   * doesn't forward WebSocket ping/pong frames.
-   */
   checkAlive(): boolean {
     const inactiveMs = Date.now() - this.lastActivity;
-    // Allow 90 seconds of inactivity (plugin sends app-level pings every 30s)
     if (inactiveMs > 90000) {
       logger.warn(`Connection inactive for ${Math.round(inactiveMs / 1000)}s, terminating`);
       this.ws.terminate();
@@ -81,7 +89,7 @@ class ConnectionHandler {
 
     switch (msg.type) {
       case 'prompt':
-        await this.handlePrompt(msg);
+        this.handlePrompt(msg);
         break;
       case 'rpc_response':
         this.handleRpcResponse(msg);
@@ -89,113 +97,153 @@ class ConnectionHandler {
       case 'cancel':
         this.handleCancel(msg);
         break;
+      case 'session_resume':
+        this.handleSessionResume(msg);
+        break;
+      case 'session_list':
+        this.handleSessionList(msg);
+        break;
+      case 'session_cancel':
+        this.handleSessionCancel(msg);
+        break;
       case 'ping':
         this.send({ type: 'pong' });
         break;
     }
   }
 
-  private async handlePrompt(msg: PromptMessage) {
-    const abortController = new AbortController();
-    this.activeRequests.set(msg.id, abortController);
-    let completeSent = false;
+  // --------------------------------------------------------------------------
+  // Prompt → Session creation
+  // --------------------------------------------------------------------------
 
-    logger.info(`Processing prompt request ${msg.id}`);
+  private handlePrompt(msg: PromptMessage) {
+    const clientId = msg.clientId || 'anonymous';
+    const conversationId = msg.conversationId || msg.id;
+
+    // Create a session that outlives this connection
+    const session = this.sessionStore.create({
+      conversationId,
+      clientId,
+      prompt: msg.prompt,
+      model: msg.model || '',
+      sender: this,
+    });
+
+    // Tell the client about the session ID
+    this.send({
+      type: 'session_created',
+      requestId: msg.id,
+      sessionId: session.id,
+    });
+
+    // Subscribe to live events — forward to client as ServerMessages
+    const unsub = session.subscribe((event) => {
+      this.sendAgentEvent(msg.id, event);
+    });
+    this.sessionSubs.set(session.id, unsub);
+
+    // Start the agent in the background (don't await — runs independently)
+    this.runAgentForSession(session, msg).catch((err) => {
+      logger.error(`Agent runner failed for session ${session.id}:`, err);
+    });
+
+    logger.info(`Session ${session.id} started for prompt ${msg.id}`);
+  }
+
+  private async runAgentForSession(session: Session, msg: PromptMessage) {
+    const agentRunner = MOCK_MODE ? runMockAgent : runAgent;
 
     try {
-      // Create vault bridge that sends RPC requests to plugin
-      const vaultBridge = this.createVaultBridge();
-
-      // Use mock agent in mock mode, real agent otherwise
-      const agentRunner = MOCK_MODE ? runMockAgent : runAgent;
-
       for await (const event of agentRunner(
         msg.prompt,
-        vaultBridge,
+        session.bridge,
         msg.context,
-        abortController.signal,
+        session.signal,
         msg.systemPrompt,
         msg.model,
-        msg.images
+        msg.images,
       )) {
-        if (abortController.signal.aborted) {
-          logger.info(`Request ${msg.id} was cancelled`);
+        if (session.signal.aborted) {
+          logger.info(`Session ${session.id} was cancelled`);
           break;
         }
-
-        switch (event.type) {
-          case 'text_delta':
-            this.send({
-              type: 'text_delta',
-              requestId: msg.id,
-              text: event.text,
-            });
-            break;
-          case 'tool_start':
-            this.send({
-              type: 'tool_start',
-              requestId: msg.id,
-              toolName: event.name,
-              toolInput: event.input,
-            });
-            break;
-          case 'tool_end':
-            this.send({
-              type: 'tool_end',
-              requestId: msg.id,
-              toolName: event.name,
-              result: event.result,
-            });
-            break;
-          case 'thinking':
-            this.send({
-              type: 'thinking',
-              requestId: msg.id,
-              text: event.text,
-            });
-            break;
-          case 'complete':
-            completeSent = true;
-            this.send({
-              type: 'complete',
-              requestId: msg.id,
-              result: event.result,
-            });
-            break;
-          case 'error':
-            this.send({
-              type: 'error',
-              requestId: msg.id,
-              code: event.code,
-              message: event.message,
-            });
-            break;
-        }
+        session.pushEvent(event);
       }
 
-      logger.info(`Completed prompt request ${msg.id}`);
+      // Ensure a complete event is in the buffer
+      const hasComplete = session.events.some(e => e.type === 'complete');
+      if (!hasComplete) {
+        session.pushEvent({ type: 'complete', result: '' });
+      }
+
+      session.markComplete();
     } catch (err) {
-      logger.error(`Error processing prompt ${msg.id}:`, err);
-      this.send({
-        type: 'error',
-        requestId: msg.id,
-        code: 'AGENT_ERROR',
-        message: err instanceof Error ? err.message : 'Unknown error',
-      });
-    } finally {
-      // Safety net: only send complete if the agent didn't already send one.
-      // Previously this always fired, which could race with tool_end events
-      // and cause the client to delete handlers before processing them.
-      if (!completeSent) {
-        this.send({
-          type: 'complete',
-          requestId: msg.id,
-          result: '',
-        });
-      }
-      this.activeRequests.delete(msg.id);
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      session.pushEvent({ type: 'error', code: 'AGENT_ERROR', message: errMsg });
+      session.markError(errMsg);
     }
   }
+
+  // --------------------------------------------------------------------------
+  // Session resume / list / cancel
+  // --------------------------------------------------------------------------
+
+  private handleSessionResume(msg: SessionResumeMessage) {
+    const session = this.sessionStore.get(msg.sessionId);
+    if (!session) {
+      this.send({ type: 'error', code: 'SESSION_NOT_FOUND', message: `Session ${msg.sessionId} not found or expired` });
+      return;
+    }
+
+    logger.info(`Resuming session ${session.id} (${session.events.length} buffered events, status: ${session.status})`);
+
+    // Send all buffered events as a batch
+    this.send({
+      type: 'session_replay',
+      sessionId: session.id,
+      conversationId: session.conversationId,
+      events: session.events,
+      isComplete: session.status !== 'running',
+    });
+
+    // If still running, subscribe to live events and reattach vault bridge
+    if (session.status === 'running') {
+      session.attachBridge(this);
+
+      // Clean up any previous subscription for this session
+      const prevUnsub = this.sessionSubs.get(session.id);
+      if (prevUnsub) prevUnsub();
+
+      const unsub = session.subscribe((event) => {
+        // Use session.id as requestId for resumed sessions
+        this.sendAgentEvent(session.id, event);
+      });
+      this.sessionSubs.set(session.id, unsub);
+    }
+  }
+
+  private handleSessionList(msg: SessionListMessage) {
+    const sessions = this.sessionStore.getByClientId(msg.clientId);
+    for (const session of sessions) {
+      const info = session.toInfo();
+      this.send({
+        type: 'session_info',
+        ...info,
+      });
+    }
+  }
+
+  private handleSessionCancel(msg: SessionCancelMessage) {
+    const session = this.sessionStore.get(msg.sessionId);
+    if (session) {
+      logger.info(`Cancelling session ${session.id}`);
+      session.cancel();
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // RPC handling (vault bridge)
+  // --------------------------------------------------------------------------
 
   private handleRpcResponse(msg: RpcResponseMessage) {
     const pending = this.pendingRpcs.get(msg.id);
@@ -215,22 +263,22 @@ class ConnectionHandler {
   }
 
   private handleCancel(msg: CancelMessage) {
-    const controller = this.activeRequests.get(msg.id);
-    if (controller) {
-      logger.info(`Cancelling request ${msg.id}`);
-      controller.abort();
+    // Legacy cancel by requestId — find session and cancel it
+    // Also check if it matches a session ID directly
+    const session = this.sessionStore.get(msg.id);
+    if (session) {
+      session.cancel();
     }
   }
 
-  /**
-   * Send RPC request to plugin and wait for response
-   */
-  async sendRpc<T>(
-    method: string,
-    params: Record<string, unknown>
-  ): Promise<T> {
+  /** Send RPC request to plugin and wait for response (implements RpcSender) */
+  async sendRpc<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('Client disconnected — vault operations unavailable');
+    }
+
     const id = randomUUID();
-    const RPC_TIMEOUT = 60000; // 60 seconds
+    const RPC_TIMEOUT = 60000;
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -249,53 +297,32 @@ class ConnectionHandler {
     });
   }
 
-  private createVaultBridge(): VaultBridge {
-    return {
-      read: async (path: string): Promise<string> => {
-        const result = await this.sendRpc<{ content: string }>(
-          'vault_read',
-          { path }
-        );
-        return result.content;
-      },
-      write: async (path: string, content: string): Promise<void> => {
-        await this.sendRpc('vault_write', { path, content });
-      },
-      edit: async (path: string, oldString: string, newString: string): Promise<void> => {
-        await this.sendRpc('vault_edit', { path, old_string: oldString, new_string: newString });
-      },
-      search: async (
-        query: string,
-        limit: number = 20
-      ): Promise<SearchResult[]> => {
-        return this.sendRpc<SearchResult[]>('vault_search', { query, limit });
-      },
-      grep: async (
-        pattern: string,
-        folder?: string,
-        filePattern?: string,
-        limit: number = 50
-      ): Promise<GrepResult[]> => {
-        return this.sendRpc<GrepResult[]>('vault_grep', {
-          pattern,
-          folder: folder || '',
-          file_pattern: filePattern || '*.md',
-          limit
-        });
-      },
-      glob: async (pattern: string): Promise<string[]> => {
-        return this.sendRpc<string[]>('vault_glob', { pattern });
-      },
-      list: async (folder: string): Promise<FileInfo[]> => {
-        return this.sendRpc<FileInfo[]>('vault_list', { folder });
-      },
-      rename: async (oldPath: string, newPath: string): Promise<void> => {
-        await this.sendRpc('vault_rename', { old_path: oldPath, new_path: newPath });
-      },
-      delete: async (path: string): Promise<void> => {
-        await this.sendRpc('vault_delete', { path });
-      },
-    };
+  // --------------------------------------------------------------------------
+  // Sending
+  // --------------------------------------------------------------------------
+
+  /** Convert an AgentEvent to a ServerMessage and send it */
+  private sendAgentEvent(requestId: string, event: AgentEvent) {
+    switch (event.type) {
+      case 'text_delta':
+        this.send({ type: 'text_delta', requestId, text: event.text });
+        break;
+      case 'tool_start':
+        this.send({ type: 'tool_start', requestId, toolName: event.name, toolInput: event.input });
+        break;
+      case 'tool_end':
+        this.send({ type: 'tool_end', requestId, toolName: event.name, result: event.result });
+        break;
+      case 'thinking':
+        this.send({ type: 'thinking', requestId, text: event.text });
+        break;
+      case 'complete':
+        this.send({ type: 'complete', requestId, result: event.result });
+        break;
+      case 'error':
+        this.send({ type: 'error', requestId, code: event.code, message: event.message });
+        break;
+    }
   }
 
   private send(msg: ServerMessage) {
@@ -304,21 +331,31 @@ class ConnectionHandler {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // Cleanup on disconnect
+  // --------------------------------------------------------------------------
+
   private cleanup() {
     logger.info('Connection closed, cleaning up');
 
-    // Cancel all pending RPCs
+    // Reject all pending RPCs (in-flight vault operations)
     for (const [id, pending] of this.pendingRpcs) {
       clearTimeout(pending.timeout);
       pending.reject(new Error('Connection closed'));
     }
     this.pendingRpcs.clear();
 
-    // Abort all active requests
-    for (const controller of this.activeRequests.values()) {
-      controller.abort();
+    // Unsubscribe from all sessions and detach their vault bridges.
+    // Sessions themselves keep running — only the live-streaming link is severed.
+    for (const [sessionId, unsub] of this.sessionSubs) {
+      unsub();
+      const session = this.sessionStore.get(sessionId);
+      if (session && session.status === 'running') {
+        session.detachBridge();
+        logger.info(`Session ${sessionId} detached from connection (still running)`);
+      }
     }
-    this.activeRequests.clear();
+    this.sessionSubs.clear();
   }
 }
 
@@ -327,25 +364,25 @@ class ConnectionHandler {
  */
 export function startServer(): Server {
   const connections = new Map<WebSocket, ConnectionHandler>();
+  const sessionStore = new SessionStore();
 
-  // Create HTTP server for health checks
   const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-    // Health check endpoint
     if (req.url === '/health' || req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', mock: MOCK_MODE }));
+      res.end(JSON.stringify({
+        status: 'ok',
+        mock: MOCK_MODE,
+        sessions: sessionStore.size,
+      }));
       return;
     }
 
-    // 404 for other routes
     res.writeHead(404);
     res.end('Not Found');
   });
 
-  // Create WebSocket server attached to HTTP server
   const wss = new WebSocketServer({ server: httpServer });
 
-  // Heartbeat interval to detect dead connections
   const heartbeatInterval = setInterval(() => {
     for (const [ws, handler] of connections) {
       if (!handler.checkAlive()) {
@@ -355,7 +392,6 @@ export function startServer(): Server {
   }, 30000);
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    // Simple token auth via query param
     const url = new URL(req.url || '', `http://localhost:${PORT}`);
     const token = url.searchParams.get('token');
 
@@ -366,7 +402,7 @@ export function startServer(): Server {
     }
 
     logger.info('Client connected');
-    const handler = new ConnectionHandler(ws);
+    const handler = new ConnectionHandler(ws, sessionStore);
     connections.set(ws, handler);
 
     ws.on('close', () => {
@@ -377,6 +413,7 @@ export function startServer(): Server {
 
   wss.on('close', () => {
     clearInterval(heartbeatInterval);
+    sessionStore.destroy();
   });
 
   httpServer.listen(PORT, () => {

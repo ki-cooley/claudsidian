@@ -23,6 +23,9 @@ import { ConflictManager } from './core/backend/ConflictManager'
 import { initEditHistory } from './core/backend/EditHistory'
 import type { RpcRequestMessage } from './core/backend/protocol'
 import { StreamStateManager } from './core/backend/StreamStateManager'
+import { PendingSessionStore } from './core/backend/PendingSessionStore'
+import { getClientId } from './core/backend/client-id'
+import type { SessionReplayMessage } from './core/backend/protocol'
 
 export default class SmartComposerPlugin extends Plugin {
   settings: SmartComposerSettings
@@ -34,6 +37,8 @@ export default class SmartComposerPlugin extends Plugin {
   vaultRpcHandler: VaultRpcHandler | null = null
   conflictManager: ConflictManager | null = null
   streamStateManager: StreamStateManager = new StreamStateManager()
+  pendingSessionStore: PendingSessionStore
+  clientId: string | null = null
   private dbManagerInitPromise: Promise<DatabaseManager> | null = null
   private ragEngineInitPromise: Promise<RAGEngine> | null = null
   private timeoutIds: ReturnType<typeof setTimeout>[] = [] // Use ReturnType instead of number
@@ -44,7 +49,11 @@ export default class SmartComposerPlugin extends Plugin {
     // Initialize backend components
     this.conflictManager = new ConflictManager(this.app)
     this.vaultRpcHandler = new VaultRpcHandler(this.app)
+    this.pendingSessionStore = new PendingSessionStore(this.app)
     initEditHistory(this.app, 5) // Store up to 5 versions per file for revert
+
+    // Load client ID and pending sessions
+    void this.initSessionPersistence()
 
     // Wire RPC handler to respond to backend requests
     // Note: tool_start/tool_end events are sent by the backend server itself,
@@ -395,6 +404,58 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
     await this.activateChatView()
   }
 
+  /**
+   * Initialize client ID and pending session store.
+   * After backend connects, resume any pending sessions.
+   */
+  private async initSessionPersistence() {
+    try {
+      this.clientId = await getClientId(this.app)
+      await this.pendingSessionStore.load()
+      console.log(`[Claudsidian] Client ID: ${this.clientId}, pending sessions: ${this.pendingSessionStore.getAll().length}`)
+    } catch (err) {
+      console.error('[Claudsidian] Failed to init session persistence:', err)
+    }
+  }
+
+  /**
+   * Resume pending sessions after backend connects.
+   * Called from connectBackend after successful connection.
+   */
+  private async resumePendingSessions() {
+    if (!this.clientId) return
+
+    const pending = this.pendingSessionStore.getAll()
+    if (pending.length === 0) return
+
+    console.log(`[Claudsidian] Resuming ${pending.length} pending sessions`)
+
+    // Listen for session_replay events
+    const replayHandler = async (msg: unknown) => {
+      const replay = msg as SessionReplayMessage
+      console.log(`[Claudsidian] Session replay: ${replay.sessionId} (${replay.events.length} events, complete: ${replay.isComplete})`)
+
+      if (replay.isComplete) {
+        // Session finished — remove from pending
+        await this.pendingSessionStore.remove(replay.sessionId)
+      }
+
+      // Emit a custom event that Chat.tsx can listen for
+      webSocketClient.emit('session_recovered', replay)
+    }
+
+    webSocketClient.on('session_replay', replayHandler)
+
+    // Resume each pending session
+    for (const session of pending) {
+      webSocketClient.resumeSession(session.sessionId, this.clientId, {
+        onComplete: async () => {
+          await this.pendingSessionStore.remove(session.sessionId)
+        },
+      })
+    }
+  }
+
   private async initMemoryFile() {
     try {
       const adapter = this.app.vault.adapter
@@ -438,6 +499,9 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
         backendProvider.authToken,
       )
       new Notice('Connected to backend')
+
+      // Resume any pending sessions from before Obsidian was closed
+      void this.resumePendingSessions()
     } catch (error) {
       console.error('[SmartComposer] Failed to connect to backend:', error)
       new Notice(

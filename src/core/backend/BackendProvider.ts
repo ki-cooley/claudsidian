@@ -150,13 +150,18 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 	/**
 	 * Create an async generator that yields streaming chunks
 	 */
+	/** Callback set by the caller to receive the session ID */
+	private onSessionCreatedCallback?: (sessionId: string) => void
+
 	private async *createStreamGenerator(
 		prompt: string,
 		context?: { currentFile?: string; selection?: string },
 		options?: LLMOptions,
 		systemPrompt?: string,
 		model?: string,
-		images?: Array<{ mimeType: string; base64Data: string }>
+		images?: Array<{ mimeType: string; base64Data: string }>,
+		clientId?: string,
+		conversationId?: string,
 	): AsyncGenerator<LLMResponseStreaming> {
 		// State for accumulating responses
 		const toolCalls: Map<
@@ -224,6 +229,9 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 		const requestId = await this.wsClient.sendPrompt(
 			prompt,
 			{
+				onSessionCreated: (sessionId: string) => {
+					this.onSessionCreatedCallback?.(sessionId);
+				},
 				onTextDelta: (text: string) => {
 					// Track block boundary: close pending activity group when text starts
 					if (currentBlockType !== 'text') {
@@ -464,7 +472,9 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			context,
 			systemPrompt,
 			model,
-			images
+			images,
+			clientId,
+			conversationId,
 		);
 
 		// Yield chunks as they arrive

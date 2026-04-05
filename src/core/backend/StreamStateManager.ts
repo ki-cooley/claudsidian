@@ -14,10 +14,10 @@ interface ActiveStreamState {
  * Plugin-level manager that takes ownership of active streams when the
  * chat sidebar closes, then hands them back when it reopens.
  *
- * Holds at most one active stream at a time.
+ * Supports multiple simultaneous streams (one per conversation).
  */
 export class StreamStateManager {
-  private activeStream: ActiveStreamState | null = null
+  private activeStreams = new Map<string, ActiveStreamState>()
 
   /**
    * Called when the sidebar closes while a stream is still running.
@@ -29,8 +29,8 @@ export class StreamStateManager {
     responseGenerator: ResponseGenerator,
     currentResponseMessages: ChatMessage[],
   ): void {
-    // Clean up any previous detached stream
-    this.cleanup()
+    // Clean up any previous stream for this conversation
+    this.cleanupStream(conversationId)
 
     const state: ActiveStreamState = {
       conversationId,
@@ -45,7 +45,7 @@ export class StreamStateManager {
       state.responseMessages = responseMessages
     })
 
-    this.activeStream = state
+    this.activeStreams.set(conversationId, state)
   }
 
   /**
@@ -60,14 +60,8 @@ export class StreamStateManager {
     responseGenerator: ResponseGenerator
     isComplete: boolean
   } | null {
-    if (
-      !this.activeStream ||
-      this.activeStream.conversationId !== conversationId
-    ) {
-      return null
-    }
-
-    const state = this.activeStream
+    const state = this.activeStreams.get(conversationId)
+    if (!state) return null
 
     // Unsubscribe our listener — the React component will re-subscribe
     if (state.unsubscribe) {
@@ -82,37 +76,37 @@ export class StreamStateManager {
       isComplete: state.isComplete,
     }
 
-    this.activeStream = null
+    this.activeStreams.delete(conversationId)
     return result
   }
 
   /**
    * Called from the mutation's finally block when the stream completes.
-   * If we're holding a detached stream for this conversation, mark it
-   * complete so the next attach knows not to re-subscribe.
    */
   markComplete(conversationId: string): void {
-    if (
-      this.activeStream &&
-      this.activeStream.conversationId === conversationId
-    ) {
-      this.activeStream.isComplete = true
+    const state = this.activeStreams.get(conversationId)
+    if (state) {
+      state.isComplete = true
     }
   }
 
   hasActiveStream(conversationId: string): boolean {
-    return (
-      this.activeStream !== null &&
-      this.activeStream.conversationId === conversationId
-    )
+    return this.activeStreams.has(conversationId)
+  }
+
+  private cleanupStream(conversationId: string): void {
+    const state = this.activeStreams.get(conversationId)
+    if (state) {
+      if (state.unsubscribe) {
+        state.unsubscribe()
+      }
+      this.activeStreams.delete(conversationId)
+    }
   }
 
   cleanup(): void {
-    if (this.activeStream) {
-      if (this.activeStream.unsubscribe) {
-        this.activeStream.unsubscribe()
-      }
-      this.activeStream = null
+    for (const [id] of this.activeStreams) {
+      this.cleanupStream(id)
     }
   }
 }

@@ -46,6 +46,23 @@ export interface StreamingHandlers {
 	onThinking?: (text: string) => void;
 	onComplete?: (result: string) => void;
 	onError?: (code: string, message: string) => void;
+	onSessionCreated?: (sessionId: string) => void;
+}
+
+export interface SessionInfo {
+	sessionId: string;
+	conversationId: string;
+	status: 'running' | 'complete' | 'error';
+	createdAt: number;
+	completedAt?: number;
+	eventCount: number;
+}
+
+export interface SessionReplayData {
+	sessionId: string;
+	conversationId: string;
+	events: Array<{ type: string; [key: string]: unknown }>;
+	isComplete: boolean;
 }
 
 type EventHandler = (...args: unknown[]) => void;
@@ -176,7 +193,9 @@ export class WebSocketClient {
 		context?: AgentContext,
 		systemPrompt?: string,
 		model?: string,
-		images?: Array<{ mimeType: string; base64Data: string }>
+		images?: Array<{ mimeType: string; base64Data: string }>,
+		clientId?: string,
+		conversationId?: string,
 	): Promise<string> {
 		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
 			throw new Error('Not connected to backend');
@@ -193,6 +212,8 @@ export class WebSocketClient {
 			systemPrompt,
 			model,
 			...(images && images.length > 0 ? { images } : {}),
+			...(clientId ? { clientId } : {}),
+			...(conversationId ? { conversationId } : {}),
 		};
 
 		this.send(message);
@@ -361,6 +382,19 @@ export class WebSocketClient {
 				// Keepalive response, no action needed
 				break;
 			}
+			case 'session_created': {
+				const handler = this.activeHandlers.get(msg.requestId);
+				handler?.onSessionCreated?.(msg.sessionId);
+				break;
+			}
+			case 'session_replay': {
+				this.emit('session_replay', msg);
+				break;
+			}
+			case 'session_info': {
+				this.emit('session_info', msg);
+				break;
+			}
 		}
 	}
 
@@ -454,7 +488,40 @@ export class WebSocketClient {
 		}
 	}
 
-	private emit(event: string, ...args: unknown[]): void {
+	// --------------------------------------------------------------------------
+	// Session methods
+	// --------------------------------------------------------------------------
+
+	/**
+	 * Resume a session — server will replay buffered events via 'session_replay' event.
+	 * Also registers streaming handlers for live events if the session is still running.
+	 */
+	resumeSession(
+		sessionId: string,
+		clientId: string,
+		handlers: StreamingHandlers
+	): void {
+		// Register handlers so live events (after replay) are routed correctly.
+		// The server uses sessionId as requestId for resumed sessions.
+		this.activeHandlers.set(sessionId, handlers);
+		this.send({ type: 'session_resume', sessionId, clientId });
+	}
+
+	/**
+	 * List sessions for a client. Results arrive as 'session_info' events.
+	 */
+	listSessions(clientId: string): void {
+		this.send({ type: 'session_list', clientId });
+	}
+
+	/**
+	 * Cancel a session.
+	 */
+	cancelSession(sessionId: string): void {
+		this.send({ type: 'session_cancel', sessionId });
+	}
+
+	emit(event: string, ...args: unknown[]): void {
 		const handlers = this.eventHandlers.get(event);
 		if (handlers) {
 			for (const handler of handlers) {

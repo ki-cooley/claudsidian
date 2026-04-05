@@ -42,6 +42,10 @@ export interface PromptMessage {
   model?: string;
   /** Images to include as multimodal content */
   images?: Array<{ mimeType: string; base64Data: string }>;
+  /** Client workspace ID (enables session persistence across reconnects) */
+  clientId?: string;
+  /** Conversation ID in client's chat history */
+  conversationId?: string;
 }
 
 /** Response to an RPC request from server */
@@ -66,11 +70,33 @@ export interface PingMessage {
   type: 'ping';
 }
 
+/** Resume a previously created session */
+export interface SessionResumeMessage {
+  type: 'session_resume';
+  sessionId: string;
+  clientId: string;
+}
+
+/** List sessions for a client */
+export interface SessionListMessage {
+  type: 'session_list';
+  clientId: string;
+}
+
+/** Cancel a session (even if not connected to it) */
+export interface SessionCancelMessage {
+  type: 'session_cancel';
+  sessionId: string;
+}
+
 export type ClientMessage =
   | PromptMessage
   | RpcResponseMessage
   | CancelMessage
-  | PingMessage;
+  | PingMessage
+  | SessionResumeMessage
+  | SessionListMessage
+  | SessionCancelMessage;
 
 // ============================================================================
 // Server → Client Messages
@@ -129,6 +155,33 @@ export interface RpcRequestMessage {
   params: Record<string, unknown>;
 }
 
+/** Session was created for a prompt */
+export interface SessionCreatedMessage {
+  type: 'session_created';
+  requestId: string;
+  sessionId: string;
+}
+
+/** Batch replay of buffered session events */
+export interface SessionReplayMessage {
+  type: 'session_replay';
+  sessionId: string;
+  conversationId: string;
+  events: AgentEvent[];
+  isComplete: boolean;
+}
+
+/** Session info (response to session_list, one per session) */
+export interface SessionInfoMessage {
+  type: 'session_info';
+  sessionId: string;
+  conversationId: string;
+  status: 'running' | 'complete' | 'error';
+  createdAt: number;
+  completedAt?: number;
+  eventCount: number;
+}
+
 /** Keepalive response */
 export interface PongMessage {
   type: 'pong';
@@ -142,7 +195,10 @@ export type ServerMessage =
   | CompleteMessage
   | ErrorMessage
   | RpcRequestMessage
-  | PongMessage;
+  | PongMessage
+  | SessionCreatedMessage
+  | SessionReplayMessage
+  | SessionInfoMessage;
 
 // ============================================================================
 // Agent Events (internal)
