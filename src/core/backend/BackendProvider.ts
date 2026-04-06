@@ -77,13 +77,19 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 		// Create async generator to yield chunks
 		// If model is "backend-agent", let backend use its default model
 		const modelToUse = model.model === 'backend-agent' ? undefined : model.model;
+
+		// Wire session callback from options
+		this.onSessionCreatedCallback = options?.onSessionCreated;
+
 		const generator = this.createStreamGenerator(
 			prompt,
 			undefined,
 			options,
 			systemPrompt,
 			modelToUse,
-			images
+			images,
+			options?.clientId,
+			options?.conversationId,
 		);
 
 		return generator;

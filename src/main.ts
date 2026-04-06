@@ -25,7 +25,9 @@ import type { RpcRequestMessage } from './core/backend/protocol'
 import { StreamStateManager } from './core/backend/StreamStateManager'
 import { PendingSessionStore } from './core/backend/PendingSessionStore'
 import { getClientId } from './core/backend/client-id'
+import { eventsToMessages } from './core/backend/session-recovery'
 import type { SessionReplayMessage } from './core/backend/protocol'
+import { ChatManager } from './database/json/chat/ChatManager'
 
 export default class SmartComposerPlugin extends Plugin {
   settings: SmartComposerSettings
@@ -420,7 +422,8 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
 
   /**
    * Resume pending sessions after backend connects.
-   * Called from connectBackend after successful connection.
+   * Fetches buffered events from server, converts to messages,
+   * and saves them to conversation history.
    */
   private async resumePendingSessions() {
     if (!this.clientId) return
@@ -430,18 +433,53 @@ ${validationResult.error.issues.map((v) => v.message).join('\n')}`)
 
     console.log(`[Claudsidian] Resuming ${pending.length} pending sessions`)
 
+    const chatManager = new ChatManager(this.app)
+
     // Listen for session_replay events
     const replayHandler = async (msg: unknown) => {
       const replay = msg as SessionReplayMessage
-      console.log(`[Claudsidian] Session replay: ${replay.sessionId} (${replay.events.length} events, complete: ${replay.isComplete})`)
 
-      if (replay.isComplete) {
-        // Session finished — remove from pending
-        await this.pendingSessionStore.remove(replay.sessionId)
+      console.log(
+        `[Claudsidian] Session replay: ${replay.sessionId} ` +
+        `(${replay.events.length} events, complete: ${replay.isComplete})`
+      )
+
+      // Convert agent events to ChatMessages
+      const recoveredMessages = eventsToMessages(replay.events)
+
+      if (recoveredMessages.length > 0) {
+        // Load existing conversation and append recovered messages
+        try {
+          const conversation = await chatManager.findById(replay.conversationId)
+          if (conversation) {
+            // Serialize recovered messages (assistant-only, no TFile references)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const serialized = recoveredMessages.map((msg: any) => ({
+              role: msg.role,
+              content: msg.content || '',
+              id: msg.id,
+              reasoning: msg.reasoning,
+              activities: msg.activities,
+              contentBlocks: msg.contentBlocks,
+              annotations: msg.annotations,
+            }))
+            const updatedMessages = [...conversation.messages, ...serialized]
+            await chatManager.updateChat(conversation.id, { messages: updatedMessages as any })
+            console.log(
+              `[Claudsidian] Saved ${recoveredMessages.length} recovered messages ` +
+              `to conversation ${replay.conversationId}`
+            )
+          } else {
+            console.warn(`[Claudsidian] Conversation ${replay.conversationId} not found for recovery`)
+          }
+        } catch (err) {
+          console.error('[Claudsidian] Failed to save recovered messages:', err)
+        }
       }
 
-      // Emit a custom event that Chat.tsx can listen for
-      webSocketClient.emit('session_recovered', replay)
+      if (replay.isComplete) {
+        await this.pendingSessionStore.remove(replay.sessionId)
+      }
     }
 
     webSocketClient.on('session_replay', replayHandler)

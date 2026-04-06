@@ -83,6 +83,12 @@ export type RequestMessage =
 
 export type LLMOptions = {
   signal?: AbortSignal
+  /** Client workspace ID for session persistence (backend provider only) */
+  clientId?: string
+  /** Conversation ID for session persistence (backend provider only) */
+  conversationId?: string
+  /** Called when the server creates a session for this request */
+  onSessionCreated?: (sessionId: string) => void
 }
 
 export type RequestTool = {

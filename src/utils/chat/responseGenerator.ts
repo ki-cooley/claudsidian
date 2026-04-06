@@ -29,6 +29,10 @@ export type ResponseGeneratorParams = {
   promptGenerator: PromptGenerator
   mcpManager: McpManager
   abortSignal?: AbortSignal
+  /** Client workspace ID for session persistence */
+  clientId?: string
+  /** Called when the server creates a session for this request */
+  onSessionCreated?: (sessionId: string) => void
 }
 
 export class ResponseGenerator {
@@ -41,6 +45,8 @@ export class ResponseGenerator {
   private readonly abortSignal?: AbortSignal
   private readonly receivedMessages: ChatMessage[]
   private readonly maxAutoIterations: number
+  private readonly clientId?: string
+  private readonly onSessionCreated?: (sessionId: string) => void
 
   private responseMessages: ChatMessage[] = [] // Response messages that are generated after the initial messages
   private subscribers: ((messages: ChatMessage[]) => void)[] = []
@@ -55,6 +61,8 @@ export class ResponseGenerator {
     this.promptGenerator = params.promptGenerator
     this.mcpManager = params.mcpManager
     this.abortSignal = params.abortSignal
+    this.clientId = params.clientId
+    this.onSessionCreated = params.onSessionCreated
   }
 
   public subscribe(callback: (messages: ChatMessage[]) => void) {
@@ -179,6 +187,9 @@ export class ResponseGenerator {
       },
       {
         signal: this.abortSignal,
+        clientId: this.clientId,
+        conversationId: this.conversationId,
+        onSessionCreated: this.onSessionCreated,
       },
     )
 

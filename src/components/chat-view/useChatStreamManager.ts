@@ -6,6 +6,7 @@ import { useApp } from '../../contexts/app-context'
 import { useMcp } from '../../contexts/mcp-context'
 import { usePlugin } from '../../contexts/plugin-context'
 import { useSettings } from '../../contexts/settings-context'
+import { getClientId } from '../../core/backend/client-id'
 import {
   LLMAPIKeyInvalidException,
   LLMAPIKeyNotSetException,
@@ -150,6 +151,7 @@ export function useChatStreamManager({
 
       try {
         const mcpManager = await getMcpManager()
+        const clientId = await getClientId(app)
         const responseGenerator = new ResponseGenerator({
           providerClient,
           model,
@@ -160,6 +162,12 @@ export function useChatStreamManager({
           promptGenerator,
           mcpManager,
           abortSignal: abortController.signal,
+          clientId,
+          onSessionCreated: async (sessionId: string) => {
+            // Persist the session ID so we can resume after Obsidian restart
+            await plugin.pendingSessionStore.add(sessionId, conversationId)
+            console.log(`[Session] Persisted session ${sessionId} for conversation ${conversationId}`)
+          },
         })
 
         // Track the active stream for potential detachment
@@ -207,6 +215,12 @@ export function useChatStreamManager({
 
         // Notify StreamStateManager that this stream is complete
         plugin.streamStateManager.markComplete(conversationId)
+
+        // Remove from pending sessions — response completed successfully
+        const pendingSession = plugin.pendingSessionStore.getByConversation(conversationId)
+        if (pendingSession) {
+          void plugin.pendingSessionStore.remove(pendingSession.sessionId)
+        }
 
         // Clear tracking refs
         if (activeConversationIdRef.current === conversationId) {
