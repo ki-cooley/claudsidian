@@ -191,6 +191,11 @@ function cleanToolName(name: string): string {
 /**
  * Run the agent with streaming responses using the Claude Agent SDK
  */
+/** Return type includes the captured SDK session ID for multi-turn */
+export interface AgentRunResult {
+  sdkSessionId?: string;
+}
+
 export async function* runAgent(
   prompt: string,
   bridge: VaultBridge,
@@ -198,7 +203,11 @@ export async function* runAgent(
   signal?: AbortSignal,
   customSystemPrompt?: string,
   model?: string,
-  images?: Array<{ mimeType: string; base64Data: string }>
+  images?: Array<{ mimeType: string; base64Data: string }>,
+  /** If set, resume this SDK session (multi-turn follow-up) */
+  resumeSessionId?: string,
+  /** Callback to capture the SDK session ID from the first response */
+  onSdkSessionId?: (id: string) => void,
 ): AsyncGenerator<AgentEvent> {
   const selectedModel = model || DEFAULT_MODEL;
   logger.info(`Using model: ${selectedModel}`);
@@ -218,12 +227,14 @@ export async function* runAgent(
     signal.addEventListener('abort', () => abortController.abort());
   }
 
-  // Build system prompt with CLAUDE.md context
-  let systemPrompt = await buildSystemPrompt(bridge);
-
-  // Prepend custom system prompt if provided (from user settings)
-  if (customSystemPrompt?.trim()) {
-    systemPrompt = `${customSystemPrompt.trim()}\n\n${systemPrompt}`;
+  // Build system prompt with CLAUDE.md context (only on first turn;
+  // on resume, the SDK already has the system prompt from the prior session)
+  let systemPrompt: string | undefined;
+  if (!resumeSessionId) {
+    systemPrompt = await buildSystemPrompt(bridge);
+    if (customSystemPrompt?.trim()) {
+      systemPrompt = `${customSystemPrompt.trim()}\n\n${systemPrompt}`;
+    }
   }
 
   // Build context-aware prompt
@@ -315,11 +326,15 @@ export async function* runAgent(
   (activityCheck as any).unref?.();
 
   try {
+    if (resumeSessionId) {
+      logger.info(`Resuming SDK session: ${resumeSessionId}`);
+    }
+
     const queryStream = query({
       prompt: singlePrompt(),
       options: {
         model: selectedModel,
-        systemPrompt,
+        ...(systemPrompt ? { systemPrompt } : {}),
         mcpServers: mcpServers as Record<string, any>,
         allowedTools,
         maxTurns: MAX_TURNS,
@@ -327,6 +342,8 @@ export async function* runAgent(
         permissionMode: 'bypassPermissions' as const,
         includePartialMessages: true,
         thinking: { type: 'adaptive' },
+        // Multi-turn: resume a prior SDK session
+        ...(resumeSessionId ? { resume: resumeSessionId } : {}),
         stderr: (data: string) => {
           heartbeat(); // stderr output = activity
           logger.warn(`CLI stderr: ${data.trimEnd()}`);
@@ -379,6 +396,12 @@ export async function* runAgent(
         case 'assistant': {
           // Close any pending tools from the previous turn
           yield* closePendingTools();
+
+          // Capture SDK session ID for multi-turn support
+          if (onSdkSessionId && (message as any).session_id) {
+            onSdkSessionId((message as any).session_id);
+            onSdkSessionId = undefined; // Only capture once
+          }
 
           // Emit tool_start for each tool_use block (with full input)
           for (const block of message.message.content) {

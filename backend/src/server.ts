@@ -54,6 +54,9 @@ class ConnectionHandler implements RpcSender {
   /** sessionId -> unsubscribe function for live event streaming */
   private sessionSubs = new Map<string, () => void>();
 
+  /** conversationId -> SDK session ID for multi-turn context */
+  private static sdkSessions = new Map<string, string>();
+
   constructor(
     private ws: WebSocket,
     private sessionStore: SessionStore,
@@ -152,6 +155,14 @@ class ConnectionHandler implements RpcSender {
 
   private async runAgentForSession(session: Session, msg: PromptMessage) {
     const agentRunner = MOCK_MODE ? runMockAgent : runAgent;
+    const conversationId = msg.conversationId || msg.id;
+
+    // Check for existing SDK session (multi-turn follow-up)
+    const existingSdkSession = ConnectionHandler.sdkSessions.get(conversationId);
+
+    if (existingSdkSession) {
+      logger.info(`Multi-turn: resuming SDK session ${existingSdkSession} for conversation ${conversationId}`);
+    }
 
     try {
       for await (const event of agentRunner(
@@ -162,6 +173,12 @@ class ConnectionHandler implements RpcSender {
         msg.systemPrompt,
         msg.model,
         msg.images,
+        existingSdkSession,  // resumeSessionId (undefined on first turn)
+        (sdkId: string) => {
+          // Capture SDK session ID from first assistant message
+          ConnectionHandler.sdkSessions.set(conversationId, sdkId);
+          logger.info(`Captured SDK session ${sdkId} for conversation ${conversationId}`);
+        },
       )) {
         if (session.signal.aborted) {
           logger.info(`Session ${session.id} was cancelled`);

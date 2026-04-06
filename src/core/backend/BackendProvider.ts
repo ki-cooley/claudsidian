@@ -547,54 +547,46 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 	}
 
 	/**
-	 * Extract prompt text and images from request messages.
-	 * Images are sent separately as multimodal content blocks.
+	 * Extract the latest user message text and any images.
+	 *
+	 * Only sends the LAST user message — the backend maintains conversation
+	 * context via SDK session resumption, so prior messages don't need to be
+	 * resent on each turn.
 	 */
 	private extractPromptAndImages(
 		request: LLMRequestStreaming | LLMRequestNonStreaming
 	): { prompt: string; images: Array<{ mimeType: string; base64Data: string }> } {
 		const images: Array<{ mimeType: string; base64Data: string }> = [];
-		console.log('[ImageFlow] extractPromptAndImages: scanning', request.messages.length, 'messages for images');
 
-		// Strip image content parts from messages, collect them separately
-		const messagesWithoutImages = request.messages.map((msg) => {
-			if (msg.role === 'user' && Array.isArray(msg.content)) {
-				const textParts: Array<{ type: 'text'; text: string }> = [];
-				for (const part of msg.content) {
-					if (part.type === 'image_url') {
-						// Parse data URL: "data:image/png;base64,..."
-						const dataUrl = part.image_url.url;
-						const match = dataUrl.match(
-							/^data:([^;]+);base64,(.+)$/
-						);
-						if (match) {
-							images.push({
-								mimeType: match[1],
-								base64Data: match[2],
-							});
-						}
-					} else {
-						textParts.push(part);
+		// Find the last user message
+		const userMessages = request.messages.filter((m) => m.role === 'user');
+		const lastUserMsg = userMessages[userMessages.length - 1];
+
+		if (!lastUserMsg) {
+			return { prompt: '', images };
+		}
+
+		let promptText = '';
+
+		if (typeof lastUserMsg.content === 'string') {
+			promptText = lastUserMsg.content;
+		} else if (Array.isArray(lastUserMsg.content)) {
+			// Extract text and images from multimodal content
+			const textParts: string[] = [];
+			for (const part of lastUserMsg.content) {
+				if (part.type === 'image_url') {
+					const dataUrl = part.image_url.url;
+					const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+					if (match) {
+						images.push({ mimeType: match[1], base64Data: match[2] });
 					}
+				} else if (part.type === 'text') {
+					textParts.push(part.text);
 				}
-				return {
-					...msg,
-					content:
-						textParts.length === 1
-							? textParts[0].text
-							: textParts,
-				};
 			}
-			return msg;
-		});
+			promptText = textParts.join('\n');
+		}
 
-		const prompt = JSON.stringify({
-			messages: messagesWithoutImages,
-			tools: request.tools,
-			tool_choice: request.tool_choice,
-		});
-
-		console.log('[ImageFlow] extractPromptAndImages: found', images.length, 'images, types:', images.map(i => i.mimeType).join(', '));
-		return { prompt, images };
+		return { prompt: promptText, images };
 	}
 }
