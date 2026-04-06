@@ -3,6 +3,9 @@
  *
  * Shared across devices via Obsidian Sync so any device can resume
  * sessions created by another device with the same vault.
+ *
+ * Uses app.vault.adapter (filesystem API) since Obsidian doesn't
+ * index dotfiles via the vault API.
  */
 
 import type { App } from 'obsidian'
@@ -15,10 +18,11 @@ let cachedClientId: string | null = null
 export async function getClientId(app: App): Promise<string> {
   if (cachedClientId) return cachedClientId
 
+  const adapter = app.vault.adapter
+
   try {
-    const file = app.vault.getAbstractFileByPath(CLIENT_ID_PATH)
-    if (file) {
-      const content = await app.vault.read(file as any)
+    if (await adapter.exists(CLIENT_ID_PATH)) {
+      const content = await adapter.read(CLIENT_ID_PATH)
       const id = content.trim()
       if (id) {
         cachedClientId = id
@@ -32,20 +36,10 @@ export async function getClientId(app: App): Promise<string> {
   // Generate and persist a new client ID
   const id = uuidv4()
   try {
-    const dir = CLIENT_ID_PATH.split('/').slice(0, -1).join('/')
-    if (dir) {
-      const dirExists = app.vault.getAbstractFileByPath(dir)
-      if (!dirExists) {
-        await app.vault.createFolder(dir)
-      }
+    if (!(await adapter.exists('.claude'))) {
+      await adapter.mkdir('.claude')
     }
-
-    const existing = app.vault.getAbstractFileByPath(CLIENT_ID_PATH)
-    if (existing) {
-      await app.vault.modify(existing as any, id)
-    } else {
-      await app.vault.create(CLIENT_ID_PATH, id)
-    }
+    await adapter.write(CLIENT_ID_PATH, id)
   } catch (err) {
     console.error('[ClientId] Failed to persist client ID:', err)
   }
