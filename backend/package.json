@@ -15,7 +15,7 @@
     "test:auto": "tsx test/automated-test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.38",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.97",
     "dotenv": "^16.4.0",
     "uuid": "^10.0.0",
     "ws": "^8.18.0",

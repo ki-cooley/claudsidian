@@ -3,6 +3,10 @@
  *
  * Implements the agent using the Claude Agent SDK's query() function,
  * which handles the tool execution loop automatically.
+ *
+ * Optimizations:
+ * - System prompt cached with 5-minute TTL (avoids 4+ vault RPCs per conversation)
+ * - Multi-turn uses SDK session resume (skips system prompt rebuild)
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -80,23 +84,19 @@ async function loadSkills(bridge: VaultBridge): Promise<Skill[]> {
   const skills: Skill[] = [];
 
   try {
-    // Try to list files in .claude/skills/
     const skillFiles = await bridge.glob('.claude/skills/*.md');
 
     for (const skillPath of skillFiles) {
       try {
         const content = await bridge.read(skillPath);
-        // Extract skill name from filename (e.g., "weekly-review.md" -> "weekly-review")
         const filename = skillPath.split('/').pop() || skillPath;
         const name = filename.replace(/\.md$/, '');
 
-        // Try to extract description from first line or frontmatter
         let description = `Custom skill: ${name}`;
         const lines = content.split('\n');
         if (lines[0]?.startsWith('# ')) {
           description = lines[0].replace('# ', '').trim();
         } else if (lines[0]?.startsWith('---')) {
-          // Try to parse YAML frontmatter for description
           const frontmatterEnd = content.indexOf('---', 4);
           if (frontmatterEnd > 0) {
             const frontmatter = content.substring(4, frontmatterEnd);
@@ -114,7 +114,6 @@ async function loadSkills(bridge: VaultBridge): Promise<Skill[]> {
       }
     }
   } catch (e) {
-    // .claude/skills/ doesn't exist, that's fine
     logger.debug('No .claude/skills/ directory found');
   }
 
@@ -127,7 +126,6 @@ async function loadSkills(bridge: VaultBridge): Promise<Skill[]> {
 async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
   let systemPrompt = BASE_SYSTEM_PROMPT;
 
-  // Try to read CLAUDE.md from vault root for project-specific context
   try {
     const claudeMd = await bridge.read('CLAUDE.md');
     if (claudeMd && claudeMd.trim()) {
@@ -135,11 +133,9 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
       logger.info('Loaded CLAUDE.md from vault root');
     }
   } catch (e) {
-    // CLAUDE.md doesn't exist, that's fine
     logger.debug('No CLAUDE.md found in vault root');
   }
 
-  // Also check for .claude/instructions.md as an alternative location
   try {
     const instructions = await bridge.read('.claude/instructions.md');
     if (instructions && instructions.trim()) {
@@ -150,7 +146,6 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
     // .claude/instructions.md doesn't exist, that's fine
   }
 
-  // Load persistent memory
   try {
     const memory = await bridge.read('.claude/memory.md');
     if (memory && memory.trim()) {
@@ -158,11 +153,9 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
       logger.info('Loaded .claude/memory.md');
     }
   } catch (e) {
-    // No memory file yet — will be created when agent first updates memory
     logger.debug('No .claude/memory.md found');
   }
 
-  // Load custom skills
   const skills = await loadSkills(bridge);
   if (skills.length > 0) {
     systemPrompt += `\n\n## Custom Skills\n\nThe user has defined the following custom skills. When they reference a skill by name (e.g., "run the weekly-review skill" or "/weekly-review"), follow the instructions in that skill:\n\n`;
@@ -174,14 +167,47 @@ async function buildSystemPrompt(bridge: VaultBridge): Promise<string> {
   return systemPrompt;
 }
 
+// ============================================================================
+// System Prompt Cache
+// ============================================================================
+
+const SYSTEM_PROMPT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let systemPromptCache: { prompt: string; builtAt: number } | null = null;
+
+/**
+ * Get system prompt, using cache if fresh (within TTL).
+ * Avoids 4+ vault RPCs per new conversation.
+ */
+async function getCachedSystemPrompt(bridge: VaultBridge): Promise<string> {
+  if (systemPromptCache && (Date.now() - systemPromptCache.builtAt) < SYSTEM_PROMPT_TTL_MS) {
+    logger.info('Using cached system prompt (age: ' +
+      Math.round((Date.now() - systemPromptCache.builtAt) / 1000) + 's)');
+    return systemPromptCache.prompt;
+  }
+  const prompt = await buildSystemPrompt(bridge);
+  systemPromptCache = { prompt, builtAt: Date.now() };
+  logger.info('Built and cached system prompt');
+  return prompt;
+}
+
+/** Force-invalidate the cache (e.g., after the agent edits CLAUDE.md) */
+export function invalidateSystemPromptCache(): void {
+  systemPromptCache = null;
+  logger.info('System prompt cache invalidated');
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
 const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
 const MAX_TURNS = 50; // Complex research queries can use 30-40+ tool calls
 const INACTIVITY_TIMEOUT_MS = 600_000; // 10 minutes of no activity = dead
 
 /**
  * Strip MCP prefix from tool names for cleaner display.
- * e.g., "mcp__vault-tools__vault_read" → "vault_read"
- *       "mcp__cookbook-research__search_cookbooks" → "search_cookbooks"
+ * e.g., "mcp__vault-tools__vault_read" -> "vault_read"
+ *       "mcp__cookbook-research__search_cookbooks" -> "search_cookbooks"
  */
 function cleanToolName(name: string): string {
   const match = name.match(/^mcp__[^_]+__(.+)$/);
@@ -231,7 +257,7 @@ export async function* runAgent(
   // on resume, the SDK already has the system prompt from the prior session)
   let systemPrompt: string | undefined;
   if (!resumeSessionId) {
-    systemPrompt = await buildSystemPrompt(bridge);
+    systemPrompt = await getCachedSystemPrompt(bridge);
     if (customSystemPrompt?.trim()) {
       systemPrompt = `${customSystemPrompt.trim()}\n\n${systemPrompt}`;
     }
@@ -323,6 +349,7 @@ export async function* runAgent(
       abortController.abort();
     }
   }, 15_000);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (activityCheck as any).unref?.();
 
   try {
@@ -335,6 +362,7 @@ export async function* runAgent(
       options: {
         model: selectedModel,
         ...(systemPrompt ? { systemPrompt } : {}),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mcpServers: mcpServers as Record<string, any>,
         allowedTools,
         maxTurns: MAX_TURNS,
@@ -372,17 +400,21 @@ export async function* runAgent(
       switch (message.type) {
         case 'stream_event': {
           // New content block starting = previous turn's tools are done
-          if (message.event.type === 'content_block_start') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((message as any).event?.type === 'content_block_start') {
             yield* closePendingTools();
-            const block = (message.event as any).content_block;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const block = (message as any).event?.content_block;
             if (block?.type === 'thinking') {
               logger.info('[Thinking] Block started');
             }
           }
 
           // Stream text and thinking deltas in real time
-          if (message.event.type === 'content_block_delta') {
-            const delta = (message.event as any).delta;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((message as any).event?.type === 'content_block_delta') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const delta = (message as any).event?.delta;
             if (delta?.type === 'text_delta') {
               yield { type: 'text_delta', text: delta.text };
             } else if (delta?.type === 'thinking_delta') {
@@ -398,13 +430,16 @@ export async function* runAgent(
           yield* closePendingTools();
 
           // Capture SDK session ID for multi-turn support
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           if (onSdkSessionId && (message as any).session_id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onSdkSessionId((message as any).session_id);
             onSdkSessionId = undefined; // Only capture once
           }
 
           // Emit tool_start for each tool_use block (with full input)
-          for (const block of message.message.content) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const block of (message as any).message.content) {
             if (block.type === 'tool_use') {
               const name = cleanToolName(block.name);
               pendingTools.push(name);
@@ -423,22 +458,29 @@ export async function* runAgent(
           yield* drainToolEvents();
           yield* closePendingTools();
 
-          if (message.subtype === 'success') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((message as any).subtype === 'success') {
             completedSuccessfully = true;
             logger.info('Agent completed successfully');
-            yield { type: 'complete', result: message.result || '' };
-          } else if (message.subtype === 'error_max_turns') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            yield { type: 'complete', result: (message as any).result || '' };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } else if ((message as any).subtype === 'error_max_turns') {
             completedSuccessfully = true; // Partial result is still valid
             logger.warn(`Agent hit max turns limit (${MAX_TURNS})`);
             // Send any partial result, then add a note about the truncation
             yield { type: 'text_delta', text: '\n\n---\n*Response was truncated because the query required too many steps. You can ask me to continue where I left off.*\n' };
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             yield { type: 'complete', result: (message as any).result || '' };
           } else {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const errors = 'errors' in message ? (message as any).errors : [];
-            logger.error(`Agent stopped: ${message.subtype}`, errors);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            logger.error(`Agent stopped: ${(message as any).subtype}`, errors);
             yield {
               type: 'error',
-              code: message.subtype,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              code: (message as any).subtype,
               message: errors?.join(', ') || 'Agent SDK error',
             };
           }

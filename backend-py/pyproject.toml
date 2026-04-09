@@ -1,0 +1,23 @@
+[project]
+name = "claudsidian-backend"
+version = "2.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk>=0.1.50",
+    "websockets>=14.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8",
+    "pyright>=1.1",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
