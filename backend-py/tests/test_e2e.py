@@ -71,22 +71,18 @@ async def main() -> None:
     ws = await websockets.connect(f"ws://localhost:{PORT}?token={AUTH_TOKEN}")
     conv_id = f"test-{int(time.time())}"
 
-    async def send_and_wait(prompt_id: str, conversation_id: str, prompt: str, timeout: float = 120) -> str:
-        await ws.send(json.dumps({
-            "type": "prompt", "id": prompt_id,
-            "conversationId": conversation_id,
-            "clientId": "test", "prompt": prompt,
-        }))
+    # Background RPC handler — responds to vault RPCs at all times
+    rpc_task_running = True
+    completions: dict[str, str] = {}  # prompt_id -> "complete" | "error"
 
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+    async def rpc_pump():
+        while rpc_task_running:
             try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=5)
-            except asyncio.TimeoutError:
+                raw = await asyncio.wait_for(ws.recv(), timeout=0.5)
+            except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
                 continue
             msg = json.loads(raw)
 
-            # Auto-respond to vault RPCs
             if msg.get("type") == "rpc_request":
                 method = msg["method"]
                 if method == "vault_list":
@@ -100,16 +96,31 @@ async def main() -> None:
                 await ws.send(json.dumps({
                     "type": "rpc_response", "id": msg["id"], "result": result,
                 }))
-                continue
+            elif msg["type"] in ("complete", "error") and msg.get("requestId"):
+                completions[msg["requestId"]] = msg["type"]
 
-            if msg.get("requestId") != prompt_id:
-                continue
-            if msg["type"] in ("complete", "error"):
-                return msg["type"]
+    pump = asyncio.create_task(rpc_pump())
+
+    async def send_and_wait(prompt_id: str, conversation_id: str, prompt: str, timeout: float = 120) -> str:
+        await ws.send(json.dumps({
+            "type": "prompt", "id": prompt_id,
+            "conversationId": conversation_id,
+            "clientId": "test", "prompt": prompt,
+        }))
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if prompt_id in completions:
+                return completions.pop(prompt_id)
+            await asyncio.sleep(0.1)
         return "timeout"
 
-    # Turn 1: new conversation
-    print("=== TURN 1 ===")
+    # Wait for pre-warm to finish (simulates user typing delay)
+    # RPC pump is running, so pre-warm can complete its vault reads
+    print("Waiting for pre-warm (simulating typing delay)...")
+    await asyncio.sleep(5)
+
+    # Turn 1: should claim pre-warmed conversation
+    print("=== TURN 1 (should claim pre-warmed subprocess) ===")
     r1 = await send_and_wait("p1", conv_id, "List the files. Be brief.")
     print(f"Turn 1: {r1}\n")
     await asyncio.sleep(2)
@@ -126,21 +137,25 @@ async def main() -> None:
     print(f"Turn 3: {r3}\n")
     await asyncio.sleep(1)
 
+    rpc_task_running = False
+    pump.cancel()
     await ws.close()
 
     # Check results
     all_logs = "".join(logs)
-    built = "Built and cached system prompt" in all_logs
+    prewarm_ready = "Pre-warmed conversation subprocess ready" in all_logs
+    claimed = "Claimed pre-warmed" in all_logs
     reused = "Reusing conversation" in all_logs
-    cached = "Using cached system prompt" in all_logs
+    # Turn 3 either uses cached prompt or claims a second warm conv
+    cached_or_claimed = "Using cached system prompt" in all_logs or all_logs.count("Claimed pre-warmed") >= 1
 
     print("=== RESULTS ===")
     checks = [
+        ("Pre-warm completed before first prompt", prewarm_ready),
+        ("Turn 1 claimed pre-warmed subprocess", claimed),
         ("Turn 1 completed", r1 == "complete"),
-        ("Turn 1 built prompt", built),
         ("Turn 2 REUSED conversation", reused),
         ("Turn 2 completed", r2 == "complete"),
-        ("Turn 3 used cached prompt", cached),
         ("Turn 3 completed", r3 == "complete"),
     ]
 

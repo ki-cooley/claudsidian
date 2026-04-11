@@ -177,11 +177,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       setCurrentConversationId(conversationId)
       setChatMessages(conversation)
       // Scroll to latest message after React renders the loaded conversation
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          forceScrollToBottom()
-        })
-      })
+      requestAnimationFrame(() => forceScrollToBottom())
       const newInputMessage = getNewInputMessage(app)
       setInputMessage(newInputMessage)
       setFocusedMessageId(newInputMessage.id)
@@ -472,11 +468,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
       }
     }
     // Scroll to bottom on mount whenever there are messages
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        forceScrollToBottom()
-      })
-    })
+    requestAnimationFrame(() => forceScrollToBottom())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

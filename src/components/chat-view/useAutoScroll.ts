@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 const SCROLL_AWAY_FROM_BOTTOM_THRESHOLD = 50
-const USER_SCROLL_DEBOUNCE_MS = 150
+const USER_SCROLL_DEBOUNCE_MS = 400
 
 type UseAutoScrollProps = {
   scrollContainerRef: React.RefObject<HTMLElement>

@@ -233,9 +233,15 @@ class Conversation:
             thinking={"type": "adaptive"},
         )
 
+        t0 = time.time()
         self._client = ClaudeSDKClient(options=options)
+        t1 = time.time()
         await self._client.__aenter__()
-        log.info(f"Conversation {self.conversation_id} started (model: {selected_model})")
+        t2 = time.time()
+        log.info(
+            f"Conversation {self.conversation_id} started (model: {selected_model}) "
+            f"[construct={int((t1-t0)*1000)}ms, spawn={int((t2-t1)*1000)}ms]"
+        )
 
     async def send(
         self,
@@ -286,7 +292,10 @@ class Conversation:
         yield ThinkingEvent(text="")
 
         try:
+            t_send = time.time()
             await self._client.query(query_input)
+            t_query = time.time()
+            log.info(f"Conversation {self.conversation_id}: query() took {int((t_query-t_send)*1000)}ms")
 
             async for message in self._client.receive_response():
                 if cancelled and cancelled():

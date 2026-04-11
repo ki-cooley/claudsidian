@@ -271,9 +271,6 @@ export default function AssistantToolMessageGroupItem({
           if (message.role === 'assistant' && message.contentBlocks && message.contentBlocks.length > 0) {
             return (
               <React.Fragment key={message.id}>
-                {message.reasoning && (
-                  <AssistantMessageReasoning reasoning={message.reasoning} isStreaming={isStreaming} />
-                )}
                 {message.annotations && (
                   <AssistantMessageAnnotations
                     annotations={message.annotations}

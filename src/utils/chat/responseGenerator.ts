@@ -424,6 +424,14 @@ export class ResponseGenerator {
       ]
     }
 
+    // Replace adjacent reasoning blocks (latest has full accumulated text)
+    if (newBlock.type === 'reasoning' && last?.type === 'reasoning') {
+      return [
+        ...prevBlocks.slice(0, -1),
+        newBlock,
+      ]
+    }
+
     // Different type = new block
     return [...prevBlocks, newBlock]
   }

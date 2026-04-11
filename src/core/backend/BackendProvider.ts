@@ -204,9 +204,10 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 		};
 
 		// Interspersed layout: track current block type for content boundaries
-		let currentBlockType: 'text' | 'activity_group' | null = null;
+		let currentBlockType: 'text' | 'activity_group' | 'reasoning' | null = null;
 		let currentTextBlock = '';
 		let currentActivityGroup: string[] = [];
+		let currentReasoningBlock = '';
 
 		const enqueueContentBlock = (block: ContentBlock) => {
 			enqueueChunk({
@@ -231,6 +232,32 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			}
 		};
 
+		const flushReasoningBlock = () => {
+			if (currentBlockType === 'reasoning' && currentReasoningBlock) {
+				enqueueContentBlock({ type: 'reasoning', text: currentReasoningBlock });
+				currentReasoningBlock = '';
+			}
+			// Reset thinking tracking when reasoning phase ends
+			if (currentThinkingId && currentBlockType === 'reasoning') {
+				const finalActivity: ActivityEvent = {
+					id: currentThinkingId,
+					type: 'thinking',
+					status: 'complete',
+					startTime: thinkingStartTime!,
+					endTime: Date.now(),
+					thinkingContent: '',
+				};
+				enqueueChunk({
+					id: requestId,
+					object: 'chat.completion.chunk',
+					model: 'backend',
+					choices: [{ delta: { activity: finalActivity }, finish_reason: null }],
+				});
+				currentThinkingId = null;
+				thinkingStartTime = null;
+			}
+		};
+
 		// Set up event handlers and send prompt
 		const requestId = await this.wsClient.sendPrompt(
 			prompt,
@@ -239,9 +266,10 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 					this.onSessionCreatedCallback?.(sessionId);
 				},
 				onTextDelta: (text: string) => {
-					// Track block boundary: close pending activity group when text starts
+					// Track block boundary: close pending activity/reasoning when text starts
 					if (currentBlockType !== 'text') {
 						flushActivityGroup();
+						flushReasoningBlock();
 						currentBlockType = 'text';
 						currentTextBlock = '';
 					}
@@ -263,8 +291,9 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				},
 
 				onToolStart: (name: string, input: Record<string, unknown>) => {
-					// Track block boundary: flush pending text when tool starts
+					// Track block boundary: flush pending text/reasoning when tool starts
 					flushTextBlock();
+					flushReasoningBlock();
 					currentBlockType = 'activity_group';
 
 					// Create a tool call entry with backend__ prefix for UI display
@@ -367,17 +396,23 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 				},
 
 				onThinking: (text: string) => {
-					// Start new thinking activity if not already active
-					if (!currentThinkingId) {
-						// Track block boundary: thinking acts as an activity
+					// Track block boundary: reasoning is its own block type
+					if (currentBlockType !== 'reasoning') {
 						flushTextBlock();
-						currentBlockType = 'activity_group';
-						currentThinkingId = `thinking-${requestId}-${Date.now()}`;
-						thinkingStartTime = Date.now();
-						currentActivityGroup.push(currentThinkingId);
+						flushActivityGroup();
+						currentBlockType = 'reasoning';
+						currentReasoningBlock = '';
 					}
 
-					// Create thinking activity event
+					// Start thinking activity tracking if needed
+					if (!currentThinkingId) {
+						currentThinkingId = `thinking-${requestId}-${Date.now()}`;
+						thinkingStartTime = Date.now();
+					}
+
+					currentReasoningBlock += text;
+
+					// Create thinking activity event (for activity list)
 					const activity: ActivityEvent = {
 						id: currentThinkingId,
 						type: 'thinking',
@@ -395,6 +430,7 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 								delta: {
 									reasoning: text,
 									activity,
+									contentBlock: { type: 'reasoning' as const, text: currentReasoningBlock },
 								},
 								finish_reason: null,
 							},
@@ -407,6 +443,7 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 					// Flush any pending content blocks for interspersed layout
 					flushTextBlock();
 					flushActivityGroup();
+					flushReasoningBlock();
 
 					// Finalize any pending thinking activity
 					if (currentThinkingId && thinkingStartTime) {

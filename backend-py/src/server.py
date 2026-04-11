@@ -62,6 +62,7 @@ class ConnectionHandler:
         self._pending_rpcs: dict[str, asyncio.Future] = {}
         self._rpc_timeouts: dict[str, asyncio.TimerHandle] = {}
         self._session_unsubs: dict[str, Any] = {}
+        self._warm_conversation: _ConversationEntry | None = None
 
     # -- RpcSender protocol --
 
@@ -84,16 +85,28 @@ class ConnectionHandler:
         await self._send(rpc_request_msg(rpc_id, method, params))
         return await future
 
-    # -- Pre-warm system prompt --
+    # -- Pre-warm: system prompt + subprocess --
 
-    async def prewarm_system_prompt(self) -> None:
-        """Build and cache system prompt eagerly on connect, before any prompt arrives."""
+    async def prewarm(self) -> None:
+        """Eagerly build system prompt AND spawn a warm subprocess on connect.
+
+        By the time the user finishes typing their first message, both the
+        system prompt cache and a ready-to-use ClaudeSDKClient subprocess
+        are waiting. First prompt skips ~3s of spawn overhead.
+        """
         try:
             bridge = DetachableVaultBridge(self)
-            await get_cached_system_prompt(bridge)
+            system_prompt = await get_cached_system_prompt(bridge)
+
+            # Pre-spawn a conversation with a placeholder ID.
+            # First prompt will claim it via _claim_warm_conversation().
+            conv = Conversation("__warm__")
+            await conv.start(bridge, None, system_prompt)
+            self._warm_conversation = _ConversationEntry(conv, bridge, self)
+            log.info("Pre-warmed conversation subprocess ready")
         except Exception as e:
-            # Non-fatal — will be retried on first prompt
-            log.debug(f"Pre-warm failed (will retry on first prompt): {e}")
+            self._warm_conversation = None
+            log.debug(f"Pre-warm failed (will cold-start on first prompt): {e}")
 
     # -- Message handling --
 
@@ -167,13 +180,22 @@ class ConnectionHandler:
             entry.bridge.attach(self)
             entry.owner = self
             log.info(f"Reusing conversation {conversation_id} (follow-up turn)")
+        elif self._warm_conversation and self._warm_conversation.conversation.is_active:
+            # Claim the pre-warmed conversation (subprocess already running)
+            entry = self._warm_conversation
+            self._warm_conversation = None
+            entry.conversation.conversation_id = conversation_id
+            entry.bridge.attach(self)
+            entry.owner = self
+            _conversations[conversation_id] = entry
+            log.info(f"Claimed pre-warmed conversation for {conversation_id} (zero spawn overhead)")
         else:
             # Clean up dead conversation
             if entry:
                 await entry.conversation.close()
                 _conversations.pop(conversation_id, None)
 
-            # New conversation
+            # Cold start — spawn new conversation
             bridge = DetachableVaultBridge(self)
             conversation = Conversation(conversation_id)
             entry = _ConversationEntry(conversation, bridge, self)
@@ -182,7 +204,7 @@ class ConnectionHandler:
             system_prompt = await get_cached_system_prompt(bridge)
             model = msg.get("model") or DEFAULT_MODEL
             await conversation.start(bridge, model, system_prompt, msg.get("systemPrompt"))
-            log.info(f"Created new conversation {conversation_id}")
+            log.info(f"Created new conversation {conversation_id} (cold start)")
 
         context = None
         if msg.get("context"):
@@ -364,6 +386,11 @@ class ConnectionHandler:
                 entry.owner = None
                 log.info(f"Conversation {conv_id} bridge detached (still alive)")
 
+        # Close unclaimed warm conversation (no point keeping it without a connection)
+        if self._warm_conversation:
+            asyncio.create_task(self._warm_conversation.conversation.close())
+            self._warm_conversation = None
+
 
 # ============================================================================
 # Server startup
@@ -383,9 +410,9 @@ async def start_server() -> None:
         log.info("Client connected")
         handler = ConnectionHandler(ws, session_store)
 
-        # Pre-warm the system prompt cache in the background.
-        # By the time the user types their first message, it's already built.
-        asyncio.create_task(handler.prewarm_system_prompt())
+        # Pre-warm system prompt + subprocess in background.
+        # By the time the user finishes typing, everything is ready.
+        asyncio.create_task(handler.prewarm())
 
         try:
             await handler.handle_messages()

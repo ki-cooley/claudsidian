@@ -373,20 +373,53 @@ export class VaultRpcHandler {
 	 * Find files matching a glob pattern
 	 */
 	private async vaultGlob(pattern: string): Promise<string[]> {
-		const files = this.app.vault.getFiles();
 		const regex = this.globToRegex(pattern);
 		const matches: string[] = [];
 
-		for (const file of files) {
-			if (regex.test(file.path)) {
-				matches.push(file.path);
+		// Dotfile paths aren't indexed by Obsidian — walk the filesystem adapter
+		if (this.isDotfilePath(pattern)) {
+			// Extract the base directory from the pattern (e.g., ".claude/skills/*.md" → ".claude/skills")
+			const parts = pattern.split('/');
+			const dirParts: string[] = [];
+			for (const part of parts) {
+				if (part.includes('*') || part.includes('?')) break;
+				dirParts.push(part);
+			}
+			const baseDir = dirParts.join('/') || '.';
+
+			await this.walkAdapter(baseDir, regex, matches);
+		} else {
+			const files = this.app.vault.getFiles();
+			for (const file of files) {
+				if (regex.test(file.path)) {
+					matches.push(file.path);
+				}
 			}
 		}
 
-		// Sort alphabetically
 		matches.sort((a, b) => a.localeCompare(b));
-
 		return matches;
+	}
+
+	/**
+	 * Recursively walk the filesystem adapter to find files matching a regex.
+	 * Used for dotfile paths that Obsidian's vault API doesn't index.
+	 */
+	private async walkAdapter(dir: string, regex: RegExp, matches: string[]): Promise<void> {
+		const adapter = this.app.vault.adapter;
+		try {
+			const listing = await adapter.list(dir);
+			for (const filePath of listing.files) {
+				if (regex.test(filePath)) {
+					matches.push(filePath);
+				}
+			}
+			for (const folderPath of listing.folders) {
+				await this.walkAdapter(folderPath, regex, matches);
+			}
+		} catch {
+			// Directory doesn't exist — that's fine
+		}
 	}
 
 	/**

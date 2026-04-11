@@ -69,6 +69,7 @@ export interface ActivityEvent {
 export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'activity_group'; activityIds: string[] }
+  | { type: 'reasoning'; text: string }
 
 export type ChatUserMessage = {
   role: 'user'

@@ -4,6 +4,7 @@ import type { ActivityEvent, ChatMessage, ContentBlock } from '../../types/chat'
 
 import ActivityAccordion from './ActivityAccordion'
 import AssistantMessageContent from './AssistantMessageContent'
+import AssistantMessageReasoning from './AssistantMessageReasoning'
 import EditDiffBlock from './EditDiffBlock'
 
 interface InterspersedContentProps {
@@ -52,6 +53,15 @@ export default function InterspersedContent({
                   isApplying={isApplying}
                 />
               </div>
+            )
+
+          case 'reasoning':
+            return (
+              <AssistantMessageReasoning
+                key={`reasoning-${idx}`}
+                reasoning={block.text}
+                isStreaming={isStreaming && isLastBlock}
+              />
             )
 
           case 'activity_group': {
