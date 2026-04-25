@@ -5,7 +5,7 @@
  * and RPC protocol without making real API calls.
  */
 
-import { logger } from './utils.js';
+import { logger, AsyncQueue } from './utils.js';
 import type {
   VaultBridge,
   AgentContext,
@@ -130,6 +130,35 @@ function getMockScenario(prompt: string): MockScenario {
 }
 
 /**
+ * Drain any pending aside messages from the streaming input queue and
+ * convert them into a single text_delta event so the mock visibly reflects
+ * mid-turn injections. Returns null when there's nothing to surface.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function drainAsidesAsText(inputQueue?: AsyncQueue<any>): { type: 'text_delta'; text: string } | null {
+  if (!inputQueue) return null;
+  const pending = inputQueue.drainPending();
+  // The very first message in the queue is the initial user prompt — pushed
+  // by the inputStream() generator in agent.ts. Skip it. Any *additional*
+  // items are asides.
+  const asides = pending.filter(
+    (m: { message?: { role?: string; content?: unknown } }) => {
+      // The initial prompt is a structured Anthropic SDK user-message wrapper;
+      // asides we push from server.ts have message.content as a plain string.
+      return typeof m?.message?.content === 'string';
+    },
+  );
+  if (asides.length === 0) return null;
+  const text = asides
+    .map(
+      (a: { message: { content: string } }) =>
+        `\n\n[mock saw aside: "${a.message.content}"]`,
+    )
+    .join('');
+  return { type: 'text_delta', text };
+}
+
+/**
  * Run the mock agent with simulated streaming responses
  */
 export async function* runMockAgent(
@@ -138,7 +167,12 @@ export async function* runMockAgent(
   context?: AgentContext,
   signal?: AbortSignal,
   _customSystemPrompt?: string,
-  _model?: string
+  _model?: string,
+  _images?: Array<{ mimeType: string; base64Data: string }>,
+  _resumeSessionId?: string,
+  _onSdkSessionId?: (id: string) => void,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputQueue?: AsyncQueue<any>,
 ): AsyncGenerator<AgentEvent> {
   logger.info('[MOCK] Running mock agent');
 
@@ -162,6 +196,9 @@ export async function* runMockAgent(
       return;
     }
     yield { type: 'text_delta', text: chunk };
+    // Surface any aside the user has injected mid-stream
+    const asideEvent = drainAsidesAsText(inputQueue);
+    if (asideEvent) yield asideEvent;
   }
 
   // Execute tools if any
@@ -187,6 +224,10 @@ export async function* runMockAgent(
         result: result.content,
       };
 
+      // Surface any aside the user injected during tool execution
+      const asideEvent = drainAsidesAsText(inputQueue);
+      if (asideEvent) yield asideEvent;
+
       await sleep(100);
     }
 
@@ -199,9 +240,15 @@ export async function* runMockAgent(
           return;
         }
         yield { type: 'text_delta', text: chunk };
+        const asideEvent = drainAsidesAsText(inputQueue);
+        if (asideEvent) yield asideEvent;
       }
     }
   }
+
+  // Final pass — surface any aside that arrived just before completion
+  const finalAside = drainAsidesAsText(inputQueue);
+  if (finalAside) yield finalAside;
 
   // Complete
   const finalText = scenario.followUp

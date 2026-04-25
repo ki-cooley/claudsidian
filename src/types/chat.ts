@@ -80,6 +80,8 @@ export type ChatUserMessage = {
   similaritySearchResults?: (Omit<SelectEmbedding, 'embedding'> & {
     similarity: number
   })[]
+  /** True when this message was injected mid-turn as an aside, not a fresh prompt. */
+  isAside?: boolean
 }
 export type ChatAssistantMessage = {
   role: 'assistant'
@@ -123,6 +125,7 @@ export type SerializedChatUserMessage = {
   similaritySearchResults?: (Omit<SelectEmbedding, 'embedding'> & {
     similarity: number
   })[]
+  isAside?: boolean
 }
 export type SerializedChatAssistantMessage = {
   role: 'assistant'

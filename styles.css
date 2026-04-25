@@ -148,6 +148,20 @@
     gap: var(--size-4-1);
   }
 
+  .smtcmp-chat-messages-user-aside {
+    border-left: 2px solid var(--text-accent);
+    padding-left: var(--size-4-2);
+    opacity: 0.85;
+  }
+
+  .smtcmp-chat-message-aside-label {
+    font-size: var(--font-smallest);
+    color: var(--text-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
   .smtcmp-chat-messages-assistant {
     display: flex;
     flex-direction: column;

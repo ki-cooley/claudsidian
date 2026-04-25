@@ -11,7 +11,7 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createVaultMcpServer } from './vault-tools.js';
-import { logger } from './utils.js';
+import { logger, AsyncQueue } from './utils.js';
 import type {
   VaultBridge,
   AgentContext,
@@ -200,7 +200,7 @@ export function invalidateSystemPromptCache(): void {
 // Constants
 // ============================================================================
 
-const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-6';
+const DEFAULT_MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-7';
 const MAX_TURNS = 50; // Complex research queries can use 30-40+ tool calls
 const INACTIVITY_TIMEOUT_MS = 600_000; // 10 minutes of no activity = dead
 
@@ -234,6 +234,8 @@ export async function* runAgent(
   resumeSessionId?: string,
   /** Callback to capture the SDK session ID from the first response */
   onSdkSessionId?: (id: string) => void,
+  /** If set, use streaming input for interrupts/asides; otherwise single-prompt mode */
+  inputQueue?: AsyncQueue<any>,
 ): AsyncGenerator<AgentEvent> {
   const selectedModel = model || DEFAULT_MODEL;
   logger.info(`Using model: ${selectedModel}`);
@@ -303,13 +305,44 @@ export async function* runAgent(
     ];
   }
 
-  async function* singlePrompt() {
-    yield {
+  /**
+   * Input stream generator: either single-prompt or streaming (for interrupts/asides)
+   *
+   * If inputQueue is provided, messages are yielded as they're pushed to the queue.
+   * The queue stays open for the entire agent lifetime, allowing new user messages
+   * to be injected mid-turn (asides) or to signal interrupts.
+   *
+   * If inputQueue is not provided, a single user message is yielded and then the
+   * stream ends (backward-compatible single-prompt mode).
+   */
+  async function* inputStream() {
+    if (!inputQueue) {
+      // Single-prompt mode (backward compatible)
+      logger.info('Using single-prompt mode (no inputQueue provided)');
+      yield {
+        type: 'user' as const,
+        message: userMessage,
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+      return;
+    }
+
+    // Streaming input mode: push initial message and listen for more
+    logger.info('Using streaming input mode for interrupts/asides');
+
+    // Enqueue the initial user message
+    inputQueue.push({
       type: 'user' as const,
       message: userMessage,
       parent_tool_use_id: null,
       session_id: '',
-    };
+    });
+
+    // Listen for new messages pushed to the queue (asides/interrupts)
+    for await (const message of inputQueue) {
+      yield message;
+    }
   }
 
   // Track tools that have been started but not yet ended
@@ -358,7 +391,7 @@ export async function* runAgent(
     }
 
     const queryStream = query({
-      prompt: singlePrompt(),
+      prompt: inputStream(),
       options: {
         model: selectedModel,
         ...(systemPrompt ? { systemPrompt } : {}),

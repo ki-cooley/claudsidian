@@ -65,6 +65,20 @@ export interface CancelMessage {
   id: string;
 }
 
+/** Interrupt ongoing agent turn (cancel and optionally start new one) */
+export interface InterruptMessage {
+  type: 'interrupt';
+  id: string;
+  prompt?: string;  // Optional: if provided, start new turn with this prompt
+}
+
+/** Inject a message into ongoing agent turn (aside) */
+export interface AsideMessage {
+  type: 'aside';
+  id: string;
+  message: string;  // Message to inject mid-turn
+}
+
 /** Keepalive ping */
 export interface PingMessage {
   type: 'ping';
@@ -93,6 +107,8 @@ export type ClientMessage =
   | PromptMessage
   | RpcResponseMessage
   | CancelMessage
+  | InterruptMessage
+  | AsideMessage
   | PingMessage
   | SessionResumeMessage
   | SessionListMessage

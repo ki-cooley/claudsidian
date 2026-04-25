@@ -146,7 +146,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
     scrollContainerRef: chatMessagesRef,
   })
 
-  const { abortActiveStreams, detachActiveStream, submitChatMutation } = useChatStreamManager({
+  const { abortActiveStreams, detachActiveStream, submitChatMutation, sendInterrupt, sendAside } = useChatStreamManager({
     setChatMessages,
     autoScrollToBottom,
     promptGenerator,
@@ -748,7 +748,7 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
           </div>
         )}
         {submitChatMutation.isPending && (
-          <button onClick={abortActiveStreams} className="smtcmp-stop-gen-btn">
+          <button onClick={() => sendInterrupt()} className="smtcmp-stop-gen-btn">
             <CircleStop size={16} />
             <div>Stop Generation</div>
           </button>
@@ -771,11 +771,31 @@ const Chat = forwardRef<ChatRef, ChatProps>((props, ref) => {
           if (imageMentionables.length > 0) {
             console.log('[ImageFlow] Image names:', imageMentionables.map(m => m.type === 'image' ? m.name : '').join(', '))
           }
-          handleUserMessageSubmit({
-            inputChatMessages: [...chatMessages, { ...inputMessage, content }],
-            useVaultSearch,
-          })
-          setInputMessage(getNewInputMessage(app))
+
+          // If we're currently generating, send an aside instead of a new prompt
+          if (submitChatMutation.isPending) {
+            const plainText = editorStateToPlainText(content).trim()
+            sendAside(plainText)
+            const asideMessage: ChatUserMessage = {
+              role: 'user',
+              content: content,
+              promptContent: plainText,
+              id: uuidv4(),
+              mentionables: inputMessage.mentionables,
+              isAside: true,
+            }
+            setChatMessages((prevChatMessages) => [
+              ...prevChatMessages,
+              asideMessage,
+            ])
+            setInputMessage(getNewInputMessage(app))
+          } else {
+            handleUserMessageSubmit({
+              inputChatMessages: [...chatMessages, { ...inputMessage, content }],
+              useVaultSearch,
+            })
+            setInputMessage(getNewInputMessage(app))
+          }
         }}
         onFocus={() => {
           setFocusedMessageId(inputMessage.id)

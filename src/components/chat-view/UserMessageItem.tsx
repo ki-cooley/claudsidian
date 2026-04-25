@@ -23,8 +23,15 @@ export default function UserMessageItem({
   onFocus,
   onMentionablesChange,
 }: UserMessageItemProps) {
+  const className =
+    'smtcmp-chat-messages-user' + (message.isAside ? ' smtcmp-chat-messages-user-aside' : '')
   return (
-    <div className="smtcmp-chat-messages-user">
+    <div className={className}>
+      {message.isAside && (
+        <div className="smtcmp-chat-message-aside-label" aria-label="aside (injected mid-turn)">
+          aside
+        </div>
+      )}
       <ChatUserInput
         ref={chatUserInputRef}
         initialSerializedEditorState={message.content}

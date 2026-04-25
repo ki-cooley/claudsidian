@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { runAgent } from './agent.js';
 import { runMockAgent } from './mock-agent.js';
-import { logger } from './utils.js';
+import { logger, AsyncQueue } from './utils.js';
 import { SessionStore, Session, type RpcSender } from './session-store.js';
 
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
@@ -27,6 +27,8 @@ import type {
   PromptMessage,
   RpcResponseMessage,
   CancelMessage,
+  InterruptMessage,
+  AsideMessage,
   SessionResumeMessage,
   SessionListMessage,
   SessionCancelMessage,
@@ -56,6 +58,13 @@ class ConnectionHandler implements RpcSender {
 
   /** conversationId -> SDK session ID for multi-turn context */
   private static sdkSessions = new Map<string, string>();
+
+  /** requestId -> input queue for streaming user messages (interrupts/asides) */
+  private activeInputQueues = new Map<string, AsyncQueue<any>>();
+
+  /** requestId -> session, so interrupt/aside can locate the session by the
+   * id the client knows about (the prompt's `id`, not the server's session.id). */
+  private requestSessions = new Map<string, Session>();
 
   constructor(
     private ws: WebSocket,
@@ -100,6 +109,12 @@ class ConnectionHandler implements RpcSender {
       case 'cancel':
         this.handleCancel(msg);
         break;
+      case 'interrupt':
+        this.handleInterrupt(msg);
+        break;
+      case 'aside':
+        this.handleAside(msg);
+        break;
       case 'session_resume':
         this.handleSessionResume(msg);
         break;
@@ -139,6 +154,10 @@ class ConnectionHandler implements RpcSender {
       sessionId: session.id,
     });
 
+    // Index session by requestId so interrupt/aside (which the client sends
+    // with the prompt's id, not session.id) can find it.
+    this.requestSessions.set(msg.id, session);
+
     // Subscribe to live events — forward to client as ServerMessages
     const unsub = session.subscribe((event) => {
       this.sendAgentEvent(msg.id, event);
@@ -156,6 +175,13 @@ class ConnectionHandler implements RpcSender {
   private async runAgentForSession(session: Session, msg: PromptMessage) {
     const agentRunner = MOCK_MODE ? runMockAgent : runAgent;
     const conversationId = msg.conversationId || msg.id;
+
+    // Create an input queue for streaming input (interrupts/asides).
+    // Keyed by requestId — that's the id the plugin sends back on
+    // interrupt/aside, since session.id is opaque to it on first turn.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inputQueue = new AsyncQueue<any>();
+    this.activeInputQueues.set(msg.id, inputQueue);
 
     // Check for existing SDK session (multi-turn follow-up)
     const existingSdkSession = ConnectionHandler.sdkSessions.get(conversationId);
@@ -179,6 +205,7 @@ class ConnectionHandler implements RpcSender {
           ConnectionHandler.sdkSessions.set(conversationId, sdkId);
           logger.info(`Captured SDK session ${sdkId} for conversation ${conversationId}`);
         },
+        inputQueue,  // Pass input queue for streaming input (interrupts/asides)
       )) {
         if (session.signal.aborted) {
           logger.info(`Session ${session.id} was cancelled`);
@@ -198,6 +225,11 @@ class ConnectionHandler implements RpcSender {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       session.pushEvent({ type: 'error', code: 'AGENT_ERROR', message: errMsg });
       session.markError(errMsg);
+    } finally {
+      // Clean up input queue and request mapping when session ends
+      this.activeInputQueues.delete(msg.id);
+      this.requestSessions.delete(msg.id);
+      inputQueue.close();
     }
   }
 
@@ -286,6 +318,62 @@ class ConnectionHandler implements RpcSender {
     if (session) {
       session.cancel();
     }
+  }
+
+  private handleInterrupt(msg: InterruptMessage) {
+    // Interrupt: cancel current session (looked up by requestId) and
+    // optionally start a new one. The plugin sends interrupt with the
+    // prompt's id; we map that to the underlying Session here.
+    const session = this.requestSessions.get(msg.id);
+    if (session) {
+      logger.info(`Interrupting session ${session.id} (requestId=${msg.id})`);
+      const queue = this.activeInputQueues.get(msg.id);
+      if (queue) queue.close();
+      this.activeInputQueues.delete(msg.id);
+      this.requestSessions.delete(msg.id);
+      session.cancel();
+
+      // If a prompt is provided, start a new session
+      if (msg.prompt) {
+        logger.info(`Starting new session after interrupt with prompt`);
+        const newPromptMsg: PromptMessage = {
+          type: 'prompt',
+          id: randomUUID(),
+          prompt: msg.prompt,
+          clientId: session.clientId,
+          conversationId: session.conversationId,
+        };
+        this.handlePrompt(newPromptMsg);
+      }
+    } else {
+      logger.warn(`Interrupt: session for requestId ${msg.id} not found`);
+    }
+  }
+
+  private handleAside(msg: AsideMessage) {
+    // Aside: inject a message into the ongoing agent turn.
+    // Looked up by requestId (the prompt's id), which is what the plugin
+    // tracks for in-flight turns.
+    const inputQueue = this.activeInputQueues.get(msg.id);
+    if (!inputQueue) {
+      logger.warn(`Aside: no active input queue for requestId ${msg.id}`);
+      return;
+    }
+
+    logger.info(`Injecting aside for requestId ${msg.id}: "${msg.message.substring(0, 50)}..."`);
+
+    // Push the aside as a new user message
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const asideMessage: any = {
+      type: 'user' as const,
+      message: {
+        role: 'user',
+        content: msg.message,
+      },
+      parent_tool_use_id: null,
+      session_id: '',
+    };
+    inputQueue.push(asideMessage);
   }
 
   /** Send RPC request to plugin and wait for response (implements RpcSender) */

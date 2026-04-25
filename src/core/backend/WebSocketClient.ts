@@ -521,6 +521,21 @@ export class WebSocketClient {
 		this.send({ type: 'session_cancel', sessionId });
 	}
 
+	/**
+	 * Interrupt the current agent turn.
+	 */
+	interrupt(requestId: string, prompt?: string): void {
+		this.send({ type: 'interrupt', id: requestId, ...(prompt ? { prompt } : {}) });
+		this.activeHandlers.delete(requestId);
+	}
+
+	/**
+	 * Inject a message into the current agent turn without canceling.
+	 */
+	sendAside(requestId: string, message: string): void {
+		this.send({ type: 'aside', id: requestId, message });
+	}
+
 	emit(event: string, ...args: unknown[]): void {
 		const handlers = this.eventHandlers.get(event);
 		if (handlers) {

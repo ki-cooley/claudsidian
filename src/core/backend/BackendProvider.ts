@@ -45,11 +45,39 @@ function getActivityType(toolName: string): ActivityType {
 }
 
 export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
+	private lastRequestId: string | null = null;
+
 	constructor(
 		provider: BackendProviderConfig,
 		private wsClient: WebSocketClient
 	) {
 		super(provider);
+	}
+
+	/**
+	 * Get the ID of the last request sent
+	 */
+	getLastRequestId(): string | null {
+		return this.lastRequestId;
+	}
+
+	/**
+	 * Interrupt the current request (cancel the turn)
+	 */
+	interruptRequest(prompt?: string): void {
+		if (this.lastRequestId) {
+			this.wsClient.interrupt(this.lastRequestId, prompt);
+			this.lastRequestId = null;
+		}
+	}
+
+	/**
+	 * Send an aside message to the current request
+	 */
+	sendAsideMessage(message: string): void {
+		if (this.lastRequestId) {
+			this.wsClient.sendAside(this.lastRequestId, message);
+		}
 	}
 
 	/**
@@ -519,6 +547,11 @@ export class BackendProvider extends BaseLLMProvider<BackendProviderConfig> {
 			clientId,
 			conversationId,
 		);
+
+		// Track request ID for interrupts/asides immediately. Doing this in
+		// onTextDelta is too late — the user can press Stop during initial
+		// thinking or tool calls before any text streams.
+		this.lastRequestId = requestId;
 
 		// Yield chunks as they arrive
 		while (!isComplete || messageQueue.length > 0) {

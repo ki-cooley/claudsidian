@@ -33,6 +33,8 @@ export type UseChatStreamManager = {
     Error,
     { chatMessages: ChatMessage[]; conversationId: string }
   >
+  sendInterrupt: (prompt?: string) => void
+  sendAside: (message: string) => void
 }
 
 export function useChatStreamManager({
@@ -49,6 +51,7 @@ export function useChatStreamManager({
   const activeResponseGeneratorRef = useRef<ResponseGenerator | null>(null)
   const activeBaseMessagesRef = useRef<ChatMessage[]>([])
   const activeConversationIdRef = useRef<string | null>(null)
+  const activeProviderClientRef = useRef<typeof providerClient | null>(null)
 
   const abortActiveStreams = useCallback(() => {
     for (const abortController of activeStreamAbortControllersRef.current) {
@@ -58,6 +61,7 @@ export function useChatStreamManager({
     activeResponseGeneratorRef.current = null
     activeBaseMessagesRef.current = []
     activeConversationIdRef.current = null
+    activeProviderClientRef.current = null
   }, [])
 
   /**
@@ -174,6 +178,7 @@ export function useChatStreamManager({
         activeResponseGeneratorRef.current = responseGenerator
         activeBaseMessagesRef.current = chatMessages
         activeConversationIdRef.current = conversationId
+        activeProviderClientRef.current = providerClient
 
         unsubscribeResponseGenerator = responseGenerator.subscribe(
           (responseMessages) => {
@@ -227,6 +232,7 @@ export function useChatStreamManager({
           activeResponseGeneratorRef.current = null
           activeBaseMessagesRef.current = []
           activeConversationIdRef.current = null
+          activeProviderClientRef.current = null
         }
       }
     },
@@ -246,9 +252,31 @@ export function useChatStreamManager({
     },
   })
 
+  const sendInterrupt = useCallback(
+    (prompt?: string) => {
+      const client = activeProviderClientRef.current as any
+      if (client && typeof client.interruptRequest === 'function') {
+        client.interruptRequest(prompt)
+      }
+    },
+    []
+  )
+
+  const sendAside = useCallback(
+    (message: string) => {
+      const client = activeProviderClientRef.current as any
+      if (client && typeof client.sendAsideMessage === 'function') {
+        client.sendAsideMessage(message)
+      }
+    },
+    []
+  )
+
   return {
     abortActiveStreams,
     detachActiveStream,
     submitChatMutation,
+    sendInterrupt,
+    sendAside,
   }
 }

@@ -96,6 +96,20 @@ export interface SessionCancelMessage {
 	sessionId: string;
 }
 
+/** Interrupt the current agent turn and optionally start a new one */
+export interface InterruptMessage {
+	type: 'interrupt';
+	id: string;
+	prompt?: string;
+}
+
+/** Inject a message into the current agent turn without canceling */
+export interface AsideMessage {
+	type: 'aside';
+	id: string;
+	message: string;
+}
+
 export type ClientMessage =
 	| PromptMessage
 	| RpcResponseMessage
@@ -103,7 +117,9 @@ export type ClientMessage =
 	| PingMessage
 	| SessionResumeMessage
 	| SessionListMessage
-	| SessionCancelMessage;
+	| SessionCancelMessage
+	| InterruptMessage
+	| AsideMessage;
 
 // ============================================================================
 // Server → Client Messages

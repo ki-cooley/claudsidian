@@ -110,3 +110,81 @@ export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.substring(0, maxLength - 3) + '...';
 }
+
+/**
+ * Async queue for streaming input to the agent
+ *
+ * Allows messages to be pushed while the agent is running,
+ * enabling interrupts and asides mid-turn.
+ */
+export class AsyncQueue<T> implements AsyncIterable<T> {
+  private queue: T[] = [];
+  private waiters: Array<() => void> = [];
+  private closed = false;
+
+  /**
+   * Push a message to the queue
+   */
+  push(item: T): void {
+    if (this.closed) {
+      throw new Error('AsyncQueue is closed');
+    }
+    this.queue.push(item);
+    this.wake();
+  }
+
+  /**
+   * Close the queue and wake all waiters
+   */
+  close(): void {
+    this.closed = true;
+    this.wake();
+  }
+
+  /**
+   * Check if the queue is closed and empty
+   */
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  /**
+   * Number of items currently buffered (does not include items still in flight).
+   */
+  get size(): number {
+    return this.queue.length;
+  }
+
+  /**
+   * Synchronously remove and return all currently-buffered items.
+   * Useful for non-blocking polling in the mock agent.
+   */
+  drainPending(): T[] {
+    const items = this.queue;
+    this.queue = [];
+    return items;
+  }
+
+  /**
+   * Iterate over messages as they arrive
+   */
+  async *[Symbol.asyncIterator](): AsyncIterator<T> {
+    while (!this.closed || this.queue.length > 0) {
+      if (this.queue.length > 0) {
+        yield this.queue.shift()!;
+      } else if (!this.closed) {
+        // Wait for next message or close
+        await new Promise<void>((resolve) => {
+          this.waiters.push(resolve);
+        });
+      }
+    }
+  }
+
+  private wake(): void {
+    const waiter = this.waiters.shift();
+    if (waiter) {
+      waiter();
+    }
+  }
+}
