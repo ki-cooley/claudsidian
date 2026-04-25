@@ -14,7 +14,7 @@ import {
   LLMModelNotFoundException,
 } from '../../core/llm/exception'
 import { getChatModelClient } from '../../core/llm/manager'
-import { ChatMessage } from '../../types/chat'
+import { ChatMessage, ChatUserMessage } from '../../types/chat'
 import { PromptGenerator } from '../../utils/chat/promptGenerator'
 import { ResponseGenerator } from '../../utils/chat/responseGenerator'
 import { ErrorModal } from '../modals/ErrorModal'
@@ -193,9 +193,18 @@ export function useChatStreamManager({
                 abortController.abort()
                 return prevChatMessages
               }
+              // Preserve any aside messages the user injected mid-turn so the
+              // response stream's chunk replacement doesn't drop them.
+              const asides = prevChatMessages
+                .slice(lastMessageIndex + 1)
+                .filter(
+                  (m): m is ChatMessage & { isAside: true } =>
+                    m.role === 'user' && (m as ChatUserMessage).isAside === true,
+                )
               return [
                 ...prevChatMessages.slice(0, lastMessageIndex + 1),
                 ...responseMessages,
+                ...asides,
               ]
             })
             requestAnimationFrame(() => autoScrollToBottom())
@@ -258,8 +267,13 @@ export function useChatStreamManager({
       if (client && typeof client.interruptRequest === 'function') {
         client.interruptRequest(prompt)
       }
+      // Also tear down the local stream — interrupt is "stop now". Without
+      // this the response generator keeps waiting for events that may not
+      // arrive in a timely way after the server-side cancel, so the Stop
+      // button stays visible and the chat appears stuck.
+      abortActiveStreams()
     },
-    []
+    [abortActiveStreams]
   )
 
   const sendAside = useCallback(
