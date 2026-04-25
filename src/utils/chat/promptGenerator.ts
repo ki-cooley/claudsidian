@@ -102,12 +102,54 @@ export class PromptGenerator {
 
     const memoryMessage = await this.getMemoryMessage()
 
+    const chatHistoryMessages = this.getChatHistoryMessages({
+      messages: compiledMessages,
+    })
+
+    // Backend provider only forwards the *last* user message to the Agent
+    // SDK — session resumption restores prior turns server-side. Separate
+    // pre-context user messages (custom instructions, persistent memory,
+    // current-file content) would be silently dropped, so bundle their
+    // text into the last user message so it actually reaches the model.
+    if (this.isBackendProvider()) {
+      const preContextTexts = [
+        customInstructionMessage,
+        memoryMessage,
+        currentFileMessage,
+      ]
+        .filter(
+          (m): m is RequestMessage =>
+            !!m && m.role === 'user' && typeof m.content === 'string',
+        )
+        .map((m) => m.content as string)
+
+      if (preContextTexts.length > 0 && chatHistoryMessages.length > 0) {
+        const lastIdx = chatHistoryMessages.length - 1
+        const last = chatHistoryMessages[lastIdx]
+        if (last.role === 'user') {
+          const prefix = `${preContextTexts.join('\n\n')}\n\n`
+          chatHistoryMessages[lastIdx] =
+            typeof last.content === 'string'
+              ? { ...last, content: `${prefix}${last.content}` }
+              : {
+                  ...last,
+                  content: [
+                    { type: 'text', text: prefix },
+                    ...last.content,
+                  ],
+                }
+        }
+      }
+
+      return [systemMessage, ...chatHistoryMessages]
+    }
+
     const requestMessages: RequestMessage[] = [
       systemMessage,
       ...(customInstructionMessage ? [customInstructionMessage] : []),
       ...(memoryMessage ? [memoryMessage] : []),
       ...(currentFileMessage ? [currentFileMessage] : []),
-      ...this.getChatHistoryMessages({ messages: compiledMessages }),
+      ...chatHistoryMessages,
       ...(shouldUseRAG && this.getModelPromptLevel() == PromptLevel.Default
         ? [this.getRagInstructionMessage()]
         : []),
