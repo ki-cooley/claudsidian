@@ -47,9 +47,7 @@ cp main.js manifest.json styles.css "$VAULT/.obsidian/plugins/claudsidian/"
 
 Then over CDP (port 9333): open the vault (the profile's `obsidian.json` must list it, or pick it in the vault chooser), enable community plugins and Claudsidian, open the Claudsidian view, `app.emulateMobile(true)` for the mobile layout, screenshot, and run scenario 03 against the mock server by setting `apiBaseUrl` in the plugin settings to the mock server's URL (the mock's token endpoint takes any code).
 
-If the second instance refuses to start (single-instance lock, profile conflict), record the error here and rely on layer 3.
-
-Status: not yet attempted on this machine.
+Status: works on this machine (2026-10-11, Obsidian 1.13.7). A second instance with its own `--user-data-dir` coexists with the running one. `node e2e/obsidian/drive.mjs` (sandbox off, mock server on 8765 via `node test/mock-ccr/server.mjs --port 8765`) connects over CDP with Playwright, accepts the vault-trust dialog, enables the plugin, points it at the mock, opens the view on desktop and under `app.emulateMobile(true)`, sends a message, toggles cooking mode, opens the sign-in modal, and writes screenshots to `e2e/out/obsidian/`. Obsidian's own lucide icons render where the harness shim shows placeholders.
 
 ## 5. Live smoke
 

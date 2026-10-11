@@ -720,7 +720,7 @@ describe('applyEvents', () => {
   it('records init and shows the start line only as the first event in the window', () => {
     const first = reduce([row(1, init()), row(2, user('hi'))]);
     expect(kinds(first)).toEqual(['system', 'user']);
-    expect(first.items[0]).toMatchObject({ kind: 'system', subtype: 'init', text: `Session started in ${VAULT}` });
+    expect(first.items[0]).toMatchObject({ kind: 'system', subtype: 'init', text: 'Session started in yes-chef' });
     expect(first.init).toEqual({
       cwd: VAULT,
       model: 'claude-opus-5-5',

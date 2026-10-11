@@ -160,7 +160,7 @@ function reduceInit(state: TranscriptState, ev: SystemOtherEvent, ctx: EventCont
   // The start line only when init opens the loaded window (lastSeq -1: no wire event applied yet).
   const items =
     state.lastSeq === -1
-      ? [...state.items, systemItem(ctx, 'init', init.cwd ? `Session started in ${init.cwd}` : 'Session started')]
+      ? [...state.items, systemItem(ctx, 'init', init.cwd ? `Session started in ${folderName(init.cwd)}` : 'Session started')]
       : state.items;
   return {
     ...state,
@@ -394,4 +394,10 @@ function deriveTurn(state: TranscriptState): TurnState {
 /** Find an item by id at any depth (subagent children included). */
 export function findItem(state: TranscriptState, id: string): TranscriptItem | undefined {
   return findItemIn(state.items, id);
+}
+
+/** Last path segment of a working directory, for the start line ("yes-chef" rather than the full path). */
+function folderName(cwd: string): string {
+  const parts = cwd.replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || cwd;
 }
