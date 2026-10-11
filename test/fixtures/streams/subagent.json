@@ -1,0 +1,293 @@
+{
+  "name": "subagent",
+  "description": "An Agent call whose subagent traffic (parent_tool_use_id set) nests under the tool item, then the parent finishes.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:00.100Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write"],
+        "mcp_servers": [],
+        "model": "claude-opus-5-5",
+        "permissionMode": "auto",
+        "slash_commands": ["compact", "context"],
+        "effort": "high",
+        "claude_code_version": "2.1.296",
+        "uuid": "2a1f3c6e-9b7d-4e21-8c5a-1f0d9e8b7a60",
+        "timestamp": "2026-10-10T20:50:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:50:03.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "6c4e8a2b-3d1f-4b9c-a7e5-2b8f0c1d9e34",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:50:02.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "find every note that mentions kombu" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:05.500Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Gn4vC9hY3aWb8dE5iKn7Tj",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            { "type": "text", "text": "Spinning up a search agent." },
+            {
+              "type": "tool_use",
+              "id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+              "name": "Agent",
+              "input": { "description": "Search kombu mentions", "prompt": "Find every markdown note in this vault that mentions kombu and list the paths.", "subagent_type": "Explore" }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1300, "output_tokens": 110 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "9e7b5d3a-1c8f-4a2e-b6d4-7f3a9c2e1b58",
+        "timestamp": "2026-10-10T20:50:05.490Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:07.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Ho5wD0iZ4bXc9eF6jLo8Uk",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-5",
+          "content": [{ "type": "text", "text": "Searching the vault for kombu." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 600, "output_tokens": 9 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+        "agent_id": "agent-3f1c",
+        "uuid": "4b2d8f6c-7a9e-4c3b-9d1f-5e8a2b7c4d90",
+        "timestamp": "2026-10-10T20:50:06.990Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:07.600Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Ip6xE1jA5cYd0fG7kMp9Vl",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-5",
+          "content": [
+            { "type": "tool_use", "id": "toolu_01Oi5XqW8sZf1cDv4yBt9jRk", "name": "Grep", "input": { "pattern": "kombu", "output_mode": "files_with_matches" } }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 620, "output_tokens": 40 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+        "agent_id": "agent-3f1c",
+        "uuid": "d7c3a9e5-2f4b-4d8a-8e6c-1a5b9f3d7c02",
+        "timestamp": "2026-10-10T20:50:07.590Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:07.900Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Oi5XqW8sZf1cDv4yBt9jRk",
+              "content": "components/dashi.md\ntechniques/kombu-cure.md\nmenus/latitude 10/menu.md",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": { "mode": "files_with_matches", "numFiles": 3, "filenames": ["components/dashi.md", "techniques/kombu-cure.md", "menus/latitude 10/menu.md"] },
+        "uuid": "a1e5c7b9-6d3f-4e2a-b8c4-9f7d1a3e5b16",
+        "timestamp": "2026-10-10T20:50:07.890Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:09.100Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Jq7yF2kB6dZe1gH8lNq0Wm",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-5",
+          "content": [
+            { "type": "tool_use", "id": "toolu_01Pj6YrX9tAg2dEw5zCu0kSl", "name": "Read", "input": { "file_path": "/Users/kicooley-winters/workspace/projects/yes-chef/techniques/kombu-cure.md", "limit": 20 } }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 700, "output_tokens": 52 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+        "agent_id": "agent-3f1c",
+        "uuid": "3c9f1b7d-5e2a-4f8c-a6b0-8d4e2c6a9f71",
+        "timestamp": "2026-10-10T20:50:09.090Z"
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:09.300Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Pj6YrX9tAg2dEw5zCu0kSl",
+              "content": "     1\t# Kombu cure\n     2\t\n     3\t48 h under a sheet of rausu kombu, 2% salt.",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": { "type": "text", "file": { "filePath": "/Users/kicooley-winters/workspace/projects/yes-chef/techniques/kombu-cure.md", "numLines": 3, "startLine": 1, "totalLines": 3 } },
+        "uuid": "8f2a6d4c-1b9e-4a7f-9c3d-6e5b8a2f4d13",
+        "timestamp": "2026-10-10T20:50:09.290Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:11.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Kr8zG3lC7eAf2hI9mOr1Xn",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-5",
+          "content": [{ "type": "text", "text": "Three notes mention kombu: components/dashi.md, techniques/kombu-cure.md, menus/latitude 10/menu.md." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 820, "output_tokens": 44 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+        "agent_id": "agent-3f1c",
+        "uuid": "e4b8c2a6-9f1d-4e5b-8a7c-3d2f6b9e1c48",
+        "timestamp": "2026-10-10T20:50:10.990Z"
+      }
+    },
+    {
+      "sequence_num": "10",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:11.200Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Nh4WpV7rYe0bCu3xAs8iQj",
+              "content": [{ "type": "text", "text": "Three notes mention kombu: components/dashi.md, techniques/kombu-cure.md, menus/latitude 10/menu.md." }],
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": { "status": "completed", "agentId": "agent-3f1c", "totalDurationMs": 4200, "totalTokens": 2900, "totalToolUseCount": 2 },
+        "uuid": "5d1c9e3b-7a4f-4b2d-9e6a-2c8f4b1d7e39",
+        "timestamp": "2026-10-10T20:50:11.190Z"
+      }
+    },
+    {
+      "sequence_num": "11",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:13.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Ls9aH4mD8fBg3iJ0nPs2Yo",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Three notes mention kombu: the dashi component, the kombu cure technique, and the L10 menu." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1500, "output_tokens": 30 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "b6e2f8d4-3c7a-4d9b-8f5e-1a9c3e7b5d82",
+        "timestamp": "2026-10-10T20:50:12.990Z"
+      }
+    },
+    {
+      "sequence_num": "12",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:50:13.080Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 10000,
+        "duration_api_ms": 8800,
+        "num_turns": 2,
+        "result": "Three notes mention kombu: the dashi component, the kombu cure technique, and the L10 menu.",
+        "stop_reason": "end_turn",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.118,
+        "usage": { "input_tokens": 5540, "output_tokens": 285 },
+        "permission_denials": [],
+        "uuid": "7f3b1d9c-5a8e-4c6f-b2d7-9e4a6c8f2b15",
+        "timestamp": "2026-10-10T20:50:13.070Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["system", "user", "assistant_text", "tool", "assistant_text", "result"], "turn": "idle" }
+}

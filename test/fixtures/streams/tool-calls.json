@@ -1,0 +1,243 @@
+{
+  "name": "tool-calls",
+  "description": "Read then Edit, each tool_use followed by its tool_result; auxiliary tool_progress and tool_use_summary events are ignored.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:00.100Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write"],
+        "mcp_servers": [],
+        "model": "claude-opus-5-5",
+        "permissionMode": "auto",
+        "slash_commands": ["compact", "context"],
+        "effort": null,
+        "claude_code_version": "2.1.296",
+        "uuid": "8f162bc0-9204-4ba8-8981-43d46394bc48",
+        "timestamp": "2026-10-10T20:05:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:05:03.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "244ad377-c39e-43ff-8efb-2165fae933a6",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:05:02.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "fix the typo in the tare recipe: mirn should be mirin" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:05.400Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Vb3kR8wN2pLq7sT4xZc6Hy",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            { "type": "text", "text": "Reading the recipe first." },
+            {
+              "type": "tool_use",
+              "id": "toolu_01Hc9RkQ2mTz5wXp8sVn3dLe",
+              "name": "Read",
+              "input": { "file_path": "/Users/kicooley-winters/workspace/projects/yes-chef/recipes/tare.md" }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1400, "output_tokens": 88 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "e68811a7-4ada-4ce4-ad51-623b933d0e31",
+        "timestamp": "2026-10-10T20:05:05.390Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:05.620Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Hc9RkQ2mTz5wXp8sVn3dLe",
+              "content": "     1\t# Tare\n     2\t\n     3\t- 200 g mirn\n     4\t- 200 g soy\n     5\t- 50 g sake",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": {
+          "type": "text",
+          "file": { "filePath": "/Users/kicooley-winters/workspace/projects/yes-chef/recipes/tare.md", "numLines": 5, "startLine": 1, "totalLines": 5 }
+        },
+        "uuid": "c1a80721-66bd-4f6e-ba98-daae07fb15ad",
+        "timestamp": "2026-10-10T20:05:05.610Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:08.200Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Wd4lS9xO3qMr8tU5yAd7Jz",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01Jd0SlR3nUa6xYq9tWo4eMf",
+              "name": "Edit",
+              "input": {
+                "file_path": "/Users/kicooley-winters/workspace/projects/yes-chef/recipes/tare.md",
+                "old_string": "- 200 g mirn",
+                "new_string": "- 200 g mirin"
+              }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1560, "output_tokens": 120 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "daee001a-76ff-41e0-bc47-adfe5569a1b2",
+        "timestamp": "2026-10-10T20:05:08.190Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:08.300Z",
+      "payload": {
+        "type": "tool_progress",
+        "tool_use_id": "toolu_01Jd0SlR3nUa6xYq9tWo4eMf",
+        "tool_name": "Edit",
+        "parent_tool_use_id": null,
+        "elapsed_time_seconds": 0.1,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "9d325324-b35f-4801-8cda-e43453b58bcf",
+        "timestamp": "2026-10-10T20:05:08.290Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:08.420Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Jd0SlR3nUa6xYq9tWo4eMf",
+              "content": "The file /Users/kicooley-winters/workspace/projects/yes-chef/recipes/tare.md has been updated successfully.",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": {
+          "filePath": "/Users/kicooley-winters/workspace/projects/yes-chef/recipes/tare.md",
+          "oldString": "- 200 g mirn",
+          "newString": "- 200 g mirin",
+          "originalFile": "# Tare\n\n- 200 g mirn\n- 200 g soy\n- 50 g sake\n",
+          "structuredPatch": [{ "oldStart": 3, "oldLines": 1, "newStart": 3, "newLines": 1, "lines": ["-- 200 g mirn", "+- 200 g mirin"] }],
+          "userModified": false,
+          "replaceAll": false
+        },
+        "uuid": "b4c1fd46-e67c-40ee-97c7-a4d799bdc818",
+        "timestamp": "2026-10-10T20:05:08.410Z"
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:10.050Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Xe5mT0yP4rNs9uV6zBe8Ka",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Fixed the typo in recipes/tare.md (mirn to mirin)." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1700, "output_tokens": 24 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "1d22a332-6280-4c37-8f48-27eabc27413e",
+        "timestamp": "2026-10-10T20:05:10.040Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:10.060Z",
+      "payload": {
+        "type": "tool_use_summary",
+        "summary": "Fixed a typo in the tare recipe",
+        "preceding_tool_use_ids": ["toolu_01Hc9RkQ2mTz5wXp8sVn3dLe", "toolu_01Jd0SlR3nUa6xYq9tWo4eMf"],
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "5efd6b38-289b-44c9-a544-5c766a5e4bee",
+        "timestamp": "2026-10-10T20:05:10.055Z"
+      }
+    },
+    {
+      "sequence_num": "10",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:05:10.120Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 7100,
+        "duration_api_ms": 6400,
+        "num_turns": 3,
+        "result": "Fixed the typo in recipes/tare.md (mirn to mirin).",
+        "stop_reason": "end_turn",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.0921,
+        "usage": { "input_tokens": 4660, "output_tokens": 232 },
+        "permission_denials": [],
+        "uuid": "a6ee0e0d-fdb2-4584-bb61-9767c721b503",
+        "timestamp": "2026-10-10T20:05:10.110Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["system", "user", "assistant_text", "tool", "tool", "assistant_text", "result"], "turn": "idle" }
+}

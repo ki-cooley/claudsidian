@@ -1,0 +1,236 @@
+{
+  "name": "question",
+  "description": "AskUserQuestion arrives as a can_use_tool request; this client answers with updatedInput.answers and the worker continues.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:00.100Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write", "AskUserQuestion"],
+        "mcp_servers": [],
+        "model": "claude-opus-5-5",
+        "permissionMode": "auto",
+        "slash_commands": ["compact", "context"],
+        "effort": "high",
+        "claude_code_version": "2.1.296",
+        "uuid": "d9ad123f-e7af-4376-9a2a-3b3827a15b2a",
+        "timestamp": "2026-10-10T20:30:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:30:04.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "63eca6b1-c2f6-45fb-8539-c4354b3b5832",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:30:03.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "pick the pairing for the dashi course and write it into the pairing sheet" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:07.300Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Cj0rY5dU9wSx4zA1eGj3Pf",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01Mg3VoU6qXd9aBt2wZr7hPi",
+              "name": "AskUserQuestion",
+              "input": {
+                "questions": [
+                  {
+                    "question": "Which direction for the dashi pairing?",
+                    "header": "Pairing",
+                    "options": [
+                      { "label": "Riesling", "description": "Off-dry Mosel, plays with the kombu salinity" },
+                      { "label": "Junmai sake", "description": "Umami on umami, served warm" },
+                      { "label": "Fino", "description": "Saline, nutty, bone dry" }
+                    ],
+                    "multiSelect": false
+                  }
+                ]
+              }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1500, "output_tokens": 160 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "ab275d90-d7a2-4fc7-8b3f-c6deb78390d1",
+        "timestamp": "2026-10-10T20:30:07.290Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:07.360Z",
+      "payload": {
+        "type": "control_request",
+        "request_id": "ceeff4e4-6bb2-4c61-8492-16b7cc3dab64",
+        "request": {
+          "subtype": "can_use_tool",
+          "tool_name": "AskUserQuestion",
+          "input": {
+            "questions": [
+              {
+                "question": "Which direction for the dashi pairing?",
+                "header": "Pairing",
+                "options": [
+                  { "label": "Riesling", "description": "Off-dry Mosel, plays with the kombu salinity" },
+                  { "label": "Junmai sake", "description": "Umami on umami, served warm" },
+                  { "label": "Fino", "description": "Saline, nutty, bone dry" }
+                ],
+                "multiSelect": false
+              }
+            ]
+          },
+          "permission_suggestions": [],
+          "tool_use_id": "toolu_01Mg3VoU6qXd9aBt2wZr7hPi"
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "811084e1-d043-4424-ac9f-4bf6dc790fca",
+        "timestamp": "2026-10-10T20:30:07.350Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:30:21.500Z",
+      "payload": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "ceeff4e4-6bb2-4c61-8492-16b7cc3dab64",
+          "response": {
+            "behavior": "allow",
+            "updatedInput": {
+              "questions": [
+                {
+                  "question": "Which direction for the dashi pairing?",
+                  "header": "Pairing",
+                  "options": [
+                    { "label": "Riesling", "description": "Off-dry Mosel, plays with the kombu salinity" },
+                    { "label": "Junmai sake", "description": "Umami on umami, served warm" },
+                    { "label": "Fino", "description": "Saline, nutty, bone dry" }
+                  ],
+                  "multiSelect": false
+                }
+              ],
+              "answers": { "Which direction for the dashi pairing?": "Fino" }
+            }
+          }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "b2a04905-1af9-4c25-b4eb-c8bf5802afb5",
+        "timestamp": "2026-10-10T20:30:21.490Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:21.600Z",
+      "payload": {
+        "type": "system",
+        "subtype": "status",
+        "status": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "91df5751-72cc-4823-9f69-f679a2e9ced2",
+        "timestamp": "2026-10-10T20:30:21.590Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:21.700Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Mg3VoU6qXd9aBt2wZr7hPi",
+              "content": "User has answered your questions: \"Which direction for the dashi pairing?\"=\"Fino\". You can now continue with the user's answers in mind.",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": { "questions": [], "answers": { "Which direction for the dashi pairing?": "Fino" } },
+        "uuid": "0bf29028-977a-4678-9474-bd614d20262d",
+        "timestamp": "2026-10-10T20:30:21.690Z"
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:24.100Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Dk1sZ6eV0xTy5aB2fHk4Qg",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Fino it is. Writing it into the pairing sheet now." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1720, "output_tokens": 20 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "3a87f6ef-6e0c-43f5-b68c-571797304c0a",
+        "timestamp": "2026-10-10T20:30:24.090Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:24.160Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 20150,
+        "duration_api_ms": 5300,
+        "num_turns": 2,
+        "result": "Fino it is. Writing it into the pairing sheet now.",
+        "stop_reason": "end_turn",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.071,
+        "usage": { "input_tokens": 3220, "output_tokens": 180 },
+        "permission_denials": [],
+        "uuid": "3f803e7d-658b-43d8-9baa-94452cfabb6e",
+        "timestamp": "2026-10-10T20:30:24.150Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["system", "user", "tool", "question", "assistant_text", "result"], "turn": "idle" }
+}

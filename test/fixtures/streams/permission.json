@@ -1,0 +1,203 @@
+{
+  "name": "permission",
+  "description": "A Bash call blocked on can_use_tool, answered by this client with allow; a rate_limit_event in between is ignored.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:00.100Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write"],
+        "mcp_servers": [],
+        "model": "claude-opus-5-5",
+        "permissionMode": "default",
+        "slash_commands": ["compact", "context"],
+        "effort": "high",
+        "claude_code_version": "2.1.296",
+        "uuid": "e4f44b01-a000-4dd5-8217-3d39294972a7",
+        "timestamp": "2026-10-10T20:20:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:20:03.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "f3360da6-e323-48a3-9286-09a58f8565be",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:20:02.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "re-render the prep window" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:05.200Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Ah8pW3bS7uQv2xY9cEh1Nd",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01Lf2UnT5pWc8zAs1vYq6gOh",
+              "name": "Bash",
+              "input": { "command": "python3 scripts/render-prep-window.py", "description": "Render the prep window" }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1300, "output_tokens": 64 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "e51fca9d-29b7-4f32-950f-3824767c34ff",
+        "timestamp": "2026-10-10T20:20:05.190Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:05.260Z",
+      "payload": {
+        "type": "control_request",
+        "request_id": "04bb3a3f-d629-4158-b4f4-538b2f6ef566",
+        "request": {
+          "subtype": "can_use_tool",
+          "tool_name": "Bash",
+          "input": { "command": "python3 scripts/render-prep-window.py", "description": "Render the prep window" },
+          "permission_suggestions": [
+            {
+              "type": "addRules",
+              "rules": [{ "toolName": "Bash", "ruleContent": "python3 scripts/render-prep-window.py" }],
+              "behavior": "allow",
+              "destination": "localSettings"
+            }
+          ],
+          "tool_use_id": "toolu_01Lf2UnT5pWc8zAs1vYq6gOh",
+          "description": "Render the prep window"
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "19f91cba-836b-4603-81bd-4247e8e9b539",
+        "timestamp": "2026-10-10T20:20:05.250Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:20:09.800Z",
+      "payload": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "04bb3a3f-d629-4158-b4f4-538b2f6ef566",
+          "response": {
+            "behavior": "allow",
+            "updatedInput": { "command": "python3 scripts/render-prep-window.py", "description": "Render the prep window" }
+          }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "b445e54e-70a8-41df-a525-45f73144aaa4",
+        "timestamp": "2026-10-10T20:20:09.790Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:09.900Z",
+      "payload": {
+        "type": "rate_limit_event",
+        "rate_limit_info": { "status": "allowed", "resetsAt": 1791680400, "rateLimitType": "five_hour", "utilization": 0.31 },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "8c2e9e9b-9074-497c-b28e-0a512e629988",
+        "timestamp": "2026-10-10T20:20:09.890Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:11.400Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Lf2UnT5pWc8zAs1vYq6gOh",
+              "content": "Rendered 3 days: Wed 6.5 h, Thu 8.0 h, Fri 4.0 h",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": { "stdout": "Rendered 3 days: Wed 6.5 h, Thu 8.0 h, Fri 4.0 h", "stderr": "", "interrupted": false, "isImage": false },
+        "uuid": "21fa2960-8823-40c4-ad90-2c4af0f0dc9b",
+        "timestamp": "2026-10-10T20:20:11.390Z"
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:13.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Bi9qX4cT8vRw3yZ0dFi2Oe",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Rendered. Friday is at 4 hours, under the D-1 rule." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1450, "output_tokens": 22 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "f1be4ba7-172e-4d77-a543-9f1f69dc465e",
+        "timestamp": "2026-10-10T20:20:12.990Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:20:13.060Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 10050,
+        "duration_api_ms": 3900,
+        "num_turns": 2,
+        "result": "Rendered. Friday is at 4 hours, under the D-1 rule.",
+        "stop_reason": "end_turn",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.055,
+        "usage": { "input_tokens": 2750, "output_tokens": 86 },
+        "permission_denials": [],
+        "uuid": "728dd0bb-adfe-4a5a-a7cb-37c03d24b992",
+        "timestamp": "2026-10-10T20:20:13.050Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["system", "user", "tool", "permission", "assistant_text", "result"], "turn": "idle" }
+}

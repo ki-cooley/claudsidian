@@ -1,0 +1,328 @@
+{
+  "name": "streaming-deltas",
+  "description": "A window with no init event: text and tool input built from deltas, replaced by the final assistant events; numeric sequence numbers.",
+  "rows": [
+    {
+      "sequence_num": 41,
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:12:00.300Z",
+      "payload": {
+        "type": "user",
+        "uuid": "75a9b0fe-edb4-467a-a721-150529e0019e",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:12:00.290Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "how many courses mention yuzu?" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": 42,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "message_start",
+          "message": { "id": "msg_01Yf6nU1zQ5sOt0vW7aCf9Lb", "type": "message", "role": "assistant", "model": "claude-opus-5-5", "content": [], "stop_reason": null, "usage": { "input_tokens": 900, "output_tokens": 1 } }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "c8ddda72-7e10-458c-b806-db2dbc5c95b2",
+        "timestamp": "2026-10-10T20:12:01.990Z"
+      }
+    },
+    {
+      "sequence_num": 43,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.030Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "9de277cb-ad76-48e9-b830-8c0dceaa2d44",
+        "timestamp": "2026-10-10T20:12:02.020Z"
+      }
+    },
+    {
+      "sequence_num": 44,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.200Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Let me " } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "ff1624de-05cc-4834-b4e2-ba7a2bc5a300",
+        "timestamp": "2026-10-10T20:12:02.190Z"
+      }
+    },
+    {
+      "sequence_num": 45,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.330Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "check the menus." } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "64de77b9-dd80-4f59-9fa1-4ad3a26c97e8",
+        "timestamp": "2026-10-10T20:12:02.320Z"
+      }
+    },
+    {
+      "sequence_num": 46,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.400Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_stop", "index": 0 },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "2205e04e-3c76-45eb-9fb8-be36d6edc2d0",
+        "timestamp": "2026-10-10T20:12:02.390Z"
+      }
+    },
+    {
+      "sequence_num": 47,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.450Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_start",
+          "index": 1,
+          "content_block": { "type": "tool_use", "id": "toolu_01Ke1TmS4oVb7yZr0uXp5fNg", "name": "Grep", "input": {} }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "e65f120b-a980-47b9-b99a-79e4c36f1d69",
+        "timestamp": "2026-10-10T20:12:02.440Z"
+      }
+    },
+    {
+      "sequence_num": 48,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.600Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{\"pattern\": \"yuzu\"," } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "d95b772d-362c-4c4b-b2c0-a431b22b15c1",
+        "timestamp": "2026-10-10T20:12:02.590Z"
+      }
+    },
+    {
+      "sequence_num": 49,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.720Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": " \"path\": \"menus\", \"output_mode\": \"files_with_matches\"}" } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "f5675d5c-6972-4414-aa1a-6003fa1f4c12",
+        "timestamp": "2026-10-10T20:12:02.710Z"
+      }
+    },
+    {
+      "sequence_num": 50,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.800Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_stop", "index": 1 },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "23ab2e96-9b5c-4a63-94d6-27b2c23d9b90",
+        "timestamp": "2026-10-10T20:12:02.790Z"
+      }
+    },
+    {
+      "sequence_num": 51,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.830Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "message_stop" },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "15556cad-5035-479d-9d34-cce736fa2046",
+        "timestamp": "2026-10-10T20:12:02.820Z"
+      }
+    },
+    {
+      "sequence_num": 52,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:02.900Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Yf6nU1zQ5sOt0vW7aCf9Lb",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            { "type": "text", "text": "Let me check the menus." },
+            {
+              "type": "tool_use",
+              "id": "toolu_01Ke1TmS4oVb7yZr0uXp5fNg",
+              "name": "Grep",
+              "input": { "pattern": "yuzu", "path": "menus", "output_mode": "files_with_matches" }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 900, "output_tokens": 70 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "48ab54df-6b44-4d9c-b6e6-4ce40b3fd9e1",
+        "timestamp": "2026-10-10T20:12:02.890Z"
+      }
+    },
+    {
+      "sequence_num": 53,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:03.100Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Ke1TmS4oVb7yZr0uXp5fNg",
+              "content": "menus/latitude 10/menu.md\nmenus/latitude 9/menu.md",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tool_use_result": { "mode": "files_with_matches", "numFiles": 2, "filenames": ["menus/latitude 10/menu.md", "menus/latitude 9/menu.md"] },
+        "uuid": "c69680f2-f9ed-41df-a9e5-51d27821d8ce",
+        "timestamp": "2026-10-10T20:12:03.090Z"
+      }
+    },
+    {
+      "sequence_num": 54,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:04.500Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "message_start",
+          "message": { "id": "msg_01Zg7oV2aR6tPu1wX8bDg0Mc", "type": "message", "role": "assistant", "model": "claude-opus-5-5", "content": [], "stop_reason": null, "usage": { "input_tokens": 1010, "output_tokens": 1 } }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "750d2199-4109-43a6-bd35-d6b45c51e52c",
+        "timestamp": "2026-10-10T20:12:04.490Z"
+      }
+    },
+    {
+      "sequence_num": 55,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:04.520Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "1441139a-df5e-48f4-9d07-1c371e957b18",
+        "timestamp": "2026-10-10T20:12:04.510Z"
+      }
+    },
+    {
+      "sequence_num": 56,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:04.800Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Two menus mention yuzu: Latitude 9 and Latitude 10." } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "fee98769-5ed4-4856-b566-b2bd402b1010",
+        "timestamp": "2026-10-10T20:12:04.790Z"
+      }
+    },
+    {
+      "sequence_num": 57,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:04.860Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_stop", "index": 0 },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "8702ef88-ed0b-4551-8b85-8340f12f57bd",
+        "timestamp": "2026-10-10T20:12:04.850Z"
+      }
+    },
+    {
+      "sequence_num": 58,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:04.950Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Zg7oV2aR6tPu1wX8bDg0Mc",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Two menus mention yuzu: Latitude 9 and Latitude 10." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1010, "output_tokens": 18 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "58686cb9-82db-436d-97e8-a5983952d1d2",
+        "timestamp": "2026-10-10T20:12:04.940Z"
+      }
+    },
+    {
+      "sequence_num": 59,
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:12:05.010Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 4700,
+        "duration_api_ms": 4100,
+        "num_turns": 2,
+        "result": "Two menus mention yuzu: Latitude 9 and Latitude 10.",
+        "stop_reason": "end_turn",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.061,
+        "usage": { "input_tokens": 1910, "output_tokens": 88 },
+        "permission_denials": [],
+        "uuid": "b9ce613f-c3ba-4ad8-8e4b-e00ca7d3b90c",
+        "timestamp": "2026-10-10T20:12:05.000Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["user", "assistant_text", "tool", "assistant_text", "result"], "turn": "idle" }
+}

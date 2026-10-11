@@ -214,6 +214,18 @@ export interface SessionInit {
   claudeCodeVersion?: string;
 }
 
+/** Open stream_event message in one scope (top level or one subagent), kept by the reducer between polls. */
+export interface StreamScope {
+  /** message id from message_start; partial items are `${messageId}:${blockIndex}` */
+  messageId: string;
+  /** content block index -> item id (tool blocks use the tool_use id) */
+  blocks: Record<number, string>;
+  /** blocks of this message already received as final `assistant` content (they arrive one per event) */
+  finalized?: number;
+  /** messageId was invented because the window opened mid-stream (no message_start seen) */
+  synthesized?: boolean;
+}
+
 export interface TranscriptState {
   items: TranscriptItem[];
   /** highest sequence_num applied; -1 before any event */
@@ -227,6 +239,8 @@ export interface TranscriptState {
   lastResult?: ResultItem;
   /** uuids of user events we sent and are waiting to see echoed */
   inFlightUserUuids: string[];
+  /** streaming bookkeeping keyed by parent_tool_use_id ("" for the top level); owned by the reducer */
+  streaming?: Record<string, StreamScope>;
 }
 
 export function createTranscript(): TranscriptState {

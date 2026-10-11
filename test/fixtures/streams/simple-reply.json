@@ -1,0 +1,215 @@
+{
+  "name": "simple-reply",
+  "description": "One message from the plugin answered with streamed text, the final assistant event, and a result.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:00.120Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write", "AskUserQuestion", "mcp__memory__store_memory"],
+        "mcp_servers": [{ "name": "memory", "status": "connected" }],
+        "model": "claude-opus-5-5",
+        "permissionMode": "auto",
+        "slash_commands": ["compact", "context", "effort", "model", "recap", "rename", "usage"],
+        "effort": "high",
+        "capabilities": ["remote_control"],
+        "claude_code_version": "2.1.296",
+        "uuid": "326ec0a9-3dbd-4813-a46a-3ff4dd83b1b2",
+        "timestamp": "2026-10-10T20:01:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:01:04.511Z",
+      "payload": {
+        "type": "user",
+        "uuid": "c3ffa542-6134-4c8c-9c65-73d09633c447",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:01:04.500Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "what is left on the L10 prep list for Friday?\n\n[Obsidian context]\nvault: yes-chef\nactive note: menus/latitude 10/prep.md (cursor line 12)"
+            }
+          ]
+        },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:06.002Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "message_start",
+          "message": {
+            "id": "msg_01QkTz7m3NfVbXp8sR2wLd9c",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "content": [],
+            "stop_reason": null,
+            "usage": { "input_tokens": 1180, "output_tokens": 1 }
+          }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "0a9f5cb6-ff7a-4c0a-8bbd-0b748fe0d931",
+        "timestamp": "2026-10-10T20:01:06.000Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:06.040Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "77bc7c4e-7c3e-4526-90f5-1ccd97b00836",
+        "timestamp": "2026-10-10T20:01:06.030Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:06.410Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Three items are still open: " } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "f4cccc30-a3ad-4bce-9de9-ce910dca8fdb",
+        "timestamp": "2026-10-10T20:01:06.400Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:06.930Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_delta",
+          "index": 0,
+          "delta": { "type": "text_delta", "text": "the kombu cure, the tare reduction, and printing the menu cards." }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "c7d59965-8310-4d00-a4a9-d793a374c71d",
+        "timestamp": "2026-10-10T20:01:06.920Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:07.010Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "content_block_stop", "index": 0 },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "2497c539-dc0c-4ac9-aa4f-7349d918a902",
+        "timestamp": "2026-10-10T20:01:07.000Z"
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:07.020Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "message_delta",
+          "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+          "usage": { "output_tokens": 31 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "d3be31ca-8526-49f7-9d2a-9d305d946ce8",
+        "timestamp": "2026-10-10T20:01:07.015Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:07.030Z",
+      "payload": {
+        "type": "stream_event",
+        "event": { "type": "message_stop" },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "64192144-c577-4347-9ff3-fa4358a1ea5e",
+        "timestamp": "2026-10-10T20:01:07.025Z"
+      }
+    },
+    {
+      "sequence_num": "10",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:07.090Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01QkTz7m3NfVbXp8sR2wLd9c",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [
+            { "type": "text", "text": "Three items are still open: the kombu cure, the tare reduction, and printing the menu cards." }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1180, "output_tokens": 31 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "88d08678-e424-410d-93c0-9d762ca0ca76",
+        "timestamp": "2026-10-10T20:01:07.080Z"
+      }
+    },
+    {
+      "sequence_num": "11",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:01:07.140Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 2630,
+        "duration_api_ms": 2410,
+        "num_turns": 1,
+        "result": "Three items are still open: the kombu cure, the tare reduction, and printing the menu cards.",
+        "stop_reason": "end_turn",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.0412,
+        "usage": { "input_tokens": 1180, "output_tokens": 31 },
+        "permission_denials": [],
+        "uuid": "d14b5fd2-a3cc-4eb8-826e-fa9eb2ec6629",
+        "timestamp": "2026-10-10T20:01:07.130Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["system", "user", "assistant_text", "result"], "turn": "idle" }
+}

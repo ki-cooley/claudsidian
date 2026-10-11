@@ -1,0 +1,174 @@
+{
+  "name": "error-result",
+  "description": "API retries, a rejected control request of ours, an assistant event carrying an error, and an error_during_execution result.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:00.100Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write"],
+        "mcp_servers": [],
+        "model": "claude-opus-5-5",
+        "permissionMode": "auto",
+        "slash_commands": ["compact", "context", "effort"],
+        "effort": "high",
+        "claude_code_version": "2.1.296",
+        "uuid": "7ab14b14-fcf1-4dfb-8836-fa0f79a42f70",
+        "timestamp": "2026-10-10T20:40:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:40:02.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "3fdfe1df-5819-40a2-a036-8fc175647474",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T20:40:01.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "run the full test suite and summarise the failures" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:04.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01El2tA7fW1yUz6bC3gIl5Rh",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Running the suite." }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 1200, "output_tokens": 8 }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "2d4d98db-413a-4923-8145-eaba52c948b1",
+        "timestamp": "2026-10-10T20:40:03.990Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:06.500Z",
+      "payload": {
+        "type": "system",
+        "subtype": "api_retry",
+        "attempt": 1,
+        "max_retries": 10,
+        "retry_delay_ms": 1000,
+        "error_status": 529,
+        "error": "overloaded_error",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "e9c12761-653b-4675-bf91-757e2ebc2e5f",
+        "timestamp": "2026-10-10T20:40:06.490Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:40:07.000Z",
+      "payload": {
+        "type": "control_request",
+        "request_id": "8415a012-c84e-4199-b8f1-a4947c9bb606",
+        "request": { "subtype": "apply_flag_settings", "settings": { "effortLevel": "max" } },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "f7483557-0483-4546-ae54-23867a6cc878",
+        "timestamp": "2026-10-10T20:40:06.990Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:07.200Z",
+      "payload": {
+        "type": "control_response",
+        "response": {
+          "subtype": "error",
+          "request_id": "8415a012-c84e-4199-b8f1-a4947c9bb606",
+          "error": "REPL bridge does not handle control_request subtype: apply_flag_settings"
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "78b2e5b2-59a5-48f4-8c0f-75d79302d2fa",
+        "timestamp": "2026-10-10T20:40:07.190Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:18.900Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Fm3uB8gX2zVa7cD4hJm6Si",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": { "input_tokens": 0, "output_tokens": 0 }
+        },
+        "error": "server_error",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "0da17f69-91be-48d6-9f6e-49ce8e90aa03",
+        "timestamp": "2026-10-10T20:40:18.890Z"
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:18.950Z",
+      "payload": {
+        "type": "system",
+        "subtype": "status",
+        "status": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "941645ea-b5a9-4c55-81cd-b5dd59ad62d1",
+        "timestamp": "2026-10-10T20:40:18.940Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:40:19.000Z",
+      "payload": {
+        "type": "result",
+        "subtype": "error_during_execution",
+        "is_error": true,
+        "duration_ms": 17000,
+        "duration_api_ms": 14200,
+        "num_turns": 1,
+        "errors": ["API Error: 529 overloaded_error"],
+        "stop_reason": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.021,
+        "usage": { "input_tokens": 1200, "output_tokens": 8 },
+        "permission_denials": [],
+        "uuid": "afa32e63-51c8-4647-b073-b4b4a34e46a3",
+        "timestamp": "2026-10-10T20:40:18.990Z"
+      }
+    }
+  ],
+  "expect": { "itemKinds": ["system", "user", "assistant_text", "system", "error", "error", "result"], "turn": "idle" }
+}

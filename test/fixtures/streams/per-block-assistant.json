@@ -1,0 +1,449 @@
+{
+  "name": "per-block-assistant",
+  "description": "Claude Code's real assistant shape: one assistant event per content block, all sharing message.id, each arriving after its content_block_stop. A thinking, a text and a tool_use block of one message stay three items; a later message with a new id starts its block index over.",
+  "rows": [
+    {
+      "sequence_num": "61",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T20:30:00.000Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "what's the tare ratio?"
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "3f2a9c1e-6b4d-4a8e-9c2f-1d5e7a9b3c4d",
+        "timestamp": "2026-10-10T20:30:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "62",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:01.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "message_start",
+          "message": {
+            "id": "msg_01Qx3rT8vL2nWp7yAe4bKu9D",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-opus-5-5",
+            "stop_sequence": null,
+            "content": [],
+            "stop_reason": null,
+            "usage": {
+              "input_tokens": 1200,
+              "output_tokens": 1
+            }
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "8e1b2c3d-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+        "timestamp": "2026-10-10T20:30:01.000Z"
+      }
+    },
+    {
+      "sequence_num": "63",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:02.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_start",
+          "index": 0,
+          "content_block": {
+            "type": "thinking",
+            "thinking": "",
+            "signature": ""
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f",
+        "timestamp": "2026-10-10T20:30:02.000Z"
+      }
+    },
+    {
+      "sequence_num": "64",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:03.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_delta",
+          "index": 0,
+          "delta": {
+            "type": "thinking_delta",
+            "thinking": "The tare note lives in components."
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+        "timestamp": "2026-10-10T20:30:03.000Z"
+      }
+    },
+    {
+      "sequence_num": "65",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:04.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_stop",
+          "index": 0
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "9b8a7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+        "timestamp": "2026-10-10T20:30:04.000Z"
+      }
+    },
+    {
+      "sequence_num": "66",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:05.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Qx3rT8vL2nWp7yAe4bKu9D",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "stop_sequence": null,
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "The tare note lives in components.",
+              "signature": "EqQBCkYIBRgCKkB"
+            }
+          ],
+          "stop_reason": null,
+          "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 40
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+        "timestamp": "2026-10-10T20:30:05.000Z"
+      }
+    },
+    {
+      "sequence_num": "67",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:06.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_start",
+          "index": 1,
+          "content_block": {
+            "type": "text",
+            "text": ""
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "7d6e5f4a-3b2c-4d1e-8f0a-9b8c7d6e5f4a",
+        "timestamp": "2026-10-10T20:30:06.000Z"
+      }
+    },
+    {
+      "sequence_num": "68",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:07.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_delta",
+          "index": 1,
+          "delta": {
+            "type": "text_delta",
+            "text": "Let me read the tare note."
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "5e4f3a2b-1c0d-4e9f-8a7b-6c5d4e3f2a1b",
+        "timestamp": "2026-10-10T20:30:07.000Z"
+      }
+    },
+    {
+      "sequence_num": "69",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:08.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_stop",
+          "index": 1
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "e5f6a7b8-c9d0-4e1f-9a2b-3c4d5e6f7a8b",
+        "timestamp": "2026-10-10T20:30:08.000Z"
+      }
+    },
+    {
+      "sequence_num": "70",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:09.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Qx3rT8vL2nWp7yAe4bKu9D",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "stop_sequence": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Let me read the tare note."
+            }
+          ],
+          "stop_reason": null,
+          "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 40
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5e",
+        "timestamp": "2026-10-10T20:30:09.000Z"
+      }
+    },
+    {
+      "sequence_num": "71",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:10.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_start",
+          "index": 2,
+          "content_block": {
+            "type": "tool_use",
+            "id": "toolu_01Mn5pV0xN4qYr9aCg6dMw1F",
+            "name": "Read",
+            "input": {}
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "6f5e4d3c-2b1a-4f0e-9d8c-7b6a5f4e3d2c",
+        "timestamp": "2026-10-10T20:30:10.000Z"
+      }
+    },
+    {
+      "sequence_num": "72",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:11.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_delta",
+          "index": 2,
+          "delta": {
+            "type": "input_json_delta",
+            "partial_json": "{\"file_path\": \"/Users/kicooley-winters/workspace/projects/yes-chef/components/tare.md\"}"
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6f",
+        "timestamp": "2026-10-10T20:30:11.000Z"
+      }
+    },
+    {
+      "sequence_num": "73",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:12.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "content_block_stop",
+          "index": 2
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "4a3b2c1d-0e9f-4a8b-9c7d-6e5f4a3b2c1e",
+        "timestamp": "2026-10-10T20:30:12.000Z"
+      }
+    },
+    {
+      "sequence_num": "74",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:13.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Qx3rT8vL2nWp7yAe4bKu9D",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "stop_sequence": null,
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01Mn5pV0xN4qYr9aCg6dMw1F",
+              "name": "Read",
+              "input": {
+                "file_path": "/Users/kicooley-winters/workspace/projects/yes-chef/components/tare.md"
+              }
+            }
+          ],
+          "stop_reason": "tool_use",
+          "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 40
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a",
+        "timestamp": "2026-10-10T20:30:13.000Z"
+      }
+    },
+    {
+      "sequence_num": "75",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:14.000Z",
+      "payload": {
+        "type": "stream_event",
+        "event": {
+          "type": "message_stop"
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "8c7d6e5f-4a3b-4c2d-9e1f-0a9b8c7d6e5f",
+        "timestamp": "2026-10-10T20:30:14.000Z"
+      }
+    },
+    {
+      "sequence_num": "76",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:15.000Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01Mn5pV0xN4qYr9aCg6dMw1F",
+              "content": "# Tare\n\nsoy 4 : mirin 2 : sake 2 : sugar 1",
+              "is_error": false
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "tool_use_result": {
+          "type": "text",
+          "file": {
+            "filePath": "/Users/kicooley-winters/workspace/projects/yes-chef/components/tare.md",
+            "numLines": 3
+          }
+        },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "f4a5b6c7-d8e9-4f0a-9b1c-2d3e4f5a6b7c",
+        "timestamp": "2026-10-10T20:30:15.000Z"
+      }
+    },
+    {
+      "sequence_num": "77",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:16.000Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Ry4sU9wM3oXq8zBf5cLv0E",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "stop_sequence": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Soy, mirin, sake, sugar at 4:2:2:1."
+            }
+          ],
+          "stop_reason": "end_turn",
+          "usage": {
+            "input_tokens": 1200,
+            "output_tokens": 40
+          }
+        },
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "0d1e2f3a-4b5c-4d6e-8f7a-8b9c0d1e2f3b",
+        "timestamp": "2026-10-10T20:30:16.000Z"
+      }
+    },
+    {
+      "sequence_num": "78",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T20:30:17.000Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 5100,
+        "duration_api_ms": 4600,
+        "num_turns": 2,
+        "result": "Soy, mirin, sake, sugar at 4:2:2:1.",
+        "stop_reason": "end_turn",
+        "total_cost_usd": 0.072,
+        "usage": {
+          "input_tokens": 2500,
+          "output_tokens": 95
+        },
+        "permission_denials": [],
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "e6f7a8b9-c0d1-4e2f-9a3b-4c5d6e7f8a9c",
+        "timestamp": "2026-10-10T20:30:17.000Z"
+      }
+    }
+  ],
+  "expect": {
+    "itemKinds": [
+      "user",
+      "thinking",
+      "assistant_text",
+      "tool",
+      "assistant_text",
+      "result"
+    ],
+    "turn": "idle"
+  }
+}

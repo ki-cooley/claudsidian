@@ -1,0 +1,765 @@
+/**
+ * SessionStore: the reactive state behind the UI. Lists sessions, loads and polls the open session's
+ * transcript through the pure reducer, sends messages and control answers, announces presence, and
+ * exposes everything as @preact/signals. One session is polled at a time.
+ */
+import { signal, type ReadonlySignal, type Signal } from '@preact/signals';
+import type { CcrApi } from '../api/client-api';
+import { ApiError } from '../api/errors';
+import {
+  interruptPayload,
+  permissionResponsePayload,
+  setModelPayload,
+  setPermissionModePayload,
+  userMessagePayload,
+} from '../api/payloads';
+import {
+  isCanUseTool,
+  type ContentBlock,
+  type CreateSessionRequest,
+  type ImageBlock,
+  type PermissionResult,
+  type StreamJsonEvent,
+  type WireEventRow,
+} from '../api/types';
+import type { ClaudsidianSettings } from '../settings';
+import { log } from '../util/log';
+import { realTimers, type TimerApi } from '../util/timers';
+import { Poller, type PollMode } from './poller';
+import type {
+  Banner,
+  CreateSessionOptions,
+  Environment,
+  SendOptions,
+  SessionStoreApi,
+  StoreEvent,
+} from './store-api';
+import { applyEvents, findItem, markControlSent, markOffline, markSent } from './transcript';
+import {
+  createTranscript,
+  summarizeSession,
+  type OutgoingAttachment,
+  type SessionSummary,
+  type TranscriptItem,
+  type TranscriptState,
+} from './types';
+
+export interface SessionStoreDeps {
+  client: CcrApi;
+  settings: () => ClaudsidianSettings;
+  /** per-install uuid sent with presence */
+  clientId: string;
+  timers?: TimerApi;
+  onNotice?: (text: string) => void;
+}
+
+const HISTORY_LIMIT = 200;
+const FALLBACK_LIMIT = 50;
+const PRESENCE_INTERVAL_MS = 60_000;
+/** consecutive 401s from polling before the auth banner shows (one is a refresh race, not a sign-out) */
+const AUTH_FAILURES_FOR_BANNER = 2;
+
+const AUTH_BANNER: Banner = { kind: 'auth', text: 'Signed out. Sign in to see your sessions.' };
+const OFFLINE_BANNER: Banner = { kind: 'offline', text: 'No connection. Retrying.' };
+const GONE_BANNER: Banner = { kind: 'error', text: 'Session not found. It may have been archived.' };
+
+type Listener = (sessionId: string, state: TranscriptState) => void;
+
+/** Per-session bookkeeping the reducer state does not carry. */
+interface SessionTrack {
+  /** every row applied so far, ascending by seq (for loadOlder rebuilds) */
+  rows: WireEventRow[];
+  /** smallest seq applied, Infinity before any */
+  firstSeq: number;
+  /** 'from' until the server shows it ignores from_sequence_num, then 'desc' windows */
+  strategy: 'from' | 'desc';
+  /** request ids already announced as needs_input */
+  announced: Set<string>;
+  historyLoaded: boolean;
+  /** transcript currently marked offline by us */
+  offline: boolean;
+  /** in-flight loadOlder, so overlapping calls share one request */
+  loadingOlder: Promise<boolean> | null;
+}
+
+function seqOf(row: WireEventRow): number {
+  const n = Number(row.sequence_num);
+  return Number.isFinite(n) ? n : -1;
+}
+
+function bySeqAsc(a: WireEventRow, b: WireEventRow): number {
+  return seqOf(a) - seqOf(b);
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function lastPathSegment(p: string): string {
+  const parts = p.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? '';
+}
+
+function environmentLabel(kind: string, cwd: string | undefined): string {
+  const kindLabel = kind === 'bridge' ? 'Mac' : kind;
+  const segment = cwd ? lastPathSegment(cwd) : '';
+  return segment ? `${segment} (${kindLabel})` : kindLabel;
+}
+
+function imageBlock(att: OutgoingAttachment): ImageBlock {
+  return { type: 'image', source: { type: 'base64', media_type: att.mediaType, data: att.base64 } };
+}
+
+function byLastEventDesc(a: SessionSummary, b: SessionSummary): number {
+  return (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0);
+}
+
+export class SessionStore implements SessionStoreApi {
+  readonly sessions = signal<SessionSummary[]>([]);
+  readonly sessionsLoading = signal(false);
+  readonly sessionsError = signal<string | null>(null);
+  readonly selectedId = signal<string | null>(null);
+  readonly banner = signal<Banner | null>(null);
+  readonly visible = signal(true);
+
+  private readonly deps: SessionStoreDeps;
+  private readonly timers: TimerApi;
+  private readonly transcripts = new Map<string, Signal<TranscriptState>>();
+  private readonly tracks = new Map<string, SessionTrack>();
+  private readonly cwdCache = new Map<string, string>();
+  private readonly listeners = new Map<StoreEvent, Set<Listener>>();
+  private readonly unsubscribeVisible: () => void;
+  private sessionPoller: Poller | null = null;
+  /** the session the poller belongs to */
+  private polledId: string | null = null;
+  private listPoller: Poller | null = null;
+  private presenceHandle: unknown = undefined;
+  private refreshing: Promise<void> | null = null;
+  private refreshQueued: Promise<void> | null = null;
+  private authFailures = 0;
+  private disposed = false;
+
+  constructor(deps: SessionStoreDeps) {
+    this.deps = deps;
+    this.timers = deps.timers ?? realTimers;
+    let initial = true;
+    this.unsubscribeVisible = this.visible.subscribe((v) => {
+      if (initial) {
+        initial = false;
+        return;
+      }
+      this.onVisibility(v);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reads
+  // ---------------------------------------------------------------------------
+
+  transcript(sessionId: string): ReadonlySignal<TranscriptState> {
+    return this.transcriptSignal(sessionId);
+  }
+
+  session(sessionId: string): SessionSummary | undefined {
+    return this.sessions.value.find((s) => s.id === sessionId);
+  }
+
+  environments(): Environment[] {
+    const groups = new Map<string, { kind: string; cwd?: string; count: number }>();
+    for (const s of this.sessions.value) {
+      if (s.archived || !s.environmentId) continue;
+      const g = groups.get(s.environmentId) ?? { kind: s.environmentKind, count: 0 };
+      g.count += 1;
+      if (!g.cwd && s.cwd) g.cwd = s.cwd;
+      if (g.kind === 'unknown' && s.environmentKind !== 'unknown') g.kind = s.environmentKind;
+      groups.set(s.environmentId, g);
+    }
+    const envs: Environment[] = [];
+    for (const [id, g] of groups) {
+      const env: Environment = { id, kind: g.kind, label: environmentLabel(g.kind, g.cwd), sessionCount: g.count };
+      if (g.cwd) env.cwd = g.cwd;
+      envs.push(env);
+    }
+    envs.sort((a, b) => {
+      const ka = a.kind === 'bridge' ? 0 : 1;
+      const kb = b.kind === 'bridge' ? 0 : 1;
+      if (ka !== kb) return ka - kb;
+      if (a.sessionCount !== b.sessionCount) return b.sessionCount - a.sessionCount;
+      return a.label.localeCompare(b.label);
+    });
+    return envs;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sessions list
+  // ---------------------------------------------------------------------------
+
+  /** Refresh the list. A call during an in-flight refresh queues one follow-up refresh and resolves with it. */
+  refreshSessions(): Promise<void> {
+    if (this.refreshing) {
+      if (!this.refreshQueued) {
+        this.refreshQueued = this.refreshing.then(() => {
+          this.refreshQueued = null;
+          return this.refreshSessions();
+        });
+      }
+      return this.refreshQueued;
+    }
+    this.refreshing = this.doRefresh().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  private async doRefresh(): Promise<void> {
+    this.sessionsLoading.value = true;
+    try {
+      const wire = await this.deps.client.listSessions();
+      const list = wire.map((w) => summarizeSession(w, this.cwdCache.get(w.id)));
+      list.sort(byLastEventDesc);
+      this.sessions.value = list;
+      this.sessionsError.value = null;
+      this.clearBanner('auth', 'offline');
+    } catch (err) {
+      this.sessionsError.value = messageOf(err);
+      if (err instanceof ApiError && err.isAuth) this.banner.value = AUTH_BANNER;
+      else if (err instanceof ApiError && err.isNetwork) this.banner.value = OFFLINE_BANNER;
+      log.debug('refreshSessions failed', { message: messageOf(err) });
+    } finally {
+      this.sessionsLoading.value = false;
+    }
+  }
+
+  startListPolling(): void {
+    if (this.disposed) return;
+    if (!this.listPoller) {
+      this.listPoller = new Poller({
+        run: async () => {
+          await this.refreshSessions();
+          const error = this.sessionsError.value;
+          if (error) throw new Error(error);
+        },
+        intervalMs: () => this.deps.settings().polling.listMs,
+        onError: (err) => log.debug('list poll failed', { message: messageOf(err) }),
+        timers: this.timers,
+      });
+    }
+    this.listPoller.setMode(this.visible.value ? 'idle' : 'background');
+    this.listPoller.start();
+  }
+
+  stopListPolling(): void {
+    this.listPoller?.stop();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Open, close, poll
+  // ---------------------------------------------------------------------------
+
+  async open(sessionId: string): Promise<void> {
+    if (this.disposed) return;
+    const previous = this.selectedId.value;
+    if (previous && previous !== sessionId) this.stopSession(previous);
+    this.selectedId.value = sessionId;
+    if (!this.trackFor(sessionId).historyLoaded) {
+      try {
+        await this.loadHistory(sessionId);
+      } catch (err) {
+        if (this.selectedId.value !== sessionId) return;
+        this.handlePollError(sessionId, err); // the poller retries the history load on its next run
+      }
+    }
+    if (this.selectedId.value !== sessionId) return;
+    this.startSessionPoller(sessionId);
+    this.startPresence(sessionId);
+    this.markReadIfVisible(sessionId);
+  }
+
+  /** Newest HISTORY_LIMIT rows, applied in ascending order. */
+  private async loadHistory(sessionId: string): Promise<void> {
+    const rows = await this.deps.client.listEvents(sessionId, { limit: HISTORY_LIMIT, sortOrder: 'desc' });
+    if (this.selectedId.value !== sessionId) return; // the user moved on while the request was in flight
+    this.applyRows(sessionId, [...rows].reverse());
+    this.trackFor(sessionId).historyLoaded = true;
+    this.handleSuccess(sessionId);
+    this.announceNeedsInput(sessionId);
+  }
+
+  close(): void {
+    const id = this.selectedId.value;
+    if (id) this.stopSession(id);
+    this.selectedId.value = null;
+  }
+
+  /** Concurrent calls for one session share the in-flight request (a scroll handler firing twice). */
+  loadOlder(sessionId: string): Promise<boolean> {
+    const track = this.trackFor(sessionId);
+    if (track.loadingOlder) return track.loadingOlder;
+    track.loadingOlder = this.doLoadOlder(sessionId).finally(() => {
+      track.loadingOlder = null;
+    });
+    return track.loadingOlder;
+  }
+
+  private async doLoadOlder(sessionId: string): Promise<boolean> {
+    const track = this.trackFor(sessionId);
+    if (track.rows.length === 0 || track.firstSeq <= 0) return false;
+    // Without a working from_sequence_num there is no way to ask for the window before firstSeq.
+    if (track.strategy === 'desc') return false;
+    const firstSeq = track.firstSeq;
+    const from = Math.max(0, firstSeq - HISTORY_LIMIT);
+    const rows = await this.deps.client.listEvents(sessionId, {
+      fromSequenceNum: from,
+      sortOrder: 'asc',
+      limit: HISTORY_LIMIT,
+    });
+    const older = rows.filter((r) => seqOf(r) < firstSeq).sort(bySeqAsc);
+    if (older.length === 0) return false;
+    const sig = this.transcriptSignal(sessionId);
+    const current = sig.value;
+    const merged = older.concat(track.rows);
+    let rebuilt = applyEvents(createTranscript(), merged);
+    // Rows do not hold what the store added locally: in-flight sends and an offline marker.
+    const optimistic: TranscriptItem[] = current.items.filter(
+      (i) => i.kind === 'user' && current.inFlightUserUuids.includes(i.id),
+    );
+    rebuilt = {
+      ...rebuilt,
+      items: optimistic.length ? rebuilt.items.concat(optimistic) : rebuilt.items,
+      inFlightUserUuids: current.inFlightUserUuids,
+      turn: current.turn === 'sending' ? 'sending' : rebuilt.turn,
+    };
+    if (track.offline) rebuilt = markOffline(rebuilt, true);
+    track.rows = merged;
+    track.firstSeq = seqOf(merged[0]!);
+    sig.value = rebuilt;
+    return true;
+  }
+
+  private async pollSession(sessionId: string): Promise<void> {
+    const sig = this.transcriptSignal(sessionId);
+    const track = this.trackFor(sessionId);
+    if (!track.historyLoaded) {
+      await this.loadHistory(sessionId);
+      if (this.polledId !== sessionId) return;
+      this.markReadIfVisible(sessionId);
+      this.sessionPoller?.setMode(this.modeFor(sessionId));
+      return;
+    }
+    const lastSeq = sig.value.lastSeq;
+    let rows: WireEventRow[];
+    if (track.strategy === 'from') {
+      rows = await this.deps.client.listEvents(sessionId, {
+        fromSequenceNum: lastSeq + 1,
+        sortOrder: 'asc',
+        limit: HISTORY_LIMIT,
+      });
+      if (rows.some((r) => seqOf(r) <= lastSeq)) {
+        track.strategy = 'desc';
+        log.info('server ignores from_sequence_num; polling with desc windows', { sessionId });
+      }
+    } else {
+      const window = await this.deps.client.listEvents(sessionId, { sortOrder: 'desc', limit: FALLBACK_LIMIT });
+      rows = [...window].reverse();
+    }
+    if (this.polledId !== sessionId) return; // closed while the request was in flight
+    const { fresh } = this.applyRows(sessionId, rows);
+    this.handleSuccess(sessionId);
+    if (fresh.length > 0) {
+      if (fresh.some((r) => r.payload.type === 'result')) this.emit('turn_end', sessionId, sig.value);
+      this.markReadIfVisible(sessionId);
+    }
+    this.announceNeedsInput(sessionId);
+    this.sessionPoller?.setMode(this.modeFor(sessionId));
+  }
+
+  /** Run rows through the reducer, record them for loadOlder, and cache the cwd. */
+  private applyRows(sessionId: string, rows: WireEventRow[]): { fresh: WireEventRow[] } {
+    const sig = this.transcriptSignal(sessionId);
+    const track = this.trackFor(sessionId);
+    const before = sig.value;
+    const next = applyEvents(before, rows);
+    if (next !== before) sig.value = next;
+    const fresh = rows.filter((r) => seqOf(r) > before.lastSeq).sort(bySeqAsc);
+    if (fresh.length > 0) {
+      track.rows = track.rows.concat(fresh);
+      track.firstSeq = Math.min(track.firstSeq, seqOf(fresh[0]!));
+    }
+    this.cacheCwd(sessionId, next);
+    return { fresh };
+  }
+
+  private cacheCwd(sessionId: string, state: TranscriptState): void {
+    const cwd = state.init?.cwd;
+    if (!cwd || this.cwdCache.get(sessionId) === cwd) return;
+    this.cwdCache.set(sessionId, cwd);
+    this.patchSession(sessionId, { cwd });
+  }
+
+  private startSessionPoller(sessionId: string): void {
+    if (this.sessionPoller && this.polledId === sessionId) {
+      this.sessionPoller.setMode(this.modeFor(sessionId));
+      return;
+    }
+    this.sessionPoller?.stop();
+    this.polledId = sessionId;
+    const poller = new Poller({
+      run: () => this.pollSession(sessionId),
+      intervalMs: (mode) => this.intervalFor(mode),
+      onError: (err) => this.handlePollError(sessionId, err),
+      timers: this.timers,
+    });
+    this.sessionPoller = poller;
+    poller.setMode(this.modeFor(sessionId));
+    poller.start();
+  }
+
+  private stopSession(sessionId: string): void {
+    if (this.polledId === sessionId) {
+      this.sessionPoller?.stop();
+      this.sessionPoller = null;
+      this.polledId = null;
+    }
+    this.stopPresence();
+    void this.deps.client.presence(sessionId, this.deps.clientId, false).catch((err: unknown) => {
+      log.debug('presence clear failed', { message: messageOf(err) });
+    });
+  }
+
+  private modeFor(sessionId: string): PollMode {
+    if (!this.visible.value) return 'background';
+    const turn = this.transcriptSignal(sessionId).value.turn;
+    return turn === 'working' || turn === 'needs_input' || turn === 'sending' ? 'active' : 'idle';
+  }
+
+  private intervalFor(mode: PollMode): number {
+    const polling = this.deps.settings().polling;
+    return mode === 'active' ? polling.activeMs : polling.idleMs;
+  }
+
+  private handleSuccess(sessionId: string): void {
+    this.authFailures = 0;
+    if (this.banner.value?.kind === 'offline') this.banner.value = null;
+    const track = this.trackFor(sessionId);
+    if (track.offline) {
+      track.offline = false;
+      const sig = this.transcriptSignal(sessionId);
+      sig.value = markOffline(sig.value, false);
+    }
+  }
+
+  private handlePollError(sessionId: string, err: unknown): void {
+    if (err instanceof ApiError) {
+      if (err.isNetwork) {
+        this.banner.value = OFFLINE_BANNER;
+        const track = this.trackFor(sessionId);
+        if (!track.offline) {
+          track.offline = true;
+          const sig = this.transcriptSignal(sessionId);
+          sig.value = markOffline(sig.value, true);
+        }
+        return;
+      }
+      if (err.isAuth) {
+        this.authFailures += 1;
+        if (this.authFailures >= AUTH_FAILURES_FOR_BANNER) this.banner.value = AUTH_BANNER;
+        return;
+      }
+      if (err.status === 404) {
+        this.banner.value = GONE_BANNER;
+        this.deps.onNotice?.(GONE_BANNER.text);
+        if (this.polledId === sessionId) {
+          this.sessionPoller?.stop();
+          this.sessionPoller = null;
+          this.polledId = null;
+        }
+        if (this.selectedId.value === sessionId) this.stopPresence();
+        this.emit('error', sessionId, this.transcriptSignal(sessionId).value);
+        void this.refreshSessions();
+        return;
+      }
+    }
+    log.debug('poll failed', { sessionId, message: messageOf(err) });
+  }
+
+  /** Emit needs_input once per pending request id. */
+  private announceNeedsInput(sessionId: string): void {
+    const state = this.transcriptSignal(sessionId).value;
+    if (state.turn !== 'needs_input') return;
+    const track = this.trackFor(sessionId);
+    let announce = false;
+    for (const p of state.pending) {
+      if (track.announced.has(p.requestId)) continue;
+      track.announced.add(p.requestId);
+      announce = true;
+    }
+    if (announce) this.emit('needs_input', sessionId, state);
+  }
+
+  private markReadIfVisible(sessionId: string): void {
+    if (!this.visible.value) return;
+    const state = this.transcriptSignal(sessionId).value;
+    if (state.lastSeq < 0) return;
+    void this.deps.client.markRead(sessionId, state.lastSeq).catch((err: unknown) => {
+      log.debug('markRead failed', { message: messageOf(err) });
+    });
+    if (this.session(sessionId)?.unread) this.patchSession(sessionId, { unread: false });
+  }
+
+  private startPresence(sessionId: string): void {
+    this.stopPresence();
+    const announce = (): void => {
+      void this.deps.client.presence(sessionId, this.deps.clientId, true).catch((err: unknown) => {
+        log.debug('presence failed', { message: messageOf(err) });
+      });
+      this.presenceHandle = this.timers.setTimeout(announce, PRESENCE_INTERVAL_MS);
+    };
+    announce();
+  }
+
+  private stopPresence(): void {
+    if (this.presenceHandle !== undefined) {
+      this.timers.clearTimeout(this.presenceHandle);
+      this.presenceHandle = undefined;
+    }
+  }
+
+  private onVisibility(visible: boolean): void {
+    if (!visible) {
+      this.sessionPoller?.setMode('background');
+      this.listPoller?.setMode('background');
+      return;
+    }
+    const id = this.polledId;
+    if (id && this.sessionPoller) {
+      // Rows applied while hidden (a send kicks a background poll) were never marked read.
+      this.markReadIfVisible(id);
+      this.sessionPoller.setMode(this.modeFor(id));
+      this.sessionPoller.kick();
+    }
+    if (this.listPoller?.running) {
+      this.listPoller.setMode('idle');
+      this.listPoller.kick();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sending
+  // ---------------------------------------------------------------------------
+
+  async send(sessionId: string, text: string, opts: SendOptions = {}): Promise<void> {
+    const images = opts.images ?? [];
+    const fullText = opts.contextText ? `${text}\n\n${opts.contextText}` : text;
+    const blocks: ContentBlock[] = [];
+    if (fullText.length > 0) blocks.push({ type: 'text', text: fullText });
+    for (const att of images) blocks.push(imageBlock(att));
+    if (blocks.length === 0) return;
+    const payload = userMessagePayload(blocks);
+    const sig = this.transcriptSignal(sessionId);
+    const before = sig.value;
+    const optimistic = markSent(before, payload, text, images.length);
+    sig.value = optimistic;
+    const added = optimistic.items.filter((item) => !before.items.includes(item));
+    try {
+      await this.deps.client.sendEvents(sessionId, [payload]);
+    } catch (err) {
+      const current = sig.value;
+      sig.value = {
+        ...current,
+        items: current.items.filter((item) => !added.includes(item)),
+        inFlightUserUuids: current.inFlightUserUuids.filter((u) => u !== payload.uuid),
+        turn: current.turn === 'sending' ? before.turn : current.turn,
+      };
+      this.failSend(sessionId, err);
+      throw err;
+    }
+    this.afterSend(sessionId);
+  }
+
+  async sendRaw(sessionId: string, payload: StreamJsonEvent): Promise<void> {
+    await this.sendControl(sessionId, payload);
+  }
+
+  async respondPermission(sessionId: string, requestId: string, result: PermissionResult): Promise<void> {
+    await this.sendControl(sessionId, permissionResponsePayload(requestId, result), requestId);
+  }
+
+  async answerQuestion(
+    sessionId: string,
+    requestId: string,
+    answers: Record<string, string | string[]>,
+    response?: string,
+  ): Promise<void> {
+    const state = this.transcriptSignal(sessionId).value;
+    const pending = state.pending.find((p) => p.requestId === requestId);
+    const rawInput = pending && isCanUseTool(pending.raw.request) ? pending.raw.request.input : undefined;
+    const item = findItem(state, requestId);
+    const questions = rawInput?.questions ?? (item?.kind === 'question' ? item.questions : []);
+    const updatedInput: Record<string, unknown> = { questions, answers };
+    if (response) updatedInput.response = response;
+    await this.sendControl(
+      sessionId,
+      permissionResponsePayload(requestId, { behavior: 'allow', updatedInput }),
+      requestId,
+    );
+  }
+
+  async interrupt(sessionId: string): Promise<void> {
+    await this.sendControl(sessionId, interruptPayload());
+  }
+
+  async setModel(sessionId: string, model: string): Promise<void> {
+    await this.sendControl(sessionId, setModelPayload(model));
+    const sig = this.transcriptSignal(sessionId);
+    sig.value = { ...sig.value, model };
+  }
+
+  async setPermissionMode(sessionId: string, mode: string): Promise<void> {
+    await this.sendControl(sessionId, setPermissionModePayload(mode));
+    const sig = this.transcriptSignal(sessionId);
+    sig.value = { ...sig.value, permissionMode: mode };
+  }
+
+  /** Queue one payload; optionally resolve a pending control request locally once the server accepted it. */
+  private async sendControl(sessionId: string, payload: StreamJsonEvent, resolveRequestId?: string): Promise<void> {
+    try {
+      await this.deps.client.sendEvents(sessionId, [payload]);
+    } catch (err) {
+      this.failSend(sessionId, err);
+      throw err;
+    }
+    if (resolveRequestId) {
+      const sig = this.transcriptSignal(sessionId);
+      let next = markControlSent(sig.value, resolveRequestId);
+      if (next.pending.length === 0 && next.turn === 'needs_input') next = { ...next, turn: 'working' };
+      sig.value = next;
+    }
+    this.afterSend(sessionId);
+  }
+
+  private failSend(sessionId: string, err: unknown): void {
+    this.banner.value = { kind: 'error', text: messageOf(err) };
+    this.emit('error', sessionId, this.transcriptSignal(sessionId).value);
+  }
+
+  private afterSend(sessionId: string): void {
+    if (this.polledId !== sessionId || !this.sessionPoller) return;
+    this.sessionPoller.setMode(this.visible.value ? 'active' : 'background');
+    this.sessionPoller.kick();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session management
+  // ---------------------------------------------------------------------------
+
+  async rename(sessionId: string, title: string): Promise<void> {
+    const previous = this.session(sessionId)?.title;
+    this.patchSession(sessionId, { title });
+    try {
+      await this.deps.client.renameSession(sessionId, title);
+    } catch (err) {
+      if (previous !== undefined) this.patchSession(sessionId, { title: previous });
+      throw err;
+    }
+    this.patchSession(sessionId, { title });
+    await this.refreshSessions();
+  }
+
+  async archive(sessionId: string): Promise<void> {
+    this.patchSession(sessionId, { archived: true });
+    try {
+      await this.deps.client.archiveSession(sessionId);
+    } catch (err) {
+      this.patchSession(sessionId, { archived: false });
+      throw err;
+    }
+    this.patchSession(sessionId, { archived: true });
+    await this.refreshSessions();
+  }
+
+  async createSession(opts: CreateSessionOptions): Promise<SessionSummary> {
+    const req: CreateSessionRequest = { environment_id: opts.environmentId };
+    if (opts.title) req.title = opts.title;
+    const context: { model?: string; permission_mode?: string } = {};
+    if (opts.model) context.model = opts.model;
+    if (opts.permissionMode) context.permission_mode = opts.permissionMode;
+    if (context.model || context.permission_mode) req.session_context = context;
+    if (opts.firstMessage) req.events = [{ payload: userMessagePayload(opts.firstMessage) }];
+    const wire = await this.deps.client.createSession(req);
+    await this.refreshSessions();
+    return this.session(wire.id) ?? summarizeSession(wire, this.cwdCache.get(wire.id));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Events and lifecycle
+  // ---------------------------------------------------------------------------
+
+  on(event: StoreEvent, cb: Listener): () => void {
+    const set = this.listeners.get(event) ?? new Set<Listener>();
+    set.add(cb);
+    this.listeners.set(event, set);
+    return () => {
+      set.delete(cb);
+    };
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.close();
+    this.listPoller?.stop();
+    this.listPoller = null;
+    this.unsubscribeVisible();
+    this.listeners.clear();
+  }
+
+  private emit(event: StoreEvent, sessionId: string, state: TranscriptState): void {
+    for (const cb of this.listeners.get(event) ?? []) {
+      try {
+        cb(sessionId, state);
+      } catch (err) {
+        log.warn(`store listener for ${event} threw`, { message: messageOf(err) });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  private transcriptSignal(sessionId: string): Signal<TranscriptState> {
+    let sig = this.transcripts.get(sessionId);
+    if (!sig) {
+      sig = signal(createTranscript());
+      this.transcripts.set(sessionId, sig);
+    }
+    return sig;
+  }
+
+  private trackFor(sessionId: string): SessionTrack {
+    let track = this.tracks.get(sessionId);
+    if (!track) {
+      track = {
+        rows: [],
+        firstSeq: Infinity,
+        strategy: 'from',
+        announced: new Set(),
+        historyLoaded: false,
+        offline: false,
+        loadingOlder: null,
+      };
+      this.tracks.set(sessionId, track);
+    }
+    return track;
+  }
+
+  private patchSession(sessionId: string, patch: Partial<SessionSummary>): void {
+    if (!this.sessions.value.some((s) => s.id === sessionId)) return;
+    this.sessions.value = this.sessions.value.map((s) => (s.id === sessionId ? { ...s, ...patch } : s));
+  }
+
+  private clearBanner(...kinds: Banner['kind'][]): void {
+    const current = this.banner.value;
+    if (current && kinds.includes(current.kind)) this.banner.value = null;
+  }
+}

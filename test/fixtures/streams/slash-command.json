@@ -1,0 +1,197 @@
+{
+  "name": "slash-command",
+  "description": "Two local commands typed as plain text (/effort high, /compact): the synthetic command wrappers become 'Ran /x' lines, empty stdout wrappers hide, results carry local_command.",
+  "rows": [
+    {
+      "sequence_num": "1",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:00.100Z",
+      "payload": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "/Users/kicooley-winters/workspace/projects/yes-chef",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "tools": ["Agent", "Bash", "Edit", "Glob", "Grep", "Read", "Write"],
+        "mcp_servers": [],
+        "model": "claude-opus-5-5",
+        "permissionMode": "auto",
+        "slash_commands": ["compact", "context", "effort", "model"],
+        "effort": "medium",
+        "claude_code_version": "2.1.296",
+        "uuid": "1a7c3e9b-5d2f-4b8a-9c6e-3f1d7a5b9e20",
+        "timestamp": "2026-10-10T21:00:00.000Z"
+      }
+    },
+    {
+      "sequence_num": "2",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T21:00:05.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "8d4b2f6a-9e1c-4a3d-b7f5-2c8e4a6d1b93",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T21:00:04.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "/effort high" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "3",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:05.300Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<command-name>/effort</command-name>\n            <command-message>effort</command-message>\n            <command-args>high</command-args>"
+        },
+        "isMeta": true,
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "4e9a1c7d-3b5f-4d2e-8a6c-7f3b9d1e5a48",
+        "timestamp": "2026-10-10T21:00:05.290Z"
+      }
+    },
+    {
+      "sequence_num": "4",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:05.320Z",
+      "payload": {
+        "type": "user",
+        "message": { "role": "user", "content": "<local-command-stdout></local-command-stdout>" },
+        "isMeta": true,
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "c2f8e4b6-1d9a-4c7b-a3e5-9b6d2f8a4c17",
+        "timestamp": "2026-10-10T21:00:05.310Z"
+      }
+    },
+    {
+      "sequence_num": "5",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:05.400Z",
+      "payload": {
+        "type": "assistant",
+        "message": {
+          "id": "msg_01Mt0bI5nE9gCh4jK1oQt3Zp",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-opus-5-5",
+          "content": [{ "type": "text", "text": "Set effort level to high (saved as your default for new sessions)" }],
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "usage": { "input_tokens": 0, "output_tokens": 0 }
+        },
+        "isSynthetic": true,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "parent_tool_use_id": null,
+        "uuid": "7b3d9f1e-5c8a-4e2b-9d4f-1a7c3e5b9d62",
+        "timestamp": "2026-10-10T21:00:05.390Z"
+      }
+    },
+    {
+      "sequence_num": "6",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:05.450Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 14,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "result": "Set effort level to high (saved as your default for new sessions)",
+        "local_command": "/effort",
+        "stop_reason": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0,
+        "usage": { "input_tokens": 0, "output_tokens": 0 },
+        "permission_denials": [],
+        "uuid": "e5a1c9d7-2f4b-4a8e-b6c3-8d2f4a6c1e95",
+        "timestamp": "2026-10-10T21:00:05.440Z"
+      }
+    },
+    {
+      "sequence_num": "7",
+      "event_type": "client_event",
+      "source": "controller",
+      "created_at": "2026-10-10T21:00:40.000Z",
+      "payload": {
+        "type": "user",
+        "uuid": "9f6b2d8a-4c1e-4b7d-a9f3-5e8c2a4d6b31",
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "timestamp": "2026-10-10T21:00:39.990Z",
+        "message": { "role": "user", "content": [{ "type": "text", "text": "/compact" }] },
+        "parent_tool_use_id": null
+      }
+    },
+    {
+      "sequence_num": "8",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:40.200Z",
+      "payload": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>"
+        },
+        "isMeta": true,
+        "isSynthetic": true,
+        "parent_tool_use_id": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "3d8f5a1c-7e2b-4c9d-b5a7-2f6e8c4a9d14",
+        "timestamp": "2026-10-10T21:00:40.190Z"
+      }
+    },
+    {
+      "sequence_num": "9",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:47.800Z",
+      "payload": {
+        "type": "system",
+        "subtype": "compact_boundary",
+        "compact_metadata": { "trigger": "manual", "pre_tokens": 84210 },
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "uuid": "6a2e8c4b-9d7f-4a1c-8e3b-4c9a1f7d2e86",
+        "timestamp": "2026-10-10T21:00:47.790Z"
+      }
+    },
+    {
+      "sequence_num": "10",
+      "event_type": "client_event",
+      "source": "worker",
+      "created_at": "2026-10-10T21:00:47.900Z",
+      "payload": {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 7650,
+        "duration_api_ms": 7400,
+        "num_turns": 0,
+        "result": "Compacted conversation",
+        "local_command": "/compact",
+        "stop_reason": null,
+        "session_id": "cse_019B9e41WcXsxvZmtvJK9SEB",
+        "total_cost_usd": 0.19,
+        "usage": { "input_tokens": 84210, "output_tokens": 1900 },
+        "permission_denials": [],
+        "uuid": "b4c6e2a8-1f3d-4e5b-9a7c-6d8f2b4e1a53",
+        "timestamp": "2026-10-10T21:00:47.890Z"
+      }
+    }
+  ],
+  "expect": {
+    "itemKinds": ["system", "user", "system", "assistant_text", "result", "user", "system", "system", "result"],
+    "turn": "idle"
+  }
+}
