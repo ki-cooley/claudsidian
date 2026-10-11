@@ -30,6 +30,7 @@
     "jsdom": "^26.0.0",
     "marked": "^15.0.0",
     "obsidian": "latest",
+    "playwright": "^1.64.0",
     "preact": "^10.27.0",
     "tslib": "^2.8.0",
     "typescript": "^5.9.0",

@@ -2,6 +2,10 @@
  * Minimal stand-in for the `obsidian` module in unit tests (jsdom). Extend as tests need;
  * keep behaviour dumb and predictable. Not used by the browser harness (that has its own shim).
  */
+import { installDomHelpers } from './dom-helpers';
+
+installDomHelpers();
+
 export class Events {
   private handlers = new Map<string, ((...args: unknown[]) => void)[]>();
   on(name: string, cb: (...args: unknown[]) => void): { name: string; cb: typeof cb } {

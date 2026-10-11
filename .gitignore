@@ -11,3 +11,4 @@ e2e/harness/dist/
 test-results/
 .vitest/
 .git.broken-*
+.pw-browsers/
