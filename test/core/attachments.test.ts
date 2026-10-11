@@ -99,6 +99,27 @@ describe('prepareImage', () => {
     expect(closed).toHaveBeenCalled();
   });
 
+  it('asks createImageBitmap to apply the EXIF orientation', async () => {
+    const file = new Blob([new Uint8Array(5)], { type: 'image/jpeg' });
+    await prepareImage(file);
+    const cib = globalThis.createImageBitmap as unknown as ReturnType<typeof vi.fn>;
+    expect(cib).toHaveBeenCalledTimes(1);
+    expect(cib.mock.calls[0]).toEqual([file, { imageOrientation: 'from-image' }]);
+  });
+
+  it('retries without the orientation option when the engine rejects it', async () => {
+    const cib = vi.fn(async (_file: Blob, opts?: unknown) => {
+      if (opts !== undefined) throw new TypeError('imageOrientation is not supported');
+      return { width: 300, height: 200, close: closed };
+    });
+    vi.stubGlobal('createImageBitmap', cib);
+    const att = await prepareImage(new Blob([], { type: 'image/jpeg' }));
+    expect(cib).toHaveBeenCalledTimes(2);
+    expect(cib.mock.calls[1]).toHaveLength(1);
+    expect(att.width).toBe(300);
+    expect(att.height).toBe(200);
+  });
+
   it('scales on the long edge for portrait images and honours maxEdge and quality', async () => {
     source = { width: 1000, height: 2000 };
     const file = new Blob([new Uint8Array(5)], { type: 'image/webp' });

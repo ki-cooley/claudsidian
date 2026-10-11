@@ -151,8 +151,8 @@ vi.mock('obsidian', async (importOriginal) => {
   return { ...base, Setting, TextComponent, TextAreaComponent, ToggleComponent, DropdownComponent, SliderComponent, ButtonComponent };
 });
 
-import { App as MockApp, Plugin as MockPlugin } from 'obsidian';
-import { ClaudsidianSettingTab, type SettingsTabDeps } from '../../src/ui/SettingsTab';
+import { App as MockApp, Notice as MockNotice, Plugin as MockPlugin } from 'obsidian';
+import { ClaudsidianSettingTab, normalizeApiBaseUrl, type SettingsTabDeps } from '../../src/ui/SettingsTab';
 
 interface MockSetting {
   nameEl: HTMLElement;
@@ -321,6 +321,42 @@ describe('ClaudsidianSettingTab', () => {
     expect(getSettings().quickReplies).toEqual(['yes', 'go', 'stop']);
   });
 
+  it('API base URL commits only https origins (http on loopback), stripped to the origin', () => {
+    const { settingsByName, save, getSettings } = setup();
+    const field = settingsByName('API base URL').controls[0]!;
+    field.fire('http://api.anthropic.com');
+    field.fire('ftp://api.anthropic.com');
+    field.fire('http://192.168.1.30:3999');
+    field.fire('not a url');
+    expect(save).not.toHaveBeenCalled();
+    field.fire('https://mock.example.com/api/v1?x=1');
+    expect(save).toHaveBeenCalledWith({ apiBaseUrl: 'https://mock.example.com' });
+    field.fire('http://localhost:3999/');
+    expect(save).toHaveBeenCalledWith({ apiBaseUrl: 'http://localhost:3999' });
+    field.fire('http://127.0.0.1:3999');
+    expect(save).toHaveBeenCalledWith({ apiBaseUrl: 'http://127.0.0.1:3999' });
+    field.fire('   ');
+    expect(getSettings().apiBaseUrl).toBe(DEFAULT_SETTINGS.apiBaseUrl);
+  });
+
+  it('API base URL restores the saved value with a notice when the field is left invalid', () => {
+    const { settingsByName, save } = setup({ settings: { apiBaseUrl: 'https://mock.example.com' } });
+    const field = settingsByName('API base URL').controls[0]!;
+    const input = (field as unknown as { inputEl: HTMLInputElement }).inputEl;
+    (MockNotice as unknown as { last?: string }).last = undefined;
+    field.fire('http://api.anthropic.com');
+    input.dispatchEvent(new Event('blur'));
+    expect(save).not.toHaveBeenCalled();
+    expect(field.value).toBe('https://mock.example.com');
+    expect((MockNotice as unknown as { last?: string }).last).toContain('https');
+
+    (MockNotice as unknown as { last?: string }).last = undefined;
+    field.fire('https://other.example.com');
+    input.dispatchEvent(new Event('blur'));
+    expect(save).toHaveBeenCalledWith({ apiBaseUrl: 'https://other.example.com' });
+    expect((MockNotice as unknown as { last?: string }).last).toBeUndefined();
+  });
+
   it('slider limits match the plan', () => {
     const { settingsByName } = setup();
     expect(settingsByName('Max selection characters').controls[0]?.limits).toEqual([500, 20000, 500]);
@@ -365,5 +401,25 @@ describe('ClaudsidianSettingTab', () => {
     fireAuthChange(deps.auth);
     expect(settingsByName('Account').nameEl).not.toBe(before);
     expect(settingsByName('Account').descEl.textContent).toBe('Signed in as other@x (org 12345678)');
+  });
+});
+
+describe('normalizeApiBaseUrl', () => {
+  it('accepts https anywhere and http only on loopback, and drops path and query', () => {
+    expect(normalizeApiBaseUrl('https://api.anthropic.com')).toBe('https://api.anthropic.com');
+    expect(normalizeApiBaseUrl(' https://api.anthropic.com/v1/sessions?x=1#f ')).toBe('https://api.anthropic.com');
+    expect(normalizeApiBaseUrl('https://mock.example.com:8443/')).toBe('https://mock.example.com:8443');
+    expect(normalizeApiBaseUrl('http://localhost:3999/x')).toBe('http://localhost:3999');
+    expect(normalizeApiBaseUrl('http://127.0.0.1:3999')).toBe('http://127.0.0.1:3999');
+    expect(normalizeApiBaseUrl('http://[::1]:3999')).toBe('http://[::1]:3999');
+    expect(normalizeApiBaseUrl('')).toBe(DEFAULT_SETTINGS.apiBaseUrl);
+  });
+  it('refuses plain http off loopback, other schemes and non-URLs', () => {
+    expect(normalizeApiBaseUrl('http://api.anthropic.com')).toBeNull();
+    expect(normalizeApiBaseUrl('http://192.168.1.30:3999')).toBeNull();
+    expect(normalizeApiBaseUrl('http://localhost.evil.com')).toBeNull();
+    expect(normalizeApiBaseUrl('ws://localhost:3999')).toBeNull();
+    expect(normalizeApiBaseUrl('api.anthropic.com')).toBeNull();
+    expect(normalizeApiBaseUrl('https://')).toBeNull();
   });
 });

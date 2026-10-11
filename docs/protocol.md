@@ -31,7 +31,7 @@ Verified 2026-10-10: `OPTIONS` on the sessions path returns 405 with no CORS hea
 | Mark read | `POST /v1/code/sessions/{id}/mark_read` body `{}` or `{sequence_num}` | |
 | Presence | `POST /v1/code/sessions/{id}/client/presence` body `{client_id, connected_at}` / `{client_id, clear: true}` | `client_id` is a per-install uuid |
 | Send | `POST /v1/code/sessions/{id}/events` body `{session_id, events: [{payload}]}` | each payload has a `uuid`; 200 means queued, not applied |
-| History | `GET /v1/code/sessions/{id}/events?limit=200&sort_order=asc&from_sequence_num=N` | `{data: [{sequence_num, payload}]}`; `sequence_num` may be a string; if the server ignores `from_sequence_num`, fall back to `sort_order=desc&limit=50` and merge by sequence |
+| History | `GET /v1/code/sessions/{id}/events?limit=200&sort_order=asc&from_sequence_num=N` | `{data: [{sequence_num, payload}]}`; `sequence_num` may be a string; if the server ignores `from_sequence_num` (a non-empty batch with nothing above the last applied seq, or one that starts at the beginning of what is held), switch that session to the web client's `GET /v1/sessions/{id}/events?limit=500&after_id=<last applied payload.uuid>` and chain pages while they come back full; loadOlder is unavailable in that mode |
 | Create | `POST /v1/code/sessions` body `{environment_id, title?, session_context?: {model?, permission_mode?}, events?: [{payload}]}` | verified: a session created this way in a bridge environment started on the Mac and ran (2026-10-10, via the claude-code-remote MCP). The exact accepted body is confirmed in the first live smoke; on 400 show the server's message |
 
 ## Events sent

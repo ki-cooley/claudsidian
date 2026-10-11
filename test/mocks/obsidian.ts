@@ -32,6 +32,10 @@ export class Component {
     this.unloaders.push(cb);
   }
   registerEvent(_ref: unknown): void {}
+  registerDomEvent(el: EventTarget, type: string, cb: (ev: Event) => unknown, opts?: boolean | AddEventListenerOptions): void {
+    el.addEventListener(type, cb, opts);
+    this.register(() => el.removeEventListener(type, cb, opts));
+  }
   registerInterval(id: number): number {
     return id;
   }
@@ -350,7 +354,11 @@ export async function requestUrl(_p: unknown): Promise<never> {
 }
 
 export class MarkdownView {
+  leaf: WorkspaceLeaf;
   file: TFile | null = null;
+  constructor(leaf?: WorkspaceLeaf) {
+    this.leaf = leaf ?? new WorkspaceLeaf();
+  }
   editor = {
     getSelection: () => '',
     getCursor: () => ({ line: 0, ch: 0 }),

@@ -186,13 +186,17 @@ export class CcrClient implements CcrApi {
 
   async listEnvironments(): Promise<WireEnvironment[]> {
     try {
-      const res = await this.request('GET', '/v1/environments', { query: { limit: 100 } });
+      // beta=true is what the CLI's SDK appends to this call (docs/protocol.md).
+      const res = await this.request('GET', '/v1/environments', { query: { limit: 100, beta: 'true' } });
       const body = res.json<Partial<WireEnvironmentList>>();
       const list = Array.isArray(body?.environments) ? body.environments : Array.isArray(body?.data) ? body.data : [];
       return list.filter((e) => !!e && typeof e.environment_id === 'string');
     } catch (err) {
       if (err instanceof ApiError && err.isAuth) throw err;
-      log.info('environments endpoint unavailable; using session-derived environments', { message: messageOf(err) });
+      log.warn('environments endpoint failed; using session-derived environments', {
+        status: err instanceof ApiError ? err.status : undefined,
+        message: messageOf(err),
+      });
       return [];
     }
   }

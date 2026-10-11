@@ -1,5 +1,5 @@
 // Composer: Enter behaviour per platform, send gating, @ and / popups, Stop while working, images.
-import { useSignal } from '@preact/signals';
+import { signal, useSignal } from '@preact/signals';
 import { h, type JSX } from 'preact';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OutgoingAttachment } from '../../../src/core/types';
@@ -16,7 +16,7 @@ vi.mock('../../../src/core/attachments', () => ({
     bytes: 4,
   })),
 }));
-import { Composer, type ComposerProps } from '../../../src/ui/components/chat/Composer';
+import { Composer, STOP_GUARD_MS, type ComposerProps } from '../../../src/ui/components/chat/Composer';
 import { DEFAULT_FILES, FakeFacade } from '../../helpers/fake-facade';
 import { key, maybe, mount, q, qa, tick, type, type Mounted } from './harness';
 
@@ -194,6 +194,58 @@ describe('Composer', () => {
     const working = mountComposer({ working: true });
     q<HTMLButtonElement>(working.root, 'button[aria-label="Stop"]').click();
     expect(working.onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Send in its slot after a send and holds Stop disabled for the guard window', async () => {
+    vi.useFakeTimers();
+    try {
+      const facade = new FakeFacade({ isMobile: true });
+      const onStop = vi.fn();
+      const working = signal(false);
+      // The store marks the turn as sending synchronously, so working flips before onSend resolves.
+      const onSend = vi.fn(async () => {
+        working.value = true;
+      });
+      function Harness(): JSX.Element {
+        const draft = useSignal('go');
+        return h(Composer, {
+          facade,
+          working: working.value,
+          disabled: false,
+          cooking: false,
+          draft: draft.value,
+          onDraftChange: (v: string) => (draft.value = v),
+          onSend,
+          onStop,
+          onContextPreview: vi.fn(),
+        } satisfies ComposerProps);
+      }
+      const m = mount(Harness, {});
+      mounted.push(m as Mounted<unknown>);
+      const actions = q(m.root, '.claudsidian-composer-actions');
+      expect(actions.lastElementChild?.getAttribute('aria-label')).toBe('Send');
+
+      sendButton(m.root).click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onSend).toHaveBeenCalledTimes(1);
+      // Same slot, still Send (disabled: the text went out), Stop beside it and disabled.
+      expect(actions.lastElementChild?.getAttribute('aria-label')).toBe('Send');
+      expect(sendButton(m.root).disabled).toBe(true);
+      const stop = q<HTMLButtonElement>(m.root, 'button[aria-label="Stop"]');
+      expect(stop.disabled).toBe(true);
+      stop.click();
+      sendButton(m.root).click();
+      expect(onStop).not.toHaveBeenCalled();
+      expect(onSend).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(STOP_GUARD_MS + 10);
+      const armed = q<HTMLButtonElement>(m.root, 'button[aria-label="Stop"]');
+      expect(armed.disabled).toBe(false);
+      armed.click();
+      expect(onStop).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('attaches picked images as thumbnails with remove buttons, four at most', async () => {

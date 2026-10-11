@@ -19,21 +19,3 @@
   min-height: calc(2 * 1.5em + 2 * var(--claudsidian-gap));
 }
 
-.claudsidian-view.is-cooking :where(.claudsidian-quick-replies) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--claudsidian-gap);
-  padding: var(--claudsidian-gap) var(--claudsidian-pad) calc(var(--claudsidian-gap) + env(safe-area-inset-bottom, 0px));
-  border-top: var(--claudsidian-hairline);
-  background: var(--background-primary);
-}
-
-.claudsidian-view.is-cooking :where(.claudsidian-quick-replies button) {
-  flex: 1 1 calc(50% - var(--claudsidian-gap));
-  min-height: 56px;
-}
-
-.claudsidian-view.is-cooking :where(.claudsidian-tool-line) {
-  padding-block: 2px;
-  font-size: var(--claudsidian-font-small);
-}

@@ -144,7 +144,7 @@ export default class ClaudsidianPlugin extends Plugin {
     this.notifications?.dispose();
     this.notifications = null;
     if (this.store) this.store.dispose();
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_CHAT);
+    // The chat leaf stays in the layout (plugin guidelines): Obsidian restores the view when the plugin returns.
   }
 
   async loadSettings(): Promise<void> {

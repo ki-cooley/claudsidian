@@ -40,6 +40,22 @@ describe('PermissionCard', () => {
     expect(withSuggestions.onAllow).toHaveBeenCalledWith(true);
   });
 
+  it('spells out the rules Allow and remember would persist, with their destination', () => {
+    const { root } = setup({
+      suggestions: [
+        { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'rm:*' }], behavior: 'allow', destination: 'session' },
+        { type: 'addRules', rules: [{ toolName: 'Edit' }], behavior: 'deny', destination: 'projectSettings' },
+        { type: 'setMode', mode: 'acceptEdits' },
+      ],
+    });
+    const rules = text(q(root, '.claudsidian-perm-rules'));
+    expect(rules).toContain('Bash(rm:*) in this session');
+    expect(rules).toContain('deny Edit in project settings');
+    expect(rules).toContain('mode: acceptEdits');
+    expect(buttonByText(root, 'Allow and remember').title).toContain('Bash(rm:*)');
+    expect(maybe(setup().root, '.claudsidian-perm-rules')).toBeNull();
+  });
+
   it('Deny reveals a reason field and confirms with the reason', async () => {
     const { root, onDeny } = setup();
     expect(maybe(root, '.claudsidian-perm-reason')).toBeNull();

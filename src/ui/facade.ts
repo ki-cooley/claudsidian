@@ -6,6 +6,11 @@ import type { ClaudsidianSettings } from '../settings';
 import type { CapturedContext } from '../core/types';
 import type { AuthApi } from '../api/auth-api';
 
+/** What renderMarkdown may resolve with: something the caller can unload when the rendered block goes away. */
+export interface MarkdownRenderHandle {
+  unload(): void;
+}
+
 export interface PluginFacade {
   readonly isMobile: boolean;
   readonly vaultName: string;
@@ -13,8 +18,11 @@ export interface PluginFacade {
   readonly auth: AuthApi;
   settings(): ClaudsidianSettings;
   saveSettings(patch: Partial<ClaudsidianSettings>): Promise<void>;
-  /** Render markdown into `el` using Obsidian's renderer (sanitised). */
-  renderMarkdown(markdown: string, el: HTMLElement, sourcePath?: string): Promise<void>;
+  /**
+   * Render markdown into `el` using Obsidian's renderer (sanitised). May resolve with a handle whose
+   * unload() releases the render's child components; the caller unloads it when the block re-renders or unmounts.
+   */
+  renderMarkdown(markdown: string, el: HTMLElement, sourcePath?: string): Promise<void | MarkdownRenderHandle>;
   /** Capture active note, selection, cursor, open notes. `mentions` are @paths typed in the composer. */
   captureContext(mentions: string[]): CapturedContext;
   /** All markdown file paths in the vault, for the @ suggester. */

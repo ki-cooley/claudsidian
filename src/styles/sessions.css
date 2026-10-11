@@ -53,9 +53,9 @@
   margin: 0;
 }
 
-/* Buttons (private primitives; same classes as the shared set) ----------- */
+/* Buttons (private primitives, namespaced claudsidian-ss-* so chat.css never restyles them) ----------- */
 
-.claudsidian-btn {
+.claudsidian-ss-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -66,11 +66,11 @@
   line-height: 1;
   white-space: nowrap;
 }
-.claudsidian-btn.is-icon-only {
+.claudsidian-ss-btn.is-icon-only {
   width: 32px;
   padding: 0;
 }
-.claudsidian-icon {
+.claudsidian-ss-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -78,17 +78,17 @@
   height: var(--icon-s, 16px);
   color: inherit;
 }
-.claudsidian-icon svg {
+.claudsidian-ss-icon svg {
   width: 100%;
   height: 100%;
 }
-.claudsidian-sessions-refresh.is-loading .claudsidian-icon {
+.claudsidian-sessions-refresh.is-loading .claudsidian-ss-icon {
   animation: claudsidian-spin 1.2s linear infinite;
 }
 
 /* Banner ------------------------------------------------------------------ */
 
-.claudsidian-banner {
+.claudsidian-ss-banner {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -99,19 +99,19 @@
   border-left: 3px solid var(--text-muted);
   font-size: var(--font-ui-small);
 }
-.claudsidian-banner-text {
+.claudsidian-ss-banner-text {
   flex: 1;
 }
-.claudsidian-banner.is-offline {
+.claudsidian-ss-banner.is-offline {
   border-left-color: var(--text-faint);
 }
-.claudsidian-banner.is-error {
+.claudsidian-ss-banner.is-error {
   border-left-color: var(--color-red);
 }
-.claudsidian-banner.is-auth {
+.claudsidian-ss-banner.is-auth {
   border-left-color: var(--color-orange);
 }
-.claudsidian-banner.is-info {
+.claudsidian-ss-banner.is-info {
   border-left-color: var(--interactive-accent);
 }
 
@@ -176,7 +176,7 @@
 }
 .claudsidian-session-main:focus-visible,
 .claudsidian-session-more:focus-visible,
-.claudsidian-btn:focus-visible {
+.claudsidian-ss-btn:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
 }
@@ -255,7 +255,7 @@
 
 /* Status dot ------------------------------------------------------------------ */
 
-.claudsidian-status {
+.claudsidian-ss-status {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -263,29 +263,29 @@
   /* sits on the first text line */
   padding-top: calc((1.4em - 10px) / 2);
 }
-.claudsidian-status-dot {
+.claudsidian-ss-status-dot {
   display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--text-faint);
 }
-.claudsidian-status.is-working .claudsidian-status-dot {
+.claudsidian-ss-status.is-working .claudsidian-ss-status-dot {
   background: var(--interactive-accent);
   animation: claudsidian-pulse 1.8s ease-in-out infinite;
 }
-.claudsidian-status.is-needs_you .claudsidian-status-dot {
+.claudsidian-ss-status.is-needs_you .claudsidian-ss-status-dot {
   background: var(--color-orange);
   box-shadow: 0 0 0 3px var(--background-modifier-border);
 }
-.claudsidian-status.is-idle .claudsidian-status-dot {
+.claudsidian-ss-status.is-idle .claudsidian-ss-status-dot {
   background: var(--text-faint);
 }
-.claudsidian-status.is-offline .claudsidian-status-dot {
+.claudsidian-ss-status.is-offline .claudsidian-ss-status-dot {
   background: transparent;
   border: 1.5px solid var(--text-faint);
 }
-.claudsidian-status-label {
+.claudsidian-ss-status-label {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
 }
@@ -309,7 +309,7 @@
 
 /* Spinner and empty state ------------------------------------------------------- */
 
-.claudsidian-spinner {
+.claudsidian-ss-spinner {
   width: 22px;
   height: 22px;
   margin: 40px auto;
@@ -349,9 +349,10 @@
   margin-top: 56px;
 }
 
-/* Sheet (contained in the view) ---------------------------------------------- */
+/* Sheet (contained in the view). The layer is a stacking context; the sheet must sit above its backdrop
+   sibling, so both carry explicit z-indexes (test/ui/sessions/styles.test.ts pins the order). --------- */
 
-.claudsidian-sheet-layer {
+.claudsidian-ss-sheet-layer {
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -359,29 +360,31 @@
   flex-direction: column;
   justify-content: flex-end;
 }
-.claudsidian-sheet-backdrop {
+.claudsidian-ss-sheet-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
   background: var(--background-modifier-cover);
 }
-.claudsidian-sheet {
+.claudsidian-ss-sheet {
   position: relative;
+  z-index: 1;
   max-height: 85%;
   overflow-y: auto;
-  padding: 10px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 14px calc(14px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   border-radius: var(--radius-l, 12px) var(--radius-l, 12px) 0 0;
   background: var(--background-primary);
   border-top: 1px solid var(--background-modifier-border);
   box-shadow: 0 -8px 24px var(--background-modifier-box-shadow);
 }
-.claudsidian-sheet-title {
+.claudsidian-ss-sheet-title {
   padding: 4px 0 10px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.claudsidian-session-actions .claudsidian-btn {
+.claudsidian-session-actions .claudsidian-ss-btn {
   width: 100%;
   justify-content: flex-start;
   min-height: 44px;
@@ -447,11 +450,11 @@
 .is-mobile .claudsidian-sessions-toolbar {
   padding: 10px 12px 10px 16px;
 }
-.is-mobile .claudsidian-btn,
+.is-mobile .claudsidian-ss-btn,
 .is-mobile .claudsidian-show-archived {
   min-height: 44px;
 }
-.is-mobile .claudsidian-btn.is-icon-only {
+.is-mobile .claudsidian-ss-btn.is-icon-only {
   width: 44px;
 }
 .is-mobile .claudsidian-session-main {
@@ -473,11 +476,11 @@
 .is-cooking .claudsidian-sessions {
   font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1.2));
 }
-.is-cooking .claudsidian-btn,
-.is-cooking .claudsidian-session-actions .claudsidian-btn {
+.is-cooking .claudsidian-ss-btn,
+.is-cooking .claudsidian-session-actions .claudsidian-ss-btn {
   min-height: 48px;
 }
-.is-cooking .claudsidian-btn.is-icon-only {
+.is-cooking .claudsidian-ss-btn.is-icon-only {
   width: 48px;
 }
 .is-cooking .claudsidian-session-main {
@@ -492,11 +495,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .claudsidian-status.is-working .claudsidian-status-dot,
-  .claudsidian-sessions-refresh.is-loading .claudsidian-icon {
+  .claudsidian-ss-status.is-working .claudsidian-ss-status-dot,
+  .claudsidian-sessions-refresh.is-loading .claudsidian-ss-icon {
     animation: none;
   }
-  .claudsidian-status.is-working .claudsidian-status-dot {
+  .claudsidian-ss-status.is-working .claudsidian-ss-status-dot {
     box-shadow: 0 0 0 3px var(--background-modifier-border);
   }
 }

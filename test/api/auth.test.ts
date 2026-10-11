@@ -309,6 +309,75 @@ describe('AuthManager', () => {
     expect(auth5.isSignedIn()).toBe(true);
   });
 
+  it('a refresh that lands after signOut does not sign the user back in', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { d, saves } = deps({
+      load: () => ({ accessToken: 'A1', refreshToken: 'R1', expiresAt: 0, scopes: [], clientId: 'c' }),
+      transport: async () => {
+        await gate;
+        return makeResponse(200, {}, JSON.stringify({ access_token: 'sk-ant-oat01-NEW', refresh_token: 'R9', expires_in: 3600 }));
+      },
+    });
+    const auth = new AuthManager(d);
+    const cb = vi.fn();
+    auth.onChange(cb);
+    const refresh = auth.getAccessToken();
+    await auth.signOut();
+    expect(auth.isSignedIn()).toBe(false);
+    release();
+    const err = await refresh.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(401);
+    expect((err as ApiError).message).toBe('Signed out during refresh');
+    expect(auth.isSignedIn()).toBe(false);
+    expect(auth.state).toBeNull();
+    expect(saves).toEqual([null]);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(null);
+    // a later refresh starts from the signed-out state
+    await expect(auth.refresh()).rejects.toMatchObject({ status: 401, message: 'Not signed in' });
+  });
+
+  it('a code exchange that lands after signOut does not sign the user in', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const base = deps();
+    const transport = async (req: HttpRequest): Promise<HttpResponse> => {
+      await gate;
+      return base.d.transport(req);
+    };
+    const auth = new AuthManager({ ...base.d, transport });
+    await auth.beginSignIn();
+    const signIn = auth.completeSignIn('code-1');
+    await auth.signOut();
+    release();
+    const err = await signIn.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(401);
+    expect(auth.isSignedIn()).toBe(false);
+    expect(base.saves).toEqual([null]);
+  });
+
+  it('does not attach the token response body to the error when access_token is missing', async () => {
+    const { d } = deps({
+      load: () => ({ accessToken: 'A1', refreshToken: 'R1', expiresAt: 0, scopes: [], clientId: 'c' }),
+      transport: async () => makeResponse(200, {}, JSON.stringify({ refresh_token: 'sk-ant-ort01-SECRET', expires_in: 10 })),
+    });
+    const auth = new AuthManager(d);
+    const err = await auth.refresh().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(502);
+    expect((err as ApiError).body).toBeUndefined();
+    expect(JSON.stringify(err)).not.toContain('SECRET');
+    expect((err as ApiError).message).not.toContain('SECRET');
+    expect(auth.isSignedIn()).toBe(true);
+  });
+
   it('allows a new refresh after a failed one', async () => {
     let fail = true;
     const { d } = deps({

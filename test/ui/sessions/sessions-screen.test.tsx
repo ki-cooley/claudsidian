@@ -202,18 +202,18 @@ describe('SessionsScreen', () => {
     const { root, calls, facade } = setup();
     click(root.querySelector('[data-session-id="cse_vault"] .claudsidian-session-more'));
     expect(calls.open).toEqual([]);
-    const sheet = root.querySelector('.claudsidian-sheet');
+    const sheet = root.querySelector('.claudsidian-ss-sheet');
     expect(sheet).not.toBeNull();
     click(byText(sheet!, 'button', 'Rename'));
     expect(calls.rename).toEqual(['cse_vault']);
-    expect(root.querySelector('.claudsidian-sheet')).toBeNull();
+    expect(root.querySelector('.claudsidian-ss-sheet')).toBeNull();
 
     click(root.querySelector('[data-session-id="cse_vault"] .claudsidian-session-more'));
-    click(byText(root.querySelector('.claudsidian-sheet')!, 'button', 'Archive'));
+    click(byText(root.querySelector('.claudsidian-ss-sheet')!, 'button', 'Archive'));
     expect(calls.archive).toEqual(['cse_vault']);
 
     click(root.querySelector('[data-session-id="cse_vault"] .claudsidian-session-more'));
-    click(byText(root.querySelector('.claudsidian-sheet')!, 'button', 'Open in claude.ai'));
+    click(byText(root.querySelector('.claudsidian-ss-sheet')!, 'button', 'Open in claude.ai'));
     expect(facade.opened).toEqual(['https://claude.ai/code/cse_vault']);
   });
 
@@ -234,7 +234,7 @@ describe('SessionsScreen', () => {
     expect(root.querySelector('.claudsidian-empty-state')).not.toBeNull();
     store.sessionsLoading.value = true;
     await flush();
-    expect(root.querySelector('.claudsidian-spinner')).not.toBeNull();
+    expect(root.querySelector('.claudsidian-ss-spinner')).not.toBeNull();
     expect(root.querySelector('.claudsidian-empty-state')).toBeNull();
   });
 
@@ -243,7 +243,7 @@ describe('SessionsScreen', () => {
     expect(root.querySelector('.claudsidian-empty-state')?.textContent).toContain('Every session is archived');
     store.sessionsLoading.value = true;
     await flush();
-    expect(root.querySelector('.claudsidian-spinner')).toBeNull();
+    expect(root.querySelector('.claudsidian-ss-spinner')).toBeNull();
     expect(root.querySelector('.claudsidian-empty-state')).not.toBeNull();
     click(byText(root, 'button', 'Show archived'));
     expect(root.querySelector('.claudsidian-session-group-title')?.textContent).toBe('Archived');
@@ -291,7 +291,7 @@ describe('SessionsScreen', () => {
     const { root } = setup();
     click(root.querySelector('[data-session-id="cse_vault"] .claudsidian-session-more'));
     click(root.querySelector('.claudsidian-sessions-new'));
-    expect(root.querySelectorAll('.claudsidian-sheet')).toHaveLength(2);
+    expect(root.querySelectorAll('.claudsidian-ss-sheet')).toHaveLength(2);
     const escape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     escape();
     await flush();
@@ -299,17 +299,17 @@ describe('SessionsScreen', () => {
     expect(root.querySelector('.claudsidian-session-actions')).not.toBeNull();
     escape();
     await flush();
-    expect(root.querySelectorAll('.claudsidian-sheet')).toHaveLength(0);
+    expect(root.querySelectorAll('.claudsidian-ss-sheet')).toHaveLength(0);
   });
 
   it('renders the store banner and the list error', async () => {
     const { root, store } = setup();
     store.banner.value = { kind: 'offline', text: 'Mac offline' };
     await flush();
-    expect(root.querySelector('.claudsidian-banner')?.textContent).toContain('Mac offline');
+    expect(root.querySelector('.claudsidian-ss-banner')?.textContent).toContain('Mac offline');
     store.banner.value = null;
     store.sessionsError.value = 'Could not load sessions';
     await flush();
-    expect(root.querySelector('.claudsidian-banner')?.textContent).toContain('Could not load sessions');
+    expect(root.querySelector('.claudsidian-ss-banner')?.textContent).toContain('Could not load sessions');
   });
 });

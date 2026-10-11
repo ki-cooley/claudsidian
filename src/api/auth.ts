@@ -40,6 +40,8 @@ export class AuthManager implements AuthApi {
   private current: AuthState | null;
   private pending: { verifier: string; state: string } | null = null;
   private inflight: Promise<AuthState> | null = null;
+  /** Bumped on every sign-out, so a token exchange that was in flight cannot sign the user back in. */
+  private generation = 0;
   private readonly listeners = new Set<(state: AuthState | null) => void>();
   private readonly clientId: string;
   private readonly timers: TimerApi;
@@ -85,6 +87,7 @@ export class AuthManager implements AuthApi {
     if (parsed.state !== undefined && parsed.state !== pending.state) {
       throw new ApiError({ status: 400, message: 'State mismatch: the code belongs to a different sign-in attempt. Start again.' });
     }
+    const generation = this.generation;
     const res = await this.postToken({
       grant_type: 'authorization_code',
       code: parsed.code,
@@ -93,9 +96,11 @@ export class AuthManager implements AuthApi {
       client_id: this.clientId,
       redirect_uri: OAUTH_REDIRECT_URI,
     });
+    if (generation !== this.generation) throw new ApiError({ status: 401, message: 'Signed out during sign-in' });
     if (res.status < 200 || res.status >= 300) throw apiErrorFromResponse(res.status, res.text, res.headers);
     const next = this.stateFromToken(res.json<TokenResponse>(), null);
     if (!next.orgUuid) next.orgUuid = await this.lookupOrgUuid(next.accessToken);
+    if (generation !== this.generation) throw new ApiError({ status: 401, message: 'Signed out during sign-in' });
     this.pending = null;
     await this.commit(next);
     log.info('signed in', { orgUuid: next.orgUuid, scopes: next.scopes });
@@ -122,7 +127,10 @@ export class AuthManager implements AuthApi {
     const prev = this.current;
     if (!prev) throw new ApiError({ status: 401, message: 'Not signed in' });
     // Network errors propagate from the transport as ApiError(status 0); state is untouched.
+    const generation = this.generation;
     const res = await this.postToken({ grant_type: 'refresh_token', refresh_token: prev.refreshToken, client_id: prev.clientId || this.clientId });
+    // signOut() ran while the request was out: the response is stale, whatever it says.
+    if (generation !== this.generation) throw new ApiError({ status: 401, message: 'Signed out during refresh' });
     if (res.status === 400 || res.status === 401) {
       const err = apiErrorFromResponse(res.status, res.text, res.headers);
       log.warn('token refresh rejected, signing out', { status: res.status, errorType: err.errorType });
@@ -138,6 +146,7 @@ export class AuthManager implements AuthApi {
 
   async signOut(): Promise<void> {
     this.pending = null;
+    this.generation += 1;
     await this.commit(null);
   }
 
@@ -165,7 +174,8 @@ export class AuthManager implements AuthApi {
   /** Map a token response onto AuthState, carrying forward fields the response omits. */
   private stateFromToken(body: TokenResponse | undefined, prev: AuthState | null): AuthState {
     const accessToken = body?.access_token;
-    if (!accessToken) throw new ApiError({ status: 502, message: 'Token response had no access_token', body });
+    // The body is not attached: it can carry a refresh token, and errors are printed outside the redacting log.
+    if (!accessToken) throw new ApiError({ status: 502, message: 'Token response had no access_token' });
     const expiresIn = typeof body.expires_in === 'number' && Number.isFinite(body.expires_in) ? body.expires_in : 0;
     const scopes = typeof body.scope === 'string' ? body.scope.split(/\s+/).filter(Boolean) : (prev?.scopes ?? []);
     const next: AuthState = {

@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../src/api/errors';
 import type { ControlResponseEvent, UserEvent,
   ControlRequestEvent,
+  StreamJsonEvent,
+  WireEventRow,
 } from '../../src/api/types';
 import { SessionStore } from '../../src/core/session-store';
+import type { PermissionItem, QuestionItem } from '../../src/core/types';
 import { DEFAULT_SETTINGS, type ClaudsidianSettings } from '../../src/settings';
 import { createFakeClock, type FakeClock } from '../helpers/fake-clock';
 import {
@@ -35,6 +38,29 @@ function makeStore(): SessionStore {
 
 function listEventCalls(id: string): string[] {
   return client.calls.filter((c) => c.startsWith(`listEvents ${id}`));
+}
+
+/** The rows the store keeps for loadOlder rebuilds (private bookkeeping, read for the compaction tests). */
+function storedRows(id: string): WireEventRow[] {
+  const tracks = (store as unknown as { tracks: Map<string, { rows: WireEventRow[] }> }).tracks;
+  return tracks.get(id)?.rows ?? [];
+}
+
+function streamEvent(event: Record<string, unknown>): StreamJsonEvent {
+  return { type: 'stream_event', uuid: `uuid_s${++streamCounter}`, session_id: 'cse_test', parent_tool_use_id: null, event } as StreamJsonEvent;
+}
+let streamCounter = 0;
+
+/** message_start, one streamed text block, and its final assistant row: the per-block shape Claude Code sends. */
+function streamedText(messageId: string, text: string): StreamJsonEvent[] {
+  return [
+    streamEvent({ type: 'message_start', message: { id: messageId, role: 'assistant' } }),
+    streamEvent({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+    streamEvent({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }),
+    streamEvent({ type: 'content_block_stop', index: 0 }),
+    assistantText(text, messageId),
+    streamEvent({ type: 'message_stop' }),
+  ];
 }
 
 beforeEach(() => {
@@ -359,29 +385,100 @@ describe('SessionStore open and poll', () => {
     expect(count('assistant_text')).toBe(2);
     expect(count('result')).toBe(2);
     expect(store.transcript('cse_a').value.lastSeq).toBe(6);
-    // the server returned rows at or below lastSeq, so the session falls back to desc windows
+    // overlapping rows alone do not switch modes: the next poll still asks from lastSeq + 1
     client.push('cse_a', assistantText('three'));
     await clock.tick(IDLE);
-    expect(listEventCalls('cse_a').at(-1)).toBe('listEvents cse_a {"sortOrder":"desc","limit":50}');
+    expect(listEventCalls('cse_a').at(-1)).toBe('listEvents cse_a {"fromSequenceNum":7,"sortOrder":"asc","limit":200}');
     expect(count('assistant_text')).toBe(3);
     expect(count('result')).toBe(2);
     await clock.tick(ACTIVE);
     expect(count('assistant_text')).toBe(3);
+    expect(listEventCalls('cse_a').at(-1)).toBe('listEvents cse_a {"fromSequenceNum":8,"sortOrder":"asc","limit":200}');
   });
 
-  it('switches to desc windows when the server ignores from_sequence_num', async () => {
+  it('switches to after_id polling when the server ignores from_sequence_num', async () => {
     await store.refreshSessions();
     client.ignoreFromSequenceNum = true;
     client.pushAll('cse_a', [userText('go'), assistantText('one'), resultEvent()]);
     await store.open('cse_a');
-    client.pushAll('cse_a', [assistantText('two'), resultEvent()]);
+    const pushed = client.pushAll('cse_a', [assistantText('two'), resultEvent()]);
     await clock.tick(IDLE);
     const items = store.transcript('cse_a').value.items;
     expect(items.filter((i) => i.kind === 'assistant_text')).toHaveLength(2);
     expect(items.filter((i) => i.kind === 'user')).toHaveLength(1);
     await clock.tick(IDLE);
-    expect(listEventCalls('cse_a').at(-1)).toBe('listEvents cse_a {"sortOrder":"desc","limit":50}');
+    const lastUuid = pushed[1]!.payload.uuid;
+    expect(listEventCalls('cse_a').at(-1)).toBe(`listEvents cse_a {"afterId":"${lastUuid}","limit":500}`);
     expect(store.transcript('cse_a').value.items).toHaveLength(items.length);
+    // the cursor moves with each applied row
+    const next = client.push('cse_a', assistantText('three'));
+    await clock.tick(IDLE);
+    expect(store.transcript('cse_a').value.items.filter((i) => i.kind === 'assistant_text')).toHaveLength(3);
+    await clock.tick(ACTIVE);
+    expect(listEventCalls('cse_a').at(-1)).toBe(`listEvents cse_a {"afterId":"${next.payload.uuid}","limit":500}`);
+    // and loadOlder has nothing to ask with
+    expect(await store.loadOlder('cse_a')).toBe(false);
+  });
+
+  it('switches to after_id when an incremental poll brings nothing new', async () => {
+    await store.refreshSessions();
+    client.ignoreFromSequenceNum = true;
+    client.pushAll('cse_b', [userText('go'), assistantText('one'), resultEvent()]);
+    await store.open('cse_b');
+    await clock.tick(IDLE); // the whole history comes back although nothing is new
+    client.push('cse_b', assistantText('two'));
+    await clock.tick(IDLE);
+    expect(listEventCalls('cse_b').at(-1)).toMatch(/^listEvents cse_b \{"afterId":"[^"]+","limit":500\}$/);
+    expect(store.transcript('cse_b').value.items.filter((i) => i.kind === 'assistant_text')).toHaveLength(2);
+  });
+
+  it('applies a burst of 120 rows between polls in after_id mode without losing any', async () => {
+    await store.refreshSessions();
+    client.ignoreFromSequenceNum = true;
+    client.pushAll('cse_b', [userText('go'), assistantText('m0'), resultEvent()]);
+    await store.open('cse_b');
+    client.push('cse_b', assistantText('m1'));
+    await clock.tick(IDLE); // switches
+    for (let i = 2; i <= 121; i++) client.push('cse_b', assistantText(`m${i}`));
+    await clock.tick(ACTIVE);
+    const state = store.transcript('cse_b').value;
+    const texts = state.items.filter((i) => i.kind === 'assistant_text').map((i) => (i as { text: string }).text);
+    expect(texts).toHaveLength(122);
+    expect(texts[0]).toBe('m0');
+    expect(texts[121]).toBe('m121');
+    expect(state.lastSeq).toBe(124);
+    expect(client.marked.at(-1)).toEqual({ id: 'cse_b', seq: 124 });
+  });
+
+  it('chains after_id pages in one poll while they come back full', async () => {
+    await store.refreshSessions();
+    client.ignoreFromSequenceNum = true;
+    client.pushAll('cse_b', [userText('go'), assistantText('m0'), resultEvent()]);
+    await store.open('cse_b');
+    client.push('cse_b', assistantText('m1'));
+    await clock.tick(IDLE);
+    const before = listEventCalls('cse_b').length;
+    for (let i = 2; i <= 1101; i++) client.push('cse_b', assistantText(`m${i}`));
+    await clock.tick(ACTIVE);
+    expect(listEventCalls('cse_b')).toHaveLength(before + 3); // 500 + 500 + 100
+    expect(store.transcript('cse_b').value.items.filter((i) => i.kind === 'assistant_text')).toHaveLength(1102);
+    expect(store.transcript('cse_b').value.lastSeq).toBe(1104);
+  });
+
+  it('open on a gone session shows the notice once and starts neither the poller nor presence', async () => {
+    const notices: string[] = [];
+    store = new SessionStore({ client, settings: () => settings, clientId: 'client-1', timers: clock.timers, onNotice: (t) => notices.push(t) });
+    await store.refreshSessions();
+    client.failNext = new ApiError({ status: 404, message: 'Session not found (HTTP 404)' });
+    await store.open('cse_b');
+    expect(store.banner.value).toEqual({ kind: 'error', text: 'Session not found. It may have been archived.' });
+    expect(notices).toEqual(['Session not found. It may have been archived.']);
+    expect(client.presenceLog).toEqual([]);
+    const polls = listEventCalls('cse_b').length;
+    await clock.tick(IDLE * 3 + 120_000);
+    expect(listEventCalls('cse_b')).toHaveLength(polls);
+    expect(client.presenceLog).toEqual([]);
+    expect(notices).toHaveLength(1);
   });
 
   it('poll survives a 401', async () => {
@@ -497,6 +594,58 @@ describe('SessionStore open and poll', () => {
     expect(store.transcript('cse_b').value.items).toHaveLength(250);
   });
 
+  it('stores image rows without their base64 bodies and still counts the images on a rebuild', async () => {
+    await store.refreshSessions();
+    const big = 'A'.repeat(100_000);
+    for (let i = 1; i <= 210; i++) client.push('cse_b', assistantText(`m${i}`));
+    client.push('cse_b', {
+      type: 'user',
+      uuid: 'uuid_img',
+      session_id: 'cse_b',
+      parent_tool_use_id: null,
+      message: { role: 'user', content: [{ type: 'text', text: 'this plate' }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: big } }] },
+    });
+    await store.open('cse_b');
+    const stored = storedRows('cse_b').find((r) => r.payload.uuid === 'uuid_img')!;
+    const content = (stored.payload as UserEvent).message.content as { type: string; source?: { data: string } }[];
+    expect(content[1]!.source!.data.length).toBeLessThan(64);
+    expect(JSON.stringify(storedRows('cse_b'))).not.toContain(big);
+    // the live row was not mutated
+    expect(((client.events.get('cse_b')!.at(-1)!.payload as UserEvent).message.content as { source?: { data: string } }[])[1]!.source!.data).toBe(big);
+    expect(await store.loadOlder('cse_b')).toBe(true);
+    const user = store.transcript('cse_b').value.items.find((i) => i.kind === 'user') as { text: string; imageCount: number };
+    expect(user).toMatchObject({ text: 'this plate', imageCount: 1 });
+  });
+
+  it('drops stream rows once their final assistant row applied and rebuilds the same transcript', async () => {
+    await store.refreshSessions();
+    for (let i = 1; i <= 205; i++) client.push('cse_b', assistantText(`m${i}`));
+    client.pushAll('cse_b', [userText('go'), ...streamedText('msg_S1', 'First answer.'), resultEvent()]);
+    await store.open('cse_b');
+    const live = store.transcript('cse_b').value;
+    expect(storedRows('cse_b').filter((r) => r.payload.type === 'stream_event').map((r) => (r.payload as { event: { type: string } }).event.type)).toEqual(['message_stop']);
+    // a message still streaming keeps its rows until the final arrives
+    const partial = streamedText('msg_S2', 'Second');
+    client.pushAll('cse_b', partial.slice(0, 3));
+    await clock.tick(IDLE);
+    expect(storedRows('cse_b').filter((r) => r.payload.type === 'stream_event')).toHaveLength(4);
+    expect(store.transcript('cse_b').value.items.at(-1)).toMatchObject({ kind: 'assistant_text', text: 'Second', partial: true });
+    client.pushAll('cse_b', partial.slice(3));
+    await clock.tick(ACTIVE);
+    // the final retires its own partial rows and the earlier message's trailing message_stop
+    expect(storedRows('cse_b').filter((r) => r.payload.type === 'stream_event').map((r) => (r.payload as { event: { type: string } }).event.type)).toEqual(['message_stop']);
+    const streamed = store.transcript('cse_b').value;
+    expect(streamed.items.at(-1)).toMatchObject({ kind: 'assistant_text', id: 'msg_S2:0', text: 'Second', partial: false });
+
+    expect(await store.loadOlder('cse_b')).toBe(true);
+    const rebuilt = store.transcript('cse_b').value;
+    expect(rebuilt.items.slice(-5)).toEqual(live.items.slice(-4).concat(streamed.items.slice(-1)));
+    expect(rebuilt.items.filter((i) => i.kind === 'assistant_text' && (i as { partial: boolean }).partial)).toHaveLength(0);
+    expect(rebuilt.items.filter((i) => (i as { text?: string }).text === 'First answer.')).toHaveLength(1);
+    expect(rebuilt.items).toHaveLength(205 + 1 + 1 + 1 + 1);
+    expect(rebuilt.lastSeq).toBe(streamed.lastSeq);
+  });
+
   it('loadOlder coalesces overlapping calls into one request', async () => {
     await store.refreshSessions();
     for (let i = 1; i <= 250; i++) client.push('cse_b', assistantText(`m${i}`));
@@ -588,6 +737,18 @@ describe('SessionStore sending', () => {
     expect(state.turn).not.toBe('needs_input');
   });
 
+  it('a Deny shows as denied as soon as it is sent', async () => {
+    await store.refreshSessions();
+    await store.open('cse_b');
+    client.push('cse_b', permissionRequest('req_1', 'Bash', { command: 'npm publish' }));
+    await clock.tick(IDLE);
+    await store.respondPermission('cse_b', 'req_1', { behavior: 'deny', message: 'not that' });
+    const state = store.transcript('cse_b').value;
+    expect((state.items.find((i) => i.id === 'req_1') as PermissionItem).resolved).toBe('deny');
+    expect(state.pending).toEqual([]);
+    expect(state.turn).toBe('working');
+  });
+
   it('answerQuestion builds updatedInput from the original questions', async () => {
     await store.refreshSessions();
     await store.open('cse_b');
@@ -607,6 +768,9 @@ describe('SessionStore sending', () => {
       updatedInput: { questions, answers: { 'Which course?': 'Main' }, response: 'make it light' },
     });
     expect(store.transcript('cse_b').value.pending).toEqual([]);
+    const item = store.transcript('cse_b').value.items.find((i) => i.id === 'req_q') as QuestionItem;
+    expect(item.resolved).toBe(true);
+    expect(item.answers).toEqual({ 'Which course?': 'Main' });
   });
 
   it('interrupt, setModel and setPermissionMode send control requests', async () => {

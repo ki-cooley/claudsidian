@@ -54,11 +54,11 @@
   padding: 9px 12px;
 }
 
-.claudsidian-composer-send.claudsidian-btn {
+.claudsidian-chat .claudsidian-composer-send.claudsidian-btn {
   min-width: 36px;
   min-height: 36px;
 }
-.claudsidian-composer-stop.claudsidian-btn {
+.claudsidian-chat .claudsidian-composer-stop.claudsidian-btn {
   min-width: 36px;
   min-height: 36px;
 }
@@ -94,7 +94,7 @@
   height: 100%;
   object-fit: cover;
 }
-.claudsidian-attachment-remove.claudsidian-btn {
+.claudsidian-chat .claudsidian-attachment-remove.claudsidian-btn {
   position: absolute;
   top: 2px;
   right: 2px;

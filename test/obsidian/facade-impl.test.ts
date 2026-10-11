@@ -127,13 +127,45 @@ describe('ObsidianFacade', () => {
     const replaceRange = vi.fn();
     const replaceSelection = vi.fn();
     const view = markdownView({ replaceRange, replaceSelection, getCursor: () => ({ line: 0, ch: 2 }) });
-    const leaf = new WorkspaceLeaf();
+    const leaf = view.leaf;
     (leaf as unknown as { view: unknown }).view = view;
+    app.workspace.getLeavesOfType = (t: string) => (t === 'markdown' ? [leaf] : []);
     app.workspace.trigger('active-leaf-change', leaf);
     expect(await facade.insertAtCursor('a')).toBe(true);
     expect(replaceRange).toHaveBeenCalledWith('a', { line: 0, ch: 2 });
     expect(await facade.replaceSelection('b')).toBe(true);
     expect(replaceSelection).toHaveBeenCalledWith('b');
+  });
+
+  it('refuses to write into the last markdown view once its note was closed', async () => {
+    const { facade, app, capture } = setup();
+    const replaceRange = vi.fn();
+    const replaceSelection = vi.fn();
+    const view = markdownView({ replaceRange, replaceSelection });
+    const leaf = view.leaf;
+    (leaf as unknown as { view: unknown }).view = view;
+    let leaves = [leaf];
+    app.workspace.getLeavesOfType = (t: string) => (t === 'markdown' ? leaves : []);
+    app.workspace.trigger('active-leaf-change', leaf);
+    expect(await facade.insertAtCursor('a')).toBe(true);
+
+    // The note's leaf is detached; the editor object outlives it and would still accept the edit.
+    leaves = [];
+    expect(await facade.insertAtCursor('b')).toBe(false);
+    expect(await facade.replaceSelection('c')).toBe(false);
+    expect(replaceRange).toHaveBeenCalledTimes(1);
+    expect(replaceSelection).not.toHaveBeenCalled();
+    expect(capture.lastMarkdownView).toBeNull();
+  });
+
+  it('refuses the active markdown view when it has no file', async () => {
+    const { facade, app } = setup();
+    const replaceRange = vi.fn();
+    const view = markdownView({ replaceRange });
+    view.file = null;
+    app.workspace.getActiveViewOfType = <T>() => view as unknown as T;
+    expect(await facade.insertAtCursor('a')).toBe(false);
+    expect(replaceRange).not.toHaveBeenCalled();
   });
 
   it('replaceSelection returns false without an editor', async () => {
@@ -209,6 +241,42 @@ describe('ObsidianFacade', () => {
     expect(input?.multiple).toBe(true);
     input?.dispatchEvent(new Event('cancel'));
     expect(await promise).toEqual([]);
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('pickImages resolves [] when the page becomes visible again without a change event', async () => {
+    vi.useFakeTimers();
+    try {
+      const { facade } = setup();
+      const promise = facade.pickImages();
+      expect(document.querySelector('input[type="file"]')).not.toBeNull();
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(document.querySelector('input[type="file"]')).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await promise).toEqual([]);
+      expect(document.querySelector('input[type="file"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pickImages resolves [] on the next pointerdown and removes its input', async () => {
+    const { facade } = setup();
+    const promise = facade.pickImages();
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(await promise).toEqual([]);
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('a new pick cancels the pending one and leaves a single input', async () => {
+    const { facade } = setup();
+    const first = facade.pickImages();
+    const second = facade.pickImages();
+    expect(await first).toEqual([]);
+    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(1);
+    document.querySelector<HTMLInputElement>('input[type="file"]')?.dispatchEvent(new Event('cancel'));
+    expect(await second).toEqual([]);
     expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 

@@ -53,7 +53,7 @@ export class BaseDriver {
   }
 
   async exists(selector) {
-    return Boolean(await this.evalExpression(`${harnessCall('find', selector)} !== null`));
+    return Boolean(await this.evalExpression(`!!(${harnessCall('find', selector)})`));
   }
 
   async count(selector) {

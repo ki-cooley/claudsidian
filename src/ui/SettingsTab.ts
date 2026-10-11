@@ -49,6 +49,28 @@ export function accountStatusLine(state: AuthState | null): string {
   return `Signed in as ${who}${org}`;
 }
 
+/** Hosts allowed over plain http: a mock server on this machine. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The origin the API base URL field commits: an https origin (http only on loopback) with path and query
+ * dropped, the default for an empty field, or null when the text is not such a URL. Bearer tokens travel
+ * on every call, so a dropped "s" or a stray LAN host is refused rather than saved.
+ */
+export function normalizeApiBaseUrl(raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return DEFAULT_SETTINGS.apiBaseUrl;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  if (!url.hostname) return null;
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) return null;
+  return `${url.protocol}//${url.host}`;
+}
+
 /** One reply per line; blank lines dropped, whitespace trimmed. */
 export function parseQuickReplies(text: string): string[] {
   return text
@@ -310,12 +332,20 @@ export class ClaudsidianSettingTab extends PluginSettingTab {
     new Setting(el)
       .setName('API base URL')
       .setDesc('Controller API origin. Change only for a mock server.')
-      .addText((t) =>
-        t
-          .setPlaceholder(DEFAULT_SETTINGS.apiBaseUrl)
-          .setValue(this.settings.apiBaseUrl)
-          .onChange((v) => this.patch({ apiBaseUrl: v.trim().replace(/\/+$/, '') || DEFAULT_SETTINGS.apiBaseUrl })),
-      );
+      .addText((t) => {
+        t.setPlaceholder(DEFAULT_SETTINGS.apiBaseUrl).setValue(this.settings.apiBaseUrl);
+        // Keystrokes commit as soon as they form a valid origin; leaving the field with anything else restores
+        // the saved value and says why, so a half-typed URL is never refused mid-edit.
+        t.onChange((v) => {
+          const url = normalizeApiBaseUrl(v);
+          if (url && url !== this.settings.apiBaseUrl) void this.patch({ apiBaseUrl: url });
+        });
+        t.inputEl.addEventListener('blur', () => {
+          if (normalizeApiBaseUrl(t.getValue()) !== null) return;
+          new Notice('Claudsidian: the API base URL must be an https origin (http only for localhost). Kept the previous value.');
+          t.setValue(this.settings.apiBaseUrl);
+        });
+      });
     new Setting(el)
       .setName('Client platform')
       .setDesc('Sent as anthropic-client-platform.')

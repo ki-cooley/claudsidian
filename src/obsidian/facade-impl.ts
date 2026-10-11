@@ -2,12 +2,12 @@
  * ObsidianFacade: the PluginFacade the Preact UI talks to inside Obsidian. Wraps the vault, workspace,
  * editor, clipboard, image picker, sign-in modal, and wake lock so components never import obsidian.
  */
-import { MarkdownRenderer, MarkdownView, Notice, Platform, type Component, type Editor, type Vault } from 'obsidian';
+import { Component, MarkdownRenderer, MarkdownView, Notice, Platform, type Editor, type Vault } from 'obsidian';
 import type { AuthApi } from '../api/auth-api';
 import type { CapturedContext } from '../core/types';
 import type ClaudsidianPlugin from '../main';
 import type { ClaudsidianSettings } from '../settings';
-import type { PluginFacade } from '../ui/facade';
+import type { MarkdownRenderHandle, PluginFacade } from '../ui/facade';
 import { SignInModal } from '../ui/modals/SignInModal';
 import { log } from '../util/log';
 
@@ -41,8 +41,13 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** After focus or visibility returns, wait this long for the picker's change event before giving up. */
+const LATE_CHANGE_MS = 1000;
+
 export class ObsidianFacade implements PluginFacade {
   private wakeLock: ScreenLock | null = null;
+  /** Cancels the image pick still waiting on the picker, when there is one. */
+  private pendingPick: (() => void) | null = null;
 
   constructor(
     private readonly plugin: FacadeHost,
@@ -73,8 +78,11 @@ export class ObsidianFacade implements PluginFacade {
     return this.plugin.saveSettings(patch);
   }
 
-  renderMarkdown(markdown: string, el: HTMLElement, sourcePath?: string): Promise<void> {
-    return MarkdownRenderer.render(this.plugin.app, markdown, el, sourcePath ?? '', this.component);
+  renderMarkdown(markdown: string, el: HTMLElement, sourcePath?: string): Promise<void | MarkdownRenderHandle> {
+    // A throwaway child per render so a long chat does not accumulate render children on the view.
+    const child = new Component();
+    child.load();
+    return MarkdownRenderer.render(this.plugin.app, markdown, el, sourcePath ?? '', child).then(() => child);
   }
 
   captureContext(mentions: string[]): CapturedContext {
@@ -152,7 +160,14 @@ export class ObsidianFacade implements PluginFacade {
     new Notice(text, timeoutMs);
   }
 
+  /**
+   * One hidden file input per pick. The iOS picker sheet produces neither a cancel event nor a window focus
+   * event when dismissed, so the pick also finishes when the page becomes visible again or on the next
+   * pointerdown anywhere (the picker is modal, so a touch means it is gone); a later pick cancels an earlier
+   * one still pending, and every path removes the input.
+   */
   pickImages(): Promise<File[]> {
+    this.pendingPick?.();
     return new Promise<File[]>((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -160,22 +175,35 @@ export class ObsidianFacade implements PluginFacade {
       input.multiple = true;
       input.style.display = 'none';
       let settled = false;
+      let late: number | null = null;
+      const chosen = (): File[] => Array.from(input.files ?? []);
       const finish = (files: File[]): void => {
         if (settled) return;
         settled = true;
-        window.removeEventListener('focus', onFocus);
+        if (late !== null) window.clearTimeout(late);
+        window.removeEventListener('focus', onReturn);
+        document.removeEventListener('visibilitychange', onVisibility);
+        document.removeEventListener('pointerdown', onPointer, true);
+        if (this.pendingPick === cancel) this.pendingPick = null;
         input.remove();
         resolve(files);
       };
-      const chosen = (): File[] => Array.from(input.files ?? []);
-      // Browsers without the cancel event only hand focus back; give a late change event a moment to land.
-      const onFocus = (): void => {
-        window.setTimeout(() => finish(chosen()), 1000);
+      const cancel = (): void => finish([]);
+      // Focus or visibility coming back means the picker closed; give a late change event a moment to land.
+      const onReturn = (): void => {
+        if (late === null) late = window.setTimeout(() => finish(chosen()), LATE_CHANGE_MS);
       };
+      const onVisibility = (): void => {
+        if (document.visibilityState === 'visible') onReturn();
+      };
+      const onPointer = (): void => finish(chosen());
       input.addEventListener('change', () => finish(chosen()));
-      input.addEventListener('cancel', () => finish([]));
+      input.addEventListener('cancel', cancel);
       document.body.appendChild(input);
-      window.addEventListener('focus', onFocus, { once: true });
+      window.addEventListener('focus', onReturn);
+      document.addEventListener('visibilitychange', onVisibility);
+      document.addEventListener('pointerdown', onPointer, true);
+      this.pendingPick = cancel;
       input.click();
     });
   }
@@ -213,11 +241,15 @@ export class ObsidianFacade implements PluginFacade {
     }
   }
 
-  /** The active markdown editor, or the last one that was active when our own view holds focus. */
+  /**
+   * The active markdown editor, or the last one that was active when our own view holds focus. A view whose
+   * note was closed (capture drops it; file is null) gives null, so the caller can say "Open a note first".
+   */
   private activeEditor(): Editor | null {
     const workspace = this.plugin.app.workspace;
     const view = workspace.getActiveViewOfType(MarkdownView) ?? this.plugin.capture.lastMarkdownView;
-    return view?.editor ?? null;
+    if (!view?.file) return null;
+    return view.editor ?? null;
   }
 
   /** Create every missing ancestor folder of a note path, in order. */

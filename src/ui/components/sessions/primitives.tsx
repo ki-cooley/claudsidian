@@ -1,7 +1,8 @@
 /**
  * Private UI primitives for the sessions screen (Icon, Button, Spinner, Banner, Sheet). Task B1 owns the shared
- * versions in src/ui/components/common/; these exist so the sessions screen builds without them and can be
- * swapped to the common ones at integration (same class names, same shapes).
+ * versions in src/ui/components/common/; these exist so the sessions screen builds without them. Their class
+ * names are namespaced claudsidian-ss-* so chat.css (which styles the common set) never reaches them: the shared
+ * sheet markup nests the sheet inside its backdrop, this one keeps them as siblings.
  */
 import { setIcon } from 'obsidian';
 import type { ComponentChildren, JSX } from 'preact';
@@ -17,7 +18,7 @@ export function Icon(p: { name: string; class?: string }): JSX.Element {
   useEffect(() => {
     if (ref.current) setIcon(ref.current, p.name);
   }, [p.name]);
-  return <span ref={ref} class={cls('claudsidian-icon', p.class)} aria-hidden="true" />;
+  return <span ref={ref} class={cls('claudsidian-ss-icon', p.class)} aria-hidden="true" />;
 }
 
 export interface ButtonProps {
@@ -36,29 +37,29 @@ export function Button(p: ButtonProps): JSX.Element {
   return (
     <button
       type="button"
-      class={cls('claudsidian-btn', p.primary && 'mod-cta', p.danger && 'mod-warning', !p.label && 'is-icon-only', p.class)}
+      class={cls('claudsidian-ss-btn', p.primary && 'mod-cta', p.danger && 'mod-warning', !p.label && 'is-icon-only', p.class)}
       aria-label={p.label ?? p.title}
       title={p.title}
       disabled={p.disabled}
       onClick={p.onClick}
     >
       {p.icon && <Icon name={p.icon} />}
-      {p.label && <span class="claudsidian-btn-label">{p.label}</span>}
+      {p.label && <span class="claudsidian-ss-btn-label">{p.label}</span>}
     </button>
   );
 }
 
 export function Spinner(p: { label?: string }): JSX.Element {
-  return <div class="claudsidian-spinner" role="status" aria-label={p.label ?? 'Loading'} />;
+  return <div class="claudsidian-ss-spinner" role="status" aria-label={p.label ?? 'Loading'} />;
 }
 
 export function Banner(p: { banner: BannerData | null }): JSX.Element | null {
   const b = p.banner;
   if (!b) return null;
   return (
-    <div class={cls('claudsidian-banner', `is-${b.kind}`)} role={b.kind === 'error' ? 'alert' : 'status'}>
-      <span class="claudsidian-banner-text">{b.text}</span>
-      {b.action && <Button class="claudsidian-banner-action" label={b.action.label} onClick={() => b.action?.run()} />}
+    <div class={cls('claudsidian-ss-banner', `is-${b.kind}`)} role={b.kind === 'error' ? 'alert' : 'status'}>
+      <span class="claudsidian-ss-banner-text">{b.text}</span>
+      {b.action && <Button class="claudsidian-ss-banner-action" label={b.action.label} onClick={() => b.action?.run()} />}
     </div>
   );
 }
@@ -93,10 +94,10 @@ export function Sheet(p: SheetProps): JSX.Element {
     };
   }, []);
   return (
-    <div class="claudsidian-sheet-layer">
-      <div class="claudsidian-sheet-backdrop" onClick={() => p.onClose()} />
-      <div class={cls('claudsidian-sheet', p.class)} role="dialog" aria-modal="true" aria-label={p.title}>
-        {p.title && <div class="claudsidian-sheet-title">{p.title}</div>}
+    <div class="claudsidian-ss-sheet-layer">
+      <div class="claudsidian-ss-sheet-backdrop" onClick={() => p.onClose()} />
+      <div class={cls('claudsidian-ss-sheet', p.class)} role="dialog" aria-modal="true" aria-label={p.title}>
+        {p.title && <div class="claudsidian-ss-sheet-title">{p.title}</div>}
         {p.children}
       </div>
     </div>

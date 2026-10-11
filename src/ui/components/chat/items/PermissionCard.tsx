@@ -1,9 +1,11 @@
 /**
  * A can_use_tool request: the tool's summary and input, then Allow, Allow and remember (when the
- * host offered rules) and Deny with an optional reason. A resolved request folds to one line.
+ * host offered rules, with the rules it would persist spelled out above the buttons) and Deny with
+ * an optional reason. A resolved request folds to one line.
  */
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
+import type { PermissionUpdate } from '../../../../api/types';
 import { summarizeTool } from '../../../../core/tool-summary';
 import type { PermissionItem } from '../../../../core/types';
 import { Button } from '../../common/Button';
@@ -16,6 +18,56 @@ export interface PermissionCardProps {
   onAllow: (remember: boolean) => void;
   onDeny: (message?: string) => void;
   cwd?: string;
+}
+
+const DESTINATIONS: Record<string, string> = {
+  session: 'this session',
+  localSettings: 'local settings',
+  projectSettings: 'project settings',
+  userSettings: 'user settings',
+};
+
+interface SuggestedRule {
+  /** `Bash(rm:*)`, `mode: acceptEdits`, `directory: /path` */
+  text: string;
+  /** where the host would persist it, when the suggestion says */
+  destination?: string;
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/**
+ * The rules "Allow and remember" sends back as updatedPermissions, in the form Claude Code's own
+ * settings use, so the user reads what is about to be persisted before choosing it.
+ */
+export function describeSuggestions(suggestions: PermissionUpdate[]): SuggestedRule[] {
+  const out: SuggestedRule[] = [];
+  for (const s of suggestions) {
+    const destination = str(s.destination);
+    const dest = destination ? (DESTINATIONS[destination] ?? destination) : undefined;
+    const push = (text: string): void => {
+      out.push(dest ? { text, destination: dest } : { text });
+    };
+    const verb = s.type === 'removeRules' ? 'forget ' : s.behavior === 'deny' ? 'deny ' : '';
+    if (Array.isArray(s.rules)) {
+      for (const r of s.rules as unknown[]) {
+        const rule = (r ?? {}) as Record<string, unknown>;
+        const tool = str(rule.toolName) ?? str(rule.tool_name) ?? 'any tool';
+        const content = str(rule.ruleContent) ?? str(rule.rule_content);
+        push(`${verb}${tool}${content ? `(${content})` : ''}`);
+      }
+    } else if (s.type === 'setMode' && str(s.mode)) {
+      push(`mode: ${str(s.mode)}`);
+    } else if (Array.isArray(s.directories)) {
+      const verb2 = s.type === 'removeDirectories' ? 'forget directory' : 'directory';
+      for (const d of s.directories as unknown[]) if (typeof d === 'string') push(`${verb2}: ${d}`);
+    } else {
+      push(str(s.type) ?? 'rule');
+    }
+  }
+  return out;
 }
 
 export function PermissionCard(p: PermissionCardProps): JSX.Element {
@@ -40,6 +92,7 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
     const text = reason.trim();
     p.onDeny(text ? text : undefined);
   };
+  const rules = describeSuggestions(item.suggestions);
 
   return (
     <div class={`claudsidian-permission ${p.cooking ? 'is-cooking' : ''}`} role="group" aria-label="Permission request">
@@ -75,11 +128,28 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
           </div>
         </div>
       ) : (
-        <div class="claudsidian-perm-actions">
-          <Button label="Allow" kind="primary" onClick={() => p.onAllow(false)} />
-          {item.suggestions.length > 0 ? <Button label="Allow and remember" onClick={() => p.onAllow(true)} /> : null}
-          <Button label="Deny" onClick={() => setDenying(true)} />
-        </div>
+        <>
+          {rules.length > 0 ? (
+            <div class="claudsidian-perm-rules" id={`${item.id}-rules`}>
+              <Icon name="bookmark" size="small" />
+              <span class="claudsidian-perm-rules-text">
+                Remember keeps{' '}
+                {rules.map((r, i) => (
+                  <span class="claudsidian-perm-rule" key={i}>
+                    {i > 0 ? ', ' : ''}
+                    <code>{r.text}</code>
+                    {r.destination ? <span class="claudsidian-perm-rule-dest"> in {r.destination}</span> : null}
+                  </span>
+                ))}
+              </span>
+            </div>
+          ) : null}
+          <div class="claudsidian-perm-actions">
+            <Button label="Allow" kind="primary" onClick={() => p.onAllow(false)} />
+            {rules.length > 0 ? <Button label="Allow and remember" title={rules.map((r) => r.text).join(', ')} onClick={() => p.onAllow(true)} /> : null}
+            <Button label="Deny" onClick={() => setDenying(true)} />
+          </div>
+        </>
       )}
     </div>
   );

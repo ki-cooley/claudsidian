@@ -146,8 +146,14 @@ export class FakeClient implements CcrApi {
 
   async listEvents(id: string, opts: ListEventsOptions = {}): Promise<WireEventRow[]> {
     await this.record(`listEvents ${id} ${JSON.stringify(opts)}`);
-    const { limit = 200, sortOrder = 'asc', fromSequenceNum } = opts;
+    const { limit = 200, sortOrder = 'asc', fromSequenceNum, afterId } = opts;
     let rows = [...(this.events.get(id) ?? [])].sort((a, b) => seqOf(a) - seqOf(b));
+    if (afterId !== undefined) {
+      // the web client's cursor: rows after the one whose payload.uuid matches (none when it is unknown)
+      const idx = rows.findIndex((r) => r.payload.uuid === afterId);
+      const start = idx >= 0 ? idx + 1 : rows.length;
+      return rows.slice(start, start + limit).map((r) => ({ ...r }));
+    }
     if (fromSequenceNum !== undefined && !this.ignoreFromSequenceNum) {
       const from = Math.max(0, fromSequenceNum - this.overlap);
       rows = rows.filter((r) => seqOf(r) >= from);

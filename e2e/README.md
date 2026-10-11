@@ -42,6 +42,7 @@ Exit code is 1 when any step fails. Playwright's Chromium lives in `.pw-browsers
 - `harness/build.mjs`: esbuild bundle of `main.ts` with `obsidian` aliased to the shim, ESM, browser platform, Preact JSX, CSS from `src/styles/index.css` and `harness.css`, into `harness/dist/`. `--lenient` (or `HARNESS_LENIENT=1`) turns relative imports that do not resolve into empty modules so the page still boots while another task's files are mid-edit; the stubbed paths are printed.
 - `cdp/driver.mjs`: `createDriver({browser, headed, outDir, timeoutMs})`. Both drivers expose `click(sel)`, `type(sel, text)` (key events per character), `fill(sel, text)`, `focus(sel)`, `press(key)` (`Enter`, `Shift+Enter`, ...), `waitFor(sel | fn | {fn, args}, ms, label)`, `waitForText(text)`, `eval(fn, ...args)`, `text(sel)`, `exists(sel)`, `count(sel)`, `rect(sel)`, `bodyText()`, `screenshot(name)`, `setProfile(name)`, `goto(url)`, `close()`, and collect `consoleErrors`. `cdp/playwright-driver.mjs` uses element handles from the finder with real pointer and keyboard input. `cdp/cdp-driver.mjs` talks raw CDP (`Runtime.evaluate`, `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`, `Input.insertText`, `Page.captureScreenshot`, `Emulation.setDeviceMetricsOverride`) to a running Chrome: it opens a tab with `PUT /json/new?<url>` (GET as the fallback) and closes it with `/json/close/<id>` at the end, always.
 - `cdp/scenarios/NN-*.mjs`: each exports `meta` (`title`, optional `query` merged into the page URL) and `async run(d, ctx)`. `ctx` holds `mock` (the `startMockCcr` handle: `reset`, `inject`, `fault`, `state`), `profile` (`{name, width, height, mobile, platform}`), `scenario`, `baseUrl`, `timeoutMs`, `step(name, fn)` and `note(name, detail)`. The runner resets the mock and loads the page before `run`. `helpers.mjs` has the shared steps (open a session by title, send a message the way the profile sends, wait for assistant text, read what the mock recorded).
+- `obsidian/drive.mjs`: drives a second real Obsidian instance (`--user-data-dir`, `--remote-debugging-port`) over CDP through Playwright against a mock server on 8765, from the desktop view through mobile emulation, cooking mode and the sign-in modal, with screenshots in `e2e/out/obsidian/`. Not part of `run.mjs`; see `docs/testing.md` for the launch flags.
 
 ## Scenarios
 
@@ -55,7 +56,13 @@ Exit code is 1 when any step fails. Playwright's Chromium lives in `.pw-browsers
 | 06 question | "ask one": both questions; pick Crudo, Chive, Yuzu; Send answers; the control_response carries the answers (multi-select joined); the reply lists them |
 | 07 new-session | New session sheet; env_vault preselected; title; Create; the new session is in env_vault and opens with a composer |
 | 08 cooking-mode | toggle via the `toggle-cooking` command (fallback: `plugin.saveSettings`); quick replies visible; every button in the sidebar at least 48 px; a quick reply sends bare text |
-| 09 error-banner | a dropped socket on the send is retried and the echo arrives; a 404 on the send shows an error banner (the client retries network, 5xx, 429 and refreshes on 401, so 404 is the one status that surfaces); the next send works; the banner state afterwards is noted |
+| 09 error-banner | a dropped socket on the send is retried and the echo arrives; a 404 on the send shows an error banner (the client retries network, 5xx, 429 and refreshes on 401, so 404 is the one status that surfaces); the next send works and clears the banner without a dismiss |
+
+Deviations from the plan and known gaps:
+
+- The plan wrote scenario 09 as `POST /__mock/fault {once: 'network'}` followed by the banner. One network fault never reaches the banner because the client retries it, so the scenario asserts the retry for the network fault and uses a 404 for the banner. Exercising the network path as written needs a second fault mode in the mock that outlasts the retry policy (A6's file, not this harness).
+- Review Focus 5 has two halves at the phone profile. Scenario 03 covers "Enter inserts a newline on mobile". "The composer stays visible when the keyboard opens" cannot run in Chromium (no virtual keyboard, no visualViewport resize); it belongs to the real-iPad smoke in Wave C.
+- Scenario 02 depends on `GET /v1/environments` (bridge_info.directory places sessions whose cwd is unknown until they are opened). When the grouping wait fails, the report carries a `grouping diagnostics` note: whether the mock served the environments request, what `store.environments()` holds, the first session rows, and the group headings rendered.
 
 The UI selectors are text based (button labels, session titles, card text) plus `#sidebar >> textarea` for the composer and the first `select` in the new-session sheet, so the scenarios survive class-name changes. When a scenario fails, `report.json` carries the step detail and the screenshot shows the page; plugin bugs found this way are fixed in Wave C, not by patching `e2e/`.
 
@@ -72,3 +79,5 @@ The UI selectors are text based (button labels, session titles, card text) plus 
 npx tsc --noEmit -p e2e/tsconfig.json
 npx eslint e2e/harness --rule '{"@typescript-eslint/no-unused-vars": ["error", {"argsIgnorePattern": "^_", "varsIgnorePattern": "^_"}]}'
 ```
+
+`npm run lint` covers `src` and `test` only, and the project's `argsIgnorePattern` rule block is scoped to those trees, which is why the second command passes the rule inline. To put the harness under the project gate, add `e2e/harness/**/*.ts` to that rule block in `eslint.config.mjs` and `e2e` to the lint script (shared files, outside this harness).

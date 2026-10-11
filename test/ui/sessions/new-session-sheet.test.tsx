@@ -147,7 +147,7 @@ describe('NewSessionSheet', () => {
     const { root, closedCount } = setup();
     click(byText(root, 'button', 'Cancel'));
     expect(closedCount()).toBe(1);
-    click(root.querySelector('.claudsidian-sheet-backdrop'));
+    click(root.querySelector('.claudsidian-ss-sheet-backdrop'));
     expect(closedCount()).toBe(2);
   });
 });

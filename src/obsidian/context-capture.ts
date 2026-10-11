@@ -20,9 +20,25 @@ export class ContextCapture {
     private readonly opts: ContextCaptureOptions,
   ) {}
 
-  /** The markdown view that was most recently active; null before any note was focused. */
+  /**
+   * The markdown view that was most recently active and is still open; null before any note was focused or
+   * once that note's leaf left the workspace (its CodeMirror state outlives the view, so a stale one would
+   * still answer getSelection and accept edits nobody can see).
+   */
   get lastMarkdownView(): MarkdownView | null {
+    const view = this.current;
+    if (view && !this.isOpen(view)) {
+      const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+      this.current = active && this.isOpen(active) ? active : null;
+    }
     return this.current;
+  }
+
+  /** True while the view still shows a file and its leaf is in the workspace. */
+  private isOpen(view: MarkdownView): boolean {
+    if (!view.file) return false;
+    const leaf: unknown = view.leaf;
+    return this.app.workspace.getLeavesOfType('markdown').some((l) => l === leaf || l.view === view);
   }
 
   /** Seed from the active note and follow active-leaf-change for the plugin's lifetime. */
@@ -55,7 +71,7 @@ export class ContextCapture {
     const ctx: CapturedContext = { vaultName: this.app.vault.getName(), openNotes: [], mentions: [...mentions] };
     if (!settings.enabled) return ctx;
 
-    const view = this.current;
+    const view = this.lastMarkdownView;
     const activePath = view?.file?.path;
     const editor = view?.editor;
 

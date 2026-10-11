@@ -3,7 +3,7 @@
  * `children`, so lookups and updates walk that nesting and return the same array when
  * nothing changed. Also the small coercions the reducers share over untrusted wire data.
  */
-import type { SystemItem, ToolItem, TranscriptItem } from './types';
+import type { PendingControl, SystemItem, ToolItem, TranscriptItem, TranscriptState, TurnState } from './types';
 
 /** Per-row facts the reducers need beyond the payload itself. */
 export interface EventContext {
@@ -113,6 +113,35 @@ export function lastItem(items: TranscriptItem[]): TranscriptItem | undefined {
 
 export function systemItem(ctx: EventContext, subtype: string, text: string): SystemItem {
   return { kind: 'system', id: `sys-${ctx.uuid ?? ctx.seq}`, subtype, text, ts: ctx.ts };
+}
+
+// ---------------------------------------------------------------------------
+// Pending control requests
+// ---------------------------------------------------------------------------
+
+/** Mark the permission or question with `requestId` answered and drop it from pending. Same state when nothing matched. */
+export function resolveRequest(state: TranscriptState, requestId: string, response: unknown): TranscriptState {
+  const body = isRecord(response) ? response : undefined;
+  const behavior: 'allow' | 'deny' = body?.behavior === 'deny' ? 'deny' : 'allow';
+  const updatedInput = body && isRecord(body.updatedInput) ? body.updatedInput : undefined;
+  const answers =
+    updatedInput && isRecord(updatedInput.answers) ? (updatedInput.answers as Record<string, string | string[]>) : undefined;
+  const items = updateItem(state.items, requestId, (it) => {
+    if (it.kind === 'permission') return it.resolved === behavior ? it : { ...it, resolved: behavior };
+    if (it.kind === 'question') {
+      const nextAnswers = answers ?? it.answers;
+      return it.resolved && nextAnswers === it.answers ? it : { ...it, resolved: true, answers: nextAnswers };
+    }
+    return it;
+  });
+  const pending = state.pending.filter((p) => p.requestId !== requestId);
+  if (items === state.items && pending.length === state.pending.length) return state;
+  return { ...state, items, pending, turn: turnAfterResolution(items, pending) };
+}
+
+export function turnAfterResolution(items: TranscriptItem[], pending: PendingControl[]): TurnState {
+  if (pending.length > 0) return 'needs_input';
+  return lastItem(items)?.kind === 'result' ? 'idle' : 'working';
 }
 
 // ---------------------------------------------------------------------------

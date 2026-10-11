@@ -430,8 +430,13 @@ describe('CcrClient', () => {
   it('lists environments and falls back to an empty list when the endpoint is missing', async () => {
     const ok = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(200, { environments: [{ environment_id: 'env_1', kind: 'bridge', name: 'Mac:yes-chef:1234' }], has_more: false }) }]);
     expect((await client(ok).listEnvironments()).map((e) => e.environment_id)).toEqual(['env_1']);
+    expect(ok.calls[0]!.url).toBe('https://api.test/v1/environments?limit=100&beta=true');
     const missing = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(404, { type: 'error', error: { type: 'not_found_error', message: 'nope' } }) }]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(await client(missing).listEnvironments()).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![1]).toMatchObject({ status: 404 });
+    warn.mockRestore();
     const signedOut = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(401, { type: 'error', error: { type: 'authentication_error', message: 'expired' } }) }]);
     await expect(client(signedOut).listEnvironments()).rejects.toBeInstanceOf(ApiError);
   });

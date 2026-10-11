@@ -449,6 +449,41 @@ describe('applyEvents', () => {
     expect(done.turn).toBe('working');
   });
 
+  it('adopts per-block partials by their stream index when the window opens inside a message', () => {
+    // per-block-assistant.json from row 67: block 0 (thinking) and its final at 66 fall outside the window,
+    // so the first row is content_block_start index 1. The final text at 70 is that block, not a new block 0.
+    const fx = JSON.parse(readFileSync(join(FIXTURE_DIR, 'per-block-assistant.json'), 'utf8')) as Fixture;
+    const window = fx.rows.filter((r) => Number(r.sequence_num) >= 67);
+    const state = reduce(window);
+    expect(kinds(state)).toEqual(['assistant_text', 'tool', 'assistant_text', 'result']);
+    const first = state.items[0] as AssistantTextItem;
+    expect(first).toMatchObject({ id: 'msg_01Qx3rT8vL2nWp7yAe4bKu9D:1', text: 'Let me read the tare note.', partial: false });
+    expect(only(state, 'assistant_text').filter((t) => t.text === first.text)).toHaveLength(1);
+    const tool = state.items[1] as ToolItem;
+    expect(tool).toMatchObject({ id: 'toolu_01Mn5pV0xN4qYr9aCg6dMw1F', name: 'Read', status: 'done' });
+    expect(tool.input).toEqual({ file_path: `${VAULT}/components/tare.md` });
+    expect(state.turn).toBe('idle');
+    expect(state.streaming).toBeUndefined();
+    expect(reduce([...window].reverse())).toEqual(state);
+
+    // the same window cut one row later still adopts, now at the final text itself
+    const later = reduce(fx.rows.filter((r) => Number(r.sequence_num) >= 68));
+    expect(kinds(later)).toEqual(['assistant_text', 'tool', 'assistant_text', 'result']);
+    expect(only(later, 'assistant_text').filter((t) => t.text === first.text)).toHaveLength(1);
+  });
+
+  it('a packed final still lines up with adopted partials by position', () => {
+    // SDK shape: one assistant event with every block; the window opened at block 1
+    const state = reduce([
+      row(1, stream({ type: 'content_block_start', index: 1, content_block: text('') })),
+      row(2, stream({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Ans' } })),
+      row(3, assistant('msg_P', [{ type: 'thinking', thinking: 'Plan.', signature: 's' }, text('Answer')])),
+    ]);
+    expect(kinds(state)).toEqual(['assistant_text', 'thinking']);
+    expect(state.items[0]).toMatchObject({ id: 'msg_P:1', text: 'Answer', partial: false });
+    expect(state.items[1]).toMatchObject({ id: 'msg_P:0', text: 'Plan.' });
+  });
+
   it('optimistic send is replaced by the echo', () => {
     const payload = userMessagePayload('what next?');
     const sent = markSent(createTranscript(), payload, 'what next?', 0);
@@ -517,6 +552,38 @@ describe('applyEvents', () => {
     // a duplicate request_id in a later poll adds nothing
     const again = reduce([row(3, canUseTool('req_01', 'Bash', { command: 'rm -rf build' }))], denied);
     expect(again).toBe(denied);
+  });
+
+  it('a tool_result for the pending permission resolves it as allowed', () => {
+    // answered at the Mac terminal: no control_response reaches us, but the tool ran
+    const asked = reduce([
+      row(1, assistant('msg_01', [toolUse('toolu_03', 'Bash', { command: 'ls' })])),
+      row(2, canUseTool('req_01', 'Bash', { command: 'ls' }, { tool_use_id: 'toolu_03' })),
+    ]);
+    expect(asked.turn).toBe('needs_input');
+    const ran = reduce([row(3, toolResult('toolu_03', 'menu.md'))], asked);
+    expect(ran.pending).toEqual([]);
+    expect(ran.turn).toBe('working');
+    expect((ran.items[1] as PermissionItem).resolved).toBe('allow');
+    expect((ran.items[0] as ToolItem).status).toBe('done');
+    // a result for another tool leaves the card pinned
+    const other = reduce([row(3, toolResult('toolu_99', 'x'))], asked);
+    expect(other.pending).toHaveLength(1);
+    expect(other.turn).toBe('needs_input');
+  });
+
+  it('a permission_denied for the tool resolves the pending permission as denied', () => {
+    const asked = reduce([row(1, canUseTool('req_01', 'Bash', { command: 'rm -rf build' }, { tool_use_id: 'toolu_03' }))]);
+    const byId = reduce([row(2, { type: 'system', subtype: 'permission_denied', tool_name: 'Bash', tool_use_id: 'toolu_03' })], asked);
+    expect(byId.pending).toEqual([]);
+    expect((byId.items[0] as PermissionItem).resolved).toBe('deny');
+    expect(kinds(byId)).toEqual(['permission', 'system']);
+    expect(byId.turn).toBe('working');
+    const byName = reduce([row(2, { type: 'system', subtype: 'permission_denied', tool_name: 'Bash' })], asked);
+    expect((byName.items[0] as PermissionItem).resolved).toBe('deny');
+    const otherTool = reduce([row(2, { type: 'system', subtype: 'permission_denied', tool_name: 'Edit', tool_use_id: 'toolu_04' })], asked);
+    expect(otherTool.pending).toHaveLength(1);
+    expect((otherTool.items[0] as PermissionItem).resolved).toBeUndefined();
   });
 
   it('question item parses AskUserQuestion input', () => {

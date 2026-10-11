@@ -49,6 +49,11 @@ export class ChatView extends ItemView {
     contentEl.toggleClass('is-phone', Platform.isPhone);
 
     this.registerDomEvent(document, 'visibilitychange', () => this.updateVisibility());
+    if (!Platform.isMobile) {
+      // A desktop window behind another app stays 'visible' to the page; focus is the signal that matters there.
+      this.registerDomEvent(window, 'blur', () => this.updateVisibility());
+      this.registerDomEvent(window, 'focus', () => this.updateVisibility());
+    }
     this.registerEvent(this.app.workspace.on('layout-change', () => this.updateVisibility()));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateVisibility()));
     // subscribe() runs now and after every save, outside signal tracking, so the render never re-arms it.
@@ -72,9 +77,15 @@ export class ChatView extends ItemView {
     void this.facade.setWakeLock(false);
   }
 
-  /** True while the leaf can be seen: the app is in the foreground, the leaf is the shown tab, its dock is open. */
+  /**
+   * True while the leaf can be seen: the app is in the foreground (on desktop, also focused), the leaf is the
+   * shown tab, its dock is open.
+   */
   isViewVisible(): boolean {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+    if (!Platform.isMobile && typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) {
+      return false;
+    }
     if (!this.containerEl.isShown()) return false;
     const leaf = this.leaf as { getRoot?: () => { collapsed?: boolean } | undefined };
     const root = typeof leaf.getRoot === 'function' ? leaf.getRoot() : undefined;

@@ -137,12 +137,19 @@ export class QuickAskModal extends Modal {
     const store = this.plugin.store;
     const facade = new ObsidianFacade(this.plugin, this.plugin);
     let off: (() => void) | null = null;
-    const timer = window.setTimeout(() => off?.(), REPLY_WAIT_MS);
-    off = store.on('turn_end', (id, state) => {
-      if (id !== sessionId) return;
+    let timer: number | null = null;
+    // Registered with the plugin so an unload while waiting drops both the listener and the timer.
+    const stop = (): void => {
       off?.();
       off = null;
-      window.clearTimeout(timer);
+      if (timer !== null) window.clearTimeout(timer);
+      timer = null;
+    };
+    timer = window.setTimeout(stop, REPLY_WAIT_MS);
+    this.plugin.register(stop);
+    off = store.on('turn_end', (id, state) => {
+      if (id !== sessionId) return;
+      stop();
       const reply = lastAssistantText(state);
       if (!reply) return;
       const fragment = document.createDocumentFragment();
@@ -151,7 +158,7 @@ export class QuickAskModal extends Modal {
       const notice = new Notice(fragment, REPLY_NOTICE_MS);
       button.addEventListener('click', () => {
         void facade.insertAtCursor(reply).then((ok) => {
-          if (!ok) new Notice('No editor to insert into.');
+          if (!ok) new Notice('No editor to insert into. Open a note first.');
           notice.hide();
         });
       });

@@ -24,6 +24,7 @@ import {
   isRecord,
   optNumber,
   optString,
+  resolveRequest,
   systemItem,
   textOfBlocks,
   toolResultText,
@@ -93,10 +94,12 @@ function appendSystem(state: TranscriptState, ctx: EventContext, subtype: string
 
 function attachToolResults(state: TranscriptState, blocks: unknown[]): TranscriptState {
   let items = state.items;
+  const resultIds = new Set<string>();
   for (const block of blocks) {
     if (field(block, 'type') !== 'tool_result') continue;
     const toolUseId = optString(field(block, 'tool_use_id'));
     if (!toolUseId) continue;
+    resultIds.add(toolUseId);
     const isError = field(block, 'is_error') === true;
     const result = toolResultText(field(block, 'content'));
     const status: ToolItem['status'] = isError ? 'error' : 'done';
@@ -106,9 +109,18 @@ function attachToolResults(state: TranscriptState, blocks: unknown[]): Transcrip
       return { ...t, status, isError, result };
     });
   }
-  const turn = workingTurn(state);
-  if (items === state.items && turn === state.turn) return state;
-  return { ...state, items, turn };
+  let next = items === state.items ? state : { ...state, items };
+  // The tool ran, so its permission was answered somewhere a control_response never reached us (the Mac terminal).
+  for (const p of state.pending) {
+    if (p.kind !== 'permission') continue;
+    const item = findItemIn(next.items, p.requestId);
+    if (item?.kind === 'permission' && item.toolUseId && resultIds.has(item.toolUseId)) {
+      next = resolveRequest(next, p.requestId, { behavior: 'allow' });
+    }
+  }
+  const turn = workingTurn(next);
+  if (next === state && turn === state.turn) return state;
+  return turn === next.turn ? next : { ...next, turn };
 }
 
 // ---------------------------------------------------------------------------
@@ -125,13 +137,19 @@ export function reduceAssistant(state: TranscriptState, ev: AssistantEvent, ctx:
   // packs them into one event). The block index therefore continues from the blocks of this message
   // already finalized, so each final block replaces exactly its own partial.
   const same = current !== undefined && current.messageId === msgId;
-  const base = same ? (current.finalized ?? 0) : 0;
-  // A window that opened mid-stream gave its partials a placeholder message id: adopt them.
+  // A window that opened mid-stream gave its partials a placeholder message id: adopt them. A per-block final
+  // (one block per event) stands for the earliest partial still open, whatever its stream index; a packed final
+  // carries every block of the message from index 0, so it lines up with the partials by position.
   const adopt = current !== undefined && !same && current.synthesized === true ? current : undefined;
+  const adoptIds = adopt ? Object.keys(adopt.blocks).map(Number).filter(Number.isFinite).sort((a, b) => a - b) : [];
+  const base = same ? (current.finalized ?? 0) : adopt && blocks.length === 1 ? (adoptIds[0] ?? 0) : 0;
+  const placeholders = same ? current.blocks : adopt?.blocks;
   let items = state.items;
+  let lastIndex = base - 1;
   blocks.forEach((block, i) => {
     const index = base + i;
-    items = applyFinalBlock(items, block, `${msgId}:${index}`, msgId, ctx, adopt?.blocks[index]);
+    lastIndex = index;
+    items = applyFinalBlock(items, block, `${msgId}:${index}`, msgId, ctx, placeholders?.[index]);
   });
   const error = optString(ev.error);
   if (error || ev.aborted === true) {
@@ -142,9 +160,12 @@ export function reduceAssistant(state: TranscriptState, ev: AssistantEvent, ctx:
       ts: ctx.ts,
     });
   }
+  // Adopted partials this final did not reach stay named, so the next final of the message can replace them.
+  const carried: Record<number, string> = {};
+  if (adopt) for (const id of adoptIds) if (id > lastIndex) carried[id] = adopt.blocks[id]!;
   const streaming = {
     ...scopes,
-    [scope]: { messageId: msgId, blocks: same ? current.blocks : {}, finalized: base + blocks.length },
+    [scope]: { messageId: msgId, blocks: same ? current.blocks : carried, finalized: lastIndex + 1 },
   };
   return { ...state, items, streaming, turn: workingTurn(state) };
 }

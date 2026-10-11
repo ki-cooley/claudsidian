@@ -72,6 +72,9 @@
   text-align: left;
   cursor: pointer;
 }
+.claudsidian-chat.is-mobile .claudsidian-tool-row {
+  min-height: 44px;
+}
 .claudsidian-tool-row:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
@@ -169,6 +172,20 @@
 }
 .claudsidian-perm-body:empty {
   display: none;
+}
+.claudsidian-perm-rules {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  overflow-wrap: anywhere;
+}
+.claudsidian-perm-rules .claudsidian-icon {
+  margin-top: 2px;
+}
+.claudsidian-perm-rules code {
+  color: var(--text-normal);
 }
 .claudsidian-perm-actions {
   display: flex;

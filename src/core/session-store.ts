@@ -55,7 +55,12 @@ export interface SessionStoreDeps {
 }
 
 const HISTORY_LIMIT = 200;
-const FALLBACK_LIMIT = 50;
+/** Page size of the after_id poll (what claude.ai/code asks for); a full page means more pages follow at once. */
+const AFTER_ID_LIMIT = 500;
+/** Pages one poll may chain before yielding to the next tick. */
+const AFTER_ID_MAX_PAGES = 20;
+/** What a stored image block carries instead of its base64 body (the rebuild only counts images). */
+const IMAGE_DATA_PLACEHOLDER = '<image omitted>';
 const PRESENCE_INTERVAL_MS = 60_000;
 /** consecutive 401s from polling before the auth banner shows (one is a refresh race, not a sign-out) */
 const AUTH_FAILURES_FOR_BANNER = 2;
@@ -68,12 +73,14 @@ type Listener = (sessionId: string, state: TranscriptState) => void;
 
 /** Per-session bookkeeping the reducer state does not carry. */
 interface SessionTrack {
-  /** every row applied so far, ascending by seq (for loadOlder rebuilds) */
+  /** rows applied so far, ascending by seq, compacted (for loadOlder rebuilds; see compactRows) */
   rows: WireEventRow[];
   /** smallest seq applied, Infinity before any */
   firstSeq: number;
-  /** 'from' until the server shows it ignores from_sequence_num, then 'desc' windows */
-  strategy: 'from' | 'desc';
+  /** 'from' until the server shows it ignores from_sequence_num, then after_id pages from the last row's uuid */
+  strategy: 'from' | 'after_id';
+  /** payload.uuid of the newest row applied (the after_id cursor) */
+  lastUuid: string | undefined;
   /** request ids already announced as needs_input */
   announced: Set<string>;
   historyLoaded: boolean;
@@ -90,6 +97,56 @@ function seqOf(row: WireEventRow): number {
 
 function bySeqAsc(a: WireEventRow, b: WireEventRow): number {
   return seqOf(a) - seqOf(b);
+}
+
+function uuidOf(row: WireEventRow): string | undefined {
+  const u: unknown = row.payload?.uuid;
+  return typeof u === 'string' && u ? u : undefined;
+}
+
+function lastUuidOf(rows: WireEventRow[]): string | undefined {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const u = uuidOf(rows[i]!);
+    if (u) return u;
+  }
+  return undefined;
+}
+
+function scopeOf(row: WireEventRow): string {
+  const parent: unknown = row.payload?.parent_tool_use_id;
+  return typeof parent === 'string' ? parent : '';
+}
+
+/** A stored copy of a user row with image bodies replaced; the rebuild only counts image blocks. */
+function compactRow(row: WireEventRow): WireEventRow {
+  const payload: unknown = row.payload;
+  if (!payload || typeof payload !== 'object' || (payload as { type?: unknown }).type !== 'user') return row;
+  const message = (payload as { message?: { content?: unknown } }).message;
+  const content = message?.content;
+  if (!Array.isArray(content)) return row;
+  if (!content.some((b) => (b as ImageBlock)?.type === 'image' && typeof (b as ImageBlock).source?.data === 'string')) return row;
+  const blocks = content.map((b) =>
+    (b as ImageBlock)?.type === 'image' && typeof (b as ImageBlock).source?.data === 'string'
+      ? { ...(b as ImageBlock), source: { ...(b as ImageBlock).source, data: IMAGE_DATA_PLACEHOLDER } }
+      : (b as ContentBlock),
+  );
+  return { ...row, payload: { ...(payload as object), message: { ...message, content: blocks } } as WireEventRow['payload'] };
+}
+
+/**
+ * Append fresh rows to the stored ones and drop what a rebuild no longer needs: once a final `assistant`
+ * row of a scope has been applied, the stream_event rows before it in that scope only repeat its content.
+ */
+function compactRows(stored: WireEventRow[], fresh: WireEventRow[]): WireEventRow[] {
+  const cutoff = new Map<string, number>();
+  for (const row of fresh) {
+    if (row.payload?.type !== 'assistant') continue;
+    const scope = scopeOf(row);
+    cutoff.set(scope, Math.max(cutoff.get(scope) ?? -1, seqOf(row)));
+  }
+  const all = stored.concat(fresh.map(compactRow));
+  if (cutoff.size === 0) return all;
+  return all.filter((r) => r.payload?.type !== 'stream_event' || seqOf(r) >= (cutoff.get(scopeOf(r)) ?? -1));
 }
 
 function messageOf(err: unknown): string {
@@ -320,6 +377,7 @@ export class SessionStore implements SessionStoreApi {
       } catch (err) {
         if (this.selectedId.value !== sessionId) return;
         this.handlePollError(sessionId, err); // the poller retries the history load on its next run
+        if (err instanceof ApiError && err.status === 404) return; // gone: no poller, no presence
       }
     }
     if (this.selectedId.value !== sessionId) return;
@@ -358,7 +416,7 @@ export class SessionStore implements SessionStoreApi {
     const track = this.trackFor(sessionId);
     if (track.rows.length === 0 || track.firstSeq <= 0) return false;
     // Without a working from_sequence_num there is no way to ask for the window before firstSeq.
-    if (track.strategy === 'desc') return false;
+    if (track.strategy === 'after_id') return false;
     const firstSeq = track.firstSeq;
     const from = Math.max(0, firstSeq - HISTORY_LIMIT);
     const rows = await this.deps.client.listEvents(sessionId, {
@@ -407,13 +465,12 @@ export class SessionStore implements SessionStoreApi {
         sortOrder: 'asc',
         limit: HISTORY_LIMIT,
       });
-      if (rows.some((r) => seqOf(r) <= lastSeq)) {
-        track.strategy = 'desc';
-        log.info('server ignores from_sequence_num; polling with desc windows', { sessionId });
+      if (this.ignoresFromSequenceNum(track, rows, lastSeq)) {
+        track.strategy = 'after_id';
+        log.info('server ignores from_sequence_num; polling with after_id', { sessionId });
       }
     } else {
-      const window = await this.deps.client.listEvents(sessionId, { sortOrder: 'desc', limit: FALLBACK_LIMIT });
-      rows = [...window].reverse();
+      rows = await this.pollAfterId(sessionId, track);
     }
     if (this.polledId !== sessionId) return; // closed while the request was in flight
     const { fresh } = this.applyRows(sessionId, rows);
@@ -426,6 +483,38 @@ export class SessionStore implements SessionStoreApi {
     this.sessionPoller?.setMode(this.modeFor(sessionId));
   }
 
+  /**
+   * The server ignored from_sequence_num when a non-empty batch brought nothing above lastSeq, or when it
+   * starts at (or before) the first row we hold: it answered from the beginning of history. Overlap alone
+   * (a few rows at or below lastSeq ahead of new ones) is harmless and keeps the strategy.
+   */
+  private ignoresFromSequenceNum(track: SessionTrack, rows: WireEventRow[], lastSeq: number): boolean {
+    if (rows.length === 0) return false;
+    if (rows.every((r) => seqOf(r) <= lastSeq)) return true;
+    const first = Math.min(...rows.map(seqOf));
+    return track.rows.length > 0 && first <= track.firstSeq && track.firstSeq < lastSeq;
+  }
+
+  /** Rows after the last applied uuid, chaining pages at once while they come back full. Nothing is dropped. */
+  private async pollAfterId(sessionId: string, track: SessionTrack): Promise<WireEventRow[]> {
+    let rows: WireEventRow[] = [];
+    let afterId = track.lastUuid;
+    for (let page = 0; page < AFTER_ID_MAX_PAGES; page++) {
+      // Without a cursor (no applied row carried a uuid) the oldest rows come back and the reducer dedupes them.
+      const batch = await this.deps.client.listEvents(
+        sessionId,
+        afterId ? { afterId, limit: AFTER_ID_LIMIT } : { sortOrder: 'asc', limit: AFTER_ID_LIMIT },
+      );
+      if (this.polledId !== sessionId) return rows;
+      rows = rows.concat(batch);
+      const cursor = lastUuidOf(batch);
+      if (cursor) track.lastUuid = cursor; // advance even when the rows dedupe, or the same page returns forever
+      if (batch.length < AFTER_ID_LIMIT || !cursor || cursor === afterId) break;
+      afterId = cursor;
+    }
+    return rows;
+  }
+
   /** Run rows through the reducer, record them for loadOlder, and cache the cwd. */
   private applyRows(sessionId: string, rows: WireEventRow[]): { fresh: WireEventRow[] } {
     const sig = this.transcriptSignal(sessionId);
@@ -435,8 +524,9 @@ export class SessionStore implements SessionStoreApi {
     if (next !== before) sig.value = next;
     const fresh = rows.filter((r) => seqOf(r) > before.lastSeq).sort(bySeqAsc);
     if (fresh.length > 0) {
-      track.rows = track.rows.concat(fresh);
+      track.rows = compactRows(track.rows, fresh);
       track.firstSeq = Math.min(track.firstSeq, seqOf(fresh[0]!));
+      track.lastUuid = lastUuidOf(fresh) ?? track.lastUuid;
     }
     this.cacheCwd(sessionId, next);
     return { fresh };
@@ -634,7 +724,7 @@ export class SessionStore implements SessionStoreApi {
   }
 
   async respondPermission(sessionId: string, requestId: string, result: PermissionResult): Promise<void> {
-    await this.sendControl(sessionId, permissionResponsePayload(requestId, result), requestId);
+    await this.sendControl(sessionId, permissionResponsePayload(requestId, result), requestId, result);
   }
 
   async answerQuestion(
@@ -650,11 +740,8 @@ export class SessionStore implements SessionStoreApi {
     const questions = rawInput?.questions ?? (item?.kind === 'question' ? item.questions : []);
     const updatedInput: Record<string, unknown> = { questions, answers };
     if (response) updatedInput.response = response;
-    await this.sendControl(
-      sessionId,
-      permissionResponsePayload(requestId, { behavior: 'allow', updatedInput }),
-      requestId,
-    );
+    const result: PermissionResult = { behavior: 'allow', updatedInput };
+    await this.sendControl(sessionId, permissionResponsePayload(requestId, result), requestId, result);
   }
 
   async interrupt(sessionId: string): Promise<void> {
@@ -673,8 +760,13 @@ export class SessionStore implements SessionStoreApi {
     sig.value = { ...sig.value, permissionMode: mode };
   }
 
-  /** Queue one payload; optionally resolve a pending control request locally once the server accepted it. */
-  private async sendControl(sessionId: string, payload: StreamJsonEvent, resolveRequestId?: string): Promise<void> {
+  /** Queue one payload; optionally resolve a pending control request locally (with the result sent) once the server accepted it. */
+  private async sendControl(
+    sessionId: string,
+    payload: StreamJsonEvent,
+    resolveRequestId?: string,
+    result?: PermissionResult,
+  ): Promise<void> {
     try {
       await this.deps.client.sendEvents(sessionId, [payload]);
     } catch (err) {
@@ -683,7 +775,7 @@ export class SessionStore implements SessionStoreApi {
     }
     if (resolveRequestId) {
       const sig = this.transcriptSignal(sessionId);
-      let next = markControlSent(sig.value, resolveRequestId);
+      let next = markControlSent(sig.value, resolveRequestId, result);
       if (next.pending.length === 0 && next.turn === 'needs_input') next = { ...next, turn: 'working' };
       sig.value = next;
     }
@@ -811,6 +903,7 @@ export class SessionStore implements SessionStoreApi {
         rows: [],
         firstSeq: Infinity,
         strategy: 'from',
+        lastUuid: undefined,
         announced: new Set(),
         historyLoaded: false,
         offline: false,

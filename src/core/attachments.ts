@@ -28,7 +28,14 @@ interface Decoded {
 async function decode(file: Blob): Promise<Decoded> {
   const cib = (globalThis as { createImageBitmap?: typeof createImageBitmap }).createImageBitmap;
   if (typeof cib === 'function') {
-    const bitmap = await cib(file);
+    // Apply EXIF rotation while decoding: the canvas re-encode strips EXIF, so a camera-roll portrait would
+    // otherwise arrive sideways. An engine that rejects the option gets the bare call.
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await cib(file, { imageOrientation: 'from-image' });
+    } catch {
+      bitmap = await cib(file);
+    }
     return { source: bitmap, width: bitmap.width, height: bitmap.height, release: () => bitmap.close?.() };
   }
   const url = URL.createObjectURL(file);

@@ -60,6 +60,18 @@ const PATHS: Record<string, string> = {
   'laptop': 'M4 5h16v11H4z M2 19h20',
   'play': 'M6 4l14 8-14 8z',
   'pause': 'M8 5h3v14H8z M13 5h3v14h-3z',
+  'at-sign': 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8',
+  cpu: 'M5 5h14v14H5z M9 9h6v6H9z M9 2v3 M15 2v3 M9 19v3 M15 19v3 M2 9h3 M2 15h3 M19 9h3 M19 15h3',
+  files: 'M15 2H9a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7z M15 2v5h5 M3 7v13a2 2 0 0 0 2 2h11',
+  gauge: 'M12 15l3.5-3.5 M20.3 18a9 9 0 1 0-16.6 0',
+  'image-plus': 'M16 5h6 M19 2v6 M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7 M3 16l5-5 11 10 M9 9h.01',
+  'key-round': 'M21 2l-2 2 M15.5 7.5l3 3L22 7l-3-3 M9 11a6 6 0 1 0 2 4.5L21 5.5 M9 15h.01',
+  'message-circle-question': 'M7.9 20A9 9 0 1 0 4 16.1L2 22z M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4 M12 17h.01',
+  plug: 'M12 22v-5 M9 8V2 M15 8V2 M18 8v5a6 6 0 0 1-12 0V8z',
+  'shield-question': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4 M12 17h.01',
+  'text-cursor': 'M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1 M7 22h1a4 4 0 0 0 4-4v-1 M7 2h1a4 4 0 0 1 4 4v1',
+  'text-cursor-input': 'M5 4h1a3 3 0 0 1 3 3 3 3 0 0 1 3-3h1 M13 20h-1a3 3 0 0 1-3-3 3 3 0 0 1-3 3H5 M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1 M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7 M9 7v10',
+  'text-select': 'M5 3a2 2 0 0 0-2 2 M19 3a2 2 0 0 1 2 2 M21 19a2 2 0 0 1-2 2 M5 21a2 2 0 0 1-2-2 M9 3h1 M9 21h1 M14 3h1 M14 21h1 M3 9v1 M21 9v1 M3 14v1 M21 14v1 M7 8h10 M7 12h10 M7 16h6',
   'octagon-x': 'M7.9 2h8.2L22 7.9v8.2L16.1 22H7.9L2 16.1V7.9z M15 9l-6 6 M9 9l6 6',
 };
 
@@ -93,7 +105,15 @@ export function getIcon(iconId: string): SVGSVGElement | null {
     svg.innerHTML = custom;
     return svg;
   }
-  const d = PATHS[iconId] ?? PATHS['circle']!;
+  const known = PATHS[iconId];
+  if (!known) {
+    // Unknown id: keep the circle but mark it, so a screenshot's empty glyph can be traced to the id.
+    svg.setAttribute('data-icon-missing', iconId);
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = iconId;
+    svg.appendChild(title);
+  }
+  const d = known ?? PATHS['circle']!;
   for (const segment of d.split(' M').map((s, i) => (i === 0 ? s : `M${s}`))) {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', segment);

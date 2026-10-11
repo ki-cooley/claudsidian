@@ -39,8 +39,10 @@ import {
   lastItem,
   optNumber,
   optString,
+  resolveRequest,
   stringArray,
   systemItem,
+  turnAfterResolution,
   updateItem,
   type EventContext,
 } from './transcript-items';
@@ -136,7 +138,7 @@ function reduceSystem(state: TranscriptState, ev: SystemOtherEvent, ctx: EventCo
     case 'permission_denied': {
       const tool = optString(ev.tool_name);
       const text = optString(ev.message) ?? (tool ? `Permission denied for ${tool}` : 'Permission denied');
-      return appendSystem(state, ctx, ev.subtype, text);
+      return denyPendingFor(appendSystem(state, ctx, ev.subtype, text), tool, optString(ev.tool_use_id));
     }
     case 'api_retry': {
       const attempt = optNumber(ev.attempt);
@@ -173,6 +175,19 @@ function reduceInit(state: TranscriptState, ev: SystemOtherEvent, ctx: EventCont
 
 function appendSystem(state: TranscriptState, ctx: EventContext, subtype: string, text: string): TranscriptState {
   return { ...state, items: appendInScope(state.items, ctx.parentToolUseId, systemItem(ctx, subtype, text)) };
+}
+
+/** A permission_denied for a tool answers the pending permission card for that call (by tool_use_id, else by tool name) as deny. */
+function denyPendingFor(state: TranscriptState, toolName: string | undefined, toolUseId: string | undefined): TranscriptState {
+  let next = state;
+  for (const p of state.pending) {
+    if (p.kind !== 'permission') continue;
+    const item = findItemIn(next.items, p.requestId);
+    if (item?.kind !== 'permission') continue;
+    const match = toolUseId && item.toolUseId ? item.toolUseId === toolUseId : toolName !== undefined && item.toolName === toolName;
+    if (match) next = resolveRequest(next, p.requestId, { behavior: 'deny' });
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,31 +327,6 @@ function reduceControlCancel(state: TranscriptState, ev: StreamJsonEvent): Trans
   for (const p of state.pending) if (p.requestId === requestId) items = cancelPending(items, p);
   const pending = state.pending.filter((p) => p.requestId !== requestId);
   return { ...state, items, pending, turn: turnAfterResolution(items, pending) };
-}
-
-/** Mark the permission or question with `requestId` answered and drop it from pending. Same state when nothing matched. */
-function resolveRequest(state: TranscriptState, requestId: string, response: unknown): TranscriptState {
-  const body = isRecord(response) ? response : undefined;
-  const behavior: 'allow' | 'deny' = body?.behavior === 'deny' ? 'deny' : 'allow';
-  const updatedInput = body && isRecord(body.updatedInput) ? body.updatedInput : undefined;
-  const answers =
-    updatedInput && isRecord(updatedInput.answers) ? (updatedInput.answers as Record<string, string | string[]>) : undefined;
-  const items = updateItem(state.items, requestId, (it) => {
-    if (it.kind === 'permission') return it.resolved === behavior ? it : { ...it, resolved: behavior };
-    if (it.kind === 'question') {
-      const nextAnswers = answers ?? it.answers;
-      return it.resolved && nextAnswers === it.answers ? it : { ...it, resolved: true, answers: nextAnswers };
-    }
-    return it;
-  });
-  const pending = state.pending.filter((p) => p.requestId !== requestId);
-  if (items === state.items && pending.length === state.pending.length) return state;
-  return { ...state, items, pending, turn: turnAfterResolution(items, pending) };
-}
-
-function turnAfterResolution(items: TranscriptItem[], pending: PendingControl[]): TurnState {
-  if (pending.length > 0) return 'needs_input';
-  return lastItem(items)?.kind === 'result' ? 'idle' : 'working';
 }
 
 // ---------------------------------------------------------------------------

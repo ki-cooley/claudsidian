@@ -71,6 +71,7 @@ describe('ContextCapture', () => {
 
   it('tracks the last active markdown view and ignores the chat leaf', () => {
     const note = markdownLeaf('menus/menu.md', { cursorLine: 41 });
+    leaves = [note];
     app.workspace.trigger('active-leaf-change', note);
     expect(capture.lastMarkdownView).toBe(note.view);
     app.workspace.trigger('active-leaf-change', chatLeaf());
@@ -85,6 +86,7 @@ describe('ContextCapture', () => {
   it('seeds from the active markdown view at install time', () => {
     const note = markdownLeaf('seed.md');
     const app2 = new App();
+    app2.workspace.getLeavesOfType = (t: string) => (t === 'markdown' ? [note] : []);
     app2.workspace.getActiveViewOfType = <T>() => note.view as unknown as T;
     const c2 = new ContextCapture(app2, { ownViewType: OWN });
     c2.install(new TestPlugin(app2, { id: "claudsidian", name: "Claudsidian", version: "test", minAppVersion: "1.5.0", author: "", description: "" }));
@@ -93,6 +95,7 @@ describe('ContextCapture', () => {
 
   it('captures a selection with a 1-based inclusive line range and no cursor line', () => {
     const note = markdownLeaf('a.md', { selection: 'two\nlines', range: [44, 39], cursorLine: 39 });
+    leaves = [note];
     app.workspace.trigger('active-leaf-change', note);
     const ctx = capture.capture(settings(), []);
     expect(ctx.selection).toEqual({ text: 'two\nlines', fromLine: 40, toLine: 45, truncated: false });
@@ -101,6 +104,7 @@ describe('ContextCapture', () => {
 
   it('truncates the selection to maxSelectionChars', () => {
     const note = markdownLeaf('a.md', { selection: 'abcdefghij', range: [0, 0] });
+    leaves = [note];
     app.workspace.trigger('active-leaf-change', note);
     const ctx = capture.capture(settings({ maxSelectionChars: 4 }), []);
     expect(ctx.selection).toEqual({ text: 'abcd', fromLine: 1, toLine: 1, truncated: true });
@@ -154,5 +158,41 @@ describe('ContextCapture', () => {
     const ctx = capture.capture(settings(), ['x.md']);
     expect(ctx.activeNote).toBeUndefined();
     expect(ctx.mentions).toEqual(['x.md']);
+  });
+
+  it('drops the tracked view once its leaf leaves the workspace', () => {
+    const note = markdownLeaf('a.md', { selection: 'stale text', range: [39, 43], cursorLine: 39 });
+    leaves = [note, markdownLeaf('b.md')];
+    app.workspace.trigger('active-leaf-change', note);
+    expect(capture.capture(settings(), []).selection?.text).toBe('stale text');
+
+    // The note closes while the chat leaf is active; the CodeMirror state still answers getSelection.
+    leaves = leaves.filter((l) => l !== note);
+    app.workspace.trigger('active-leaf-change', chatLeaf());
+    expect(capture.lastMarkdownView).toBeNull();
+    const ctx = capture.capture(settings(), []);
+    expect(ctx.selection).toBeUndefined();
+    expect(ctx.activeNote).toBeUndefined();
+    expect(ctx.openNotes).toEqual(['b.md']);
+  });
+
+  it('treats a tracked view that lost its file as closed', () => {
+    const note = markdownLeaf('a.md', { selection: 'x', range: [0, 0] });
+    leaves = [note];
+    app.workspace.trigger('active-leaf-change', note);
+    (note.view as MarkdownView).file = null;
+    expect(capture.lastMarkdownView).toBeNull();
+    expect(capture.capture(settings(), []).selection).toBeUndefined();
+  });
+
+  it('falls back to the active markdown view when the tracked one closed', () => {
+    const closed = markdownLeaf('closed.md', { selection: 'old' });
+    const open = markdownLeaf('open.md', { cursorLine: 4 });
+    leaves = [closed, open];
+    app.workspace.trigger('active-leaf-change', closed);
+    leaves = [open];
+    app.workspace.getActiveViewOfType = <T>() => open.view as unknown as T;
+    expect(capture.lastMarkdownView).toBe(open.view);
+    expect(capture.capture(settings(), []).activeNote).toEqual({ path: 'open.md', cursorLine: 5 });
   });
 });

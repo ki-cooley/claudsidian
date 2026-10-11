@@ -1,11 +1,11 @@
 /**
  * The composer: an auto-growing textarea with @note and /command popups, image attachments
- * (picker or paste), Send that becomes Stop while the session works. Enter sends on desktop and
+ * (picker or paste), Send in a fixed slot with Stop beside it while the session works. Enter sends on desktop and
  * inserts a newline on mobile (Cmd/Ctrl+Enter sends everywhere); Shift+Enter always breaks a line.
  */
 import { useSignal } from '@preact/signals';
 import type { JSX } from 'preact';
-import { useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { prepareImage } from '../../../core/attachments';
 import { filterSlashCommands, type SlashCommand } from '../../../core/slash-commands';
 import type { OutgoingAttachment } from '../../../core/types';
@@ -28,6 +28,12 @@ export interface ComposerProps {
 
 export const MAX_IMAGES = 4;
 const MAX_HEIGHT_VH = 0.4;
+/**
+ * Stop stays disabled this long after a send. The store marks the turn as sending synchronously, so
+ * Stop appears on the very next render; a double-tap or a second "did it go?" tap on a slow link
+ * must not interrupt the message it just sent.
+ */
+export const STOP_GUARD_MS = 600;
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -59,7 +65,25 @@ export function Composer(p: ComposerProps): JSX.Element {
   const selected = useSignal(0);
   const sending = useSignal(false);
   const attaching = useSignal(false);
+  const stopLocked = useSignal(false);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCaret = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (stopTimer.current !== null) clearTimeout(stopTimer.current);
+    },
+    [],
+  );
+
+  const lockStop = (): void => {
+    stopLocked.value = true;
+    if (stopTimer.current !== null) clearTimeout(stopTimer.current);
+    stopTimer.current = setTimeout(() => {
+      stopTimer.current = null;
+      stopLocked.value = false;
+    }, STOP_GUARD_MS);
+  };
 
   const draft = p.draft;
   const hasText = draft.trim().length > 0;
@@ -142,6 +166,7 @@ export function Composer(p: ComposerProps): JSX.Element {
     if ((!text && attached.length === 0) || p.disabled || sending.value) return;
     const mentioned = keepMentions(text, mentions.value);
     sending.value = true;
+    lockStop();
     token.value = null;
     setText(el, '');
     images.value = [];
@@ -327,10 +352,9 @@ export function Composer(p: ComposerProps): JSX.Element {
           }}
         />
         <div class="claudsidian-composer-actions">
-          {p.working ? <Button icon="square" ariaLabel="Stop" kind="danger" class="claudsidian-composer-stop" onClick={p.onStop} /> : null}
-          {!p.working || canSend ? (
-            <Button icon="send-horizontal" ariaLabel="Send" kind="primary" class="claudsidian-composer-send" disabled={!canSend} onClick={() => void send()} />
-          ) : null}
+          {/* Send always holds the last slot so Stop never lands under the finger that just tapped Send. */}
+          {p.working ? <Button icon="square" ariaLabel="Stop" kind="danger" class="claudsidian-composer-stop" disabled={stopLocked.value} onClick={p.onStop} /> : null}
+          <Button icon="send-horizontal" ariaLabel="Send" kind="primary" class="claudsidian-composer-send" disabled={!canSend} onClick={() => void send()} />
         </div>
       </div>
     </div>
