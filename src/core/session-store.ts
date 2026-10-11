@@ -20,6 +20,7 @@ import {
   type ImageBlock,
   type PermissionResult,
   type StreamJsonEvent,
+  type WireEnvironment,
   type WireEventRow,
 } from '../api/types';
 import type { ClaudsidianSettings } from '../settings';
@@ -100,6 +101,19 @@ function lastPathSegment(p: string): string {
   return parts[parts.length - 1] ?? '';
 }
 
+/** "KisWorkComputer:yes-chef:8e72" or bridge_info.directory -> "yes-chef on KisWorkComputer" (plus offline marker). */
+function environmentLabelFromWire(e: WireEnvironment): string {
+  const kind = e.kind === 'anthropic_cloud' ? 'cloud' : (e.kind ?? 'unknown');
+  const parts = (e.name ?? '').split(':');
+  const machine = (e.bridge_info?.machine_name ?? parts[0] ?? '').split('.')[0] ?? '';
+  const dir = e.bridge_info?.directory ? lastPathSegment(e.bridge_info.directory) : parts.length >= 2 ? (parts[1] ?? '') : '';
+  let label: string;
+  if (kind === 'bridge') label = dir && machine ? `${dir} on ${machine}` : dir || machine || 'Mac';
+  else label = e.name || kind;
+  if (e.bridge_info?.online === false) label += ' (offline)';
+  return label;
+}
+
 function environmentLabel(kind: string, cwd: string | undefined): string {
   const kindLabel = kind === 'bridge' ? 'Mac' : kind;
   const segment = cwd ? lastPathSegment(cwd) : '';
@@ -124,6 +138,9 @@ export class SessionStore implements SessionStoreApi {
 
   private readonly deps: SessionStoreDeps;
   private readonly timers: TimerApi;
+  /** Environments from GET /v1/environments, merged into environments(); refreshed at most once a minute. */
+  private envCache: WireEnvironment[] = [];
+  private envFetchedAt = -1;
   private readonly transcripts = new Map<string, Signal<TranscriptState>>();
   private readonly tracks = new Map<string, SessionTrack>();
   private readonly cwdCache = new Map<string, string>();
@@ -165,6 +182,15 @@ export class SessionStore implements SessionStoreApi {
   }
 
   environments(): Environment[] {
+    const byId = new Map<string, Environment>();
+    for (const e of this.envCache) {
+      const kind = e.kind === 'anthropic_cloud' ? 'cloud' : (e.kind ?? 'unknown');
+      const env: Environment = { id: e.environment_id, kind, label: environmentLabelFromWire(e), sessionCount: 0 };
+      const dir = e.bridge_info?.directory;
+      if (dir) env.cwd = dir;
+      if (typeof e.bridge_info?.online === 'boolean') env.online = e.bridge_info.online;
+      byId.set(e.environment_id, env);
+    }
     const groups = new Map<string, { kind: string; cwd?: string; count: number }>();
     for (const s of this.sessions.value) {
       if (s.archived || !s.environmentId) continue;
@@ -174,21 +200,40 @@ export class SessionStore implements SessionStoreApi {
       if (g.kind === 'unknown' && s.environmentKind !== 'unknown') g.kind = s.environmentKind;
       groups.set(s.environmentId, g);
     }
-    const envs: Environment[] = [];
     for (const [id, g] of groups) {
+      const existing = byId.get(id);
+      if (existing) {
+        existing.sessionCount = g.count;
+        if (!existing.cwd && g.cwd) existing.cwd = g.cwd;
+        continue;
+      }
       const env: Environment = { id, kind: g.kind, label: environmentLabel(g.kind, g.cwd), sessionCount: g.count };
       if (g.cwd) env.cwd = g.cwd;
-      envs.push(env);
+      byId.set(id, env);
     }
+    const envs = [...byId.values()];
     envs.sort((a, b) => {
       const ka = a.kind === 'bridge' ? 0 : 1;
       const kb = b.kind === 'bridge' ? 0 : 1;
       if (ka !== kb) return ka - kb;
+      const oa = a.online === false ? 1 : 0;
+      const ob = b.online === false ? 1 : 0;
+      if (oa !== ob) return oa - ob;
       if (a.sessionCount !== b.sessionCount) return b.sessionCount - a.sessionCount;
       return a.label.localeCompare(b.label);
     });
     return envs;
   }
+
+  async refreshEnvironments(): Promise<void> {
+    try {
+      this.envCache = await this.deps.client.listEnvironments();
+      this.envFetchedAt = Date.now();
+    } catch (err) {
+      log.debug('refreshEnvironments failed', { message: messageOf(err) });
+    }
+  }
+
 
   // ---------------------------------------------------------------------------
   // Sessions list
@@ -218,6 +263,10 @@ export class SessionStore implements SessionStoreApi {
       const list = wire.map((w) => summarizeSession(w, this.cwdCache.get(w.id)));
       list.sort(byLastEventDesc);
       this.sessions.value = list;
+      if (Date.now() - this.envFetchedAt > 60_000) {
+        this.envFetchedAt = Date.now(); // throttle; refreshEnvironments sets it again on success
+        void this.refreshEnvironments();
+      }
       this.sessionsError.value = null;
       this.clearBanner('auth', 'offline');
     } catch (err) {
@@ -678,17 +727,31 @@ export class SessionStore implements SessionStoreApi {
   }
 
   async createSession(opts: CreateSessionOptions): Promise<SessionSummary> {
-    const req: CreateSessionRequest = { environment_id: opts.environmentId };
-    if (opts.title) req.title = opts.title;
-    const context: { model?: string; permission_mode?: string } = {};
-    if (opts.model) context.model = opts.model;
-    if (opts.permissionMode) context.permission_mode = opts.permissionMode;
-    if (context.model || context.permission_mode) req.session_context = context;
-    if (opts.firstMessage) req.events = [{ payload: userMessagePayload(opts.firstMessage) }];
+    // Mirrors claude.ai/code (verified 2026-10-10): create with config and no events, then send the
+    // permission mode and the first message as events, then set the title with a rename.
+    const req: CreateSessionRequest = {
+      environment_id: opts.environmentId,
+      config: {},
+      events: [],
+      tags: ['remote-control-app', 'claudsidian'],
+    };
+    if (opts.model) req.config!.model = opts.model;
     const wire = await this.deps.client.createSession(req);
+    const followUps: StreamJsonEvent[] = [];
+    if (opts.permissionMode) followUps.push(setPermissionModePayload(opts.permissionMode));
+    if (opts.firstMessage) followUps.push(userMessagePayload(opts.firstMessage));
+    if (followUps.length) await this.deps.client.sendEvents(wire.id, followUps);
+    if (opts.title) {
+      try {
+        await this.deps.client.renameSession(wire.id, opts.title);
+      } catch (err) {
+        log.debug('rename after create failed', { message: messageOf(err) });
+      }
+    }
     await this.refreshSessions();
     return this.session(wire.id) ?? summarizeSession(wire, this.cwdCache.get(wire.id));
   }
+
 
   // ---------------------------------------------------------------------------
   // Events and lifecycle

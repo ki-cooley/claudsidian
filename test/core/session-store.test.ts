@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../src/api/errors';
-import type { ControlResponseEvent, UserEvent } from '../../src/api/types';
+import type { ControlResponseEvent, UserEvent,
+  ControlRequestEvent,
+} from '../../src/api/types';
 import { SessionStore } from '../../src/core/session-store';
 import { DEFAULT_SETTINGS, type ClaudsidianSettings } from '../../src/settings';
 import { createFakeClock, type FakeClock } from '../helpers/fake-clock';
@@ -103,7 +105,7 @@ describe('SessionStore sessions list', () => {
     expect(store.session('cse_b')!.archived).toBe(true);
   });
 
-  it('createSession posts the environment and first message', async () => {
+  it('createSession posts config, then the permission mode and first message, then the title', async () => {
     const summary = await store.createSession({
       environmentId: 'env_mac',
       title: 'Prep list',
@@ -114,13 +116,17 @@ describe('SessionStore sessions list', () => {
     expect(client.created).toHaveLength(1);
     const req = client.created[0]!;
     expect(req.environment_id).toBe('env_mac');
-    expect(req.title).toBe('Prep list');
-    expect(req.session_context).toEqual({ model: 'claude-sonnet-5-5', permission_mode: 'auto' });
-    expect(req.events).toHaveLength(1);
-    const first = req.events![0]!.payload as UserEvent;
-    expect(first.type).toBe('user');
+    expect(req.config).toEqual({ model: 'claude-sonnet-5-5' });
+    expect(req.events).toEqual([]);
+    expect(req.tags).toContain('claudsidian');
+    expect(req.title).toBeUndefined();
+    const sent = client.sentPayloads('cse_new_1');
+    expect(sent.map((p) => p.type)).toEqual(['control_request', 'user']);
+    expect((sent[0] as ControlRequestEvent).request).toEqual({ subtype: 'set_permission_mode', mode: 'auto' });
+    const first = sent[1] as UserEvent;
     expect(first.message.content).toEqual([{ type: 'text', text: 'hi there' }]);
     expect(typeof first.uuid).toBe('string');
+    expect(client.calls).toContain('renameSession cse_new_1 "Prep list"');
     expect(summary.id).toBe('cse_new_1');
     expect(summary.title).toBe('Prep list');
     expect(store.sessions.value.some((s) => s.id === 'cse_new_1')).toBe(true);
@@ -129,7 +135,31 @@ describe('SessionStore sessions list', () => {
   it('createSession omits the optional fields it was not given', async () => {
     await store.createSession({ environmentId: 'env_mac' });
     const req = client.created[0]!;
-    expect(req).toEqual({ environment_id: 'env_mac' });
+    expect(req).toEqual({ environment_id: 'env_mac', config: {}, events: [], tags: ['remote-control-app', 'claudsidian'] });
+    expect(client.sentPayloads('cse_new_1')).toEqual([]);
+    expect(client.calls.some((c) => c.startsWith('renameSession'))).toBe(false);
+  });
+
+  it('environments merges the environments endpoint with session-derived groups', async () => {
+    client.environments = [
+      {
+        environment_id: 'env_mac',
+        name: 'KisWorkComputer:yes-chef:8e72',
+        kind: 'bridge',
+        bridge_info: { machine_name: 'KisWorkComputer', directory: '/Users/kicooley-winters/workspace/projects/yes-chef', online: true },
+      },
+      { environment_id: 'env_off', name: 'OldMac.local:workspace:ef9f', kind: 'bridge', bridge_info: { directory: '/Users/x/workspace', online: false } },
+      { environment_id: 'env_cloud_x', name: 'claude-code-default', kind: 'anthropic_cloud', bridge_info: null },
+    ];
+    await store.refreshEnvironments();
+    await store.refreshSessions();
+    const envs = store.environments();
+    expect(envs[0]).toMatchObject({ id: 'env_mac', kind: 'bridge', label: 'yes-chef on KisWorkComputer', cwd: '/Users/kicooley-winters/workspace/projects/yes-chef', online: true });
+    const off = envs.find((e) => e.id === 'env_off');
+    expect(off).toMatchObject({ kind: 'bridge', label: 'workspace on OldMac (offline)', online: false, sessionCount: 0 });
+    const cloud = envs.find((e) => e.id === 'env_cloud_x');
+    expect(cloud).toMatchObject({ kind: 'cloud', label: 'claude-code-default' });
+    expect(envs.findIndex((e) => e.id === 'env_off')).toBeGreaterThan(envs.findIndex((e) => e.id === 'env_mac'));
   });
 
   it('environments groups by environment and labels from cwd', async () => {

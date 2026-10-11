@@ -12,9 +12,11 @@ import type {
   ControlResponseEvent,
   CreateSessionRequest,
   ResultEvent,
+  SendEventsResult,
   StreamJsonEvent,
   SystemInitEvent,
   UserEvent,
+  WireEnvironment,
   WireEventRow,
   WireSession,
 } from '../../src/api/types';
@@ -40,6 +42,8 @@ export class FakeClient implements CcrApi {
   /** Optional gate awaited before every call (slow network, ordering tests). */
   delay?: () => Promise<void>;
   created: CreateSessionRequest[] = [];
+  /** Environments returned by listEnvironments (empty by default, like a server without the endpoint). */
+  environments: WireEnvironment[] = [];
   marked: { id: string; seq: number | undefined }[] = [];
   presenceLog: { id: string; clientId: string; connected: boolean }[] = [];
   private nextSeq = new Map<string, number>();
@@ -118,12 +122,26 @@ export class FakeClient implements CcrApi {
     this.presenceLog.push({ id, clientId, connected });
   }
 
-  async sendEvents(id: string, payloads: StreamJsonEvent[]): Promise<void> {
+  async sendEvents(id: string, payloads: StreamJsonEvent[]): Promise<SendEventsResult> {
     await this.record(`sendEvents ${id} ${payloads.map((p) => p.type).join(',')}`);
     const list = this.sent.get(id) ?? [];
     list.push(...payloads);
     this.sent.set(id, list);
-    if (this.echoSends) for (const p of payloads) this.push(id, p);
+    const results: SendEventsResult['results'] = [];
+    for (const p of payloads) {
+      if (this.echoSends) {
+        const row = this.push(id, p);
+        results.push({ event_id: String(p.uuid ?? ''), sequence_num: row.sequence_num, duplicate: false });
+      } else {
+        results.push({ event_id: String(p.uuid ?? ''), sequence_num: String(this.nextSeq.get(id) ?? 1), duplicate: false });
+      }
+    }
+    return { results };
+  }
+
+  async listEnvironments(): Promise<WireEnvironment[]> {
+    await this.record('listEnvironments');
+    return this.environments.map((e) => ({ ...e }));
   }
 
   async listEvents(id: string, opts: ListEventsOptions = {}): Promise<WireEventRow[]> {
@@ -142,11 +160,12 @@ export class FakeClient implements CcrApi {
     await this.record(`createSession ${req.environment_id}`);
     this.created.push(req);
     const id = `cse_new_${++this.createdCount}`;
+    const model = req.config?.model ?? req.session_context?.model;
     const session = wireSession({
       id,
       title: req.title ?? '',
       environment_id: req.environment_id,
-      session_context: req.session_context ? { ...req.session_context } : undefined,
+      session_context: model || req.session_context ? { ...(req.session_context ?? {}), ...(model ? { model } : {}) } : undefined,
       created_at: new Date().toISOString(),
       last_event_at: new Date().toISOString(),
     });

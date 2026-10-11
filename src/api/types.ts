@@ -32,6 +32,12 @@ export interface WireSession {
   origin?: string;
   parent_session_id?: string;
   post_turn_summary?: WirePostTurnSummary;
+  /** share-style link, e.g. https://claude.ai/code/cshk_... (present on create and rename responses) */
+  session_url?: string;
+  security_tier?: string;
+  requires_action_details_list?: unknown[];
+  metadata?: Record<string, unknown>;
+  client_presence?: unknown[];
   external_metadata?: {
     post_turn_summary?: WirePostTurnSummary;
     context_usage?: { max_tokens?: number; used_tokens?: number };
@@ -72,9 +78,49 @@ export interface WireEventList {
 export interface CreateSessionRequest {
   environment_id: string;
   title?: string;
+  /** What claude.ai/code sends (verified 2026-10-10): model and effort live here; sources/outcomes are empty arrays. */
+  config?: { model?: string; effort_level?: string; sources?: unknown[]; outcomes?: unknown[]; [k: string]: unknown };
+  /** Older guess kept for callers; the client maps model and effort into config. Permission mode is set with a control request after creation. */
   session_context?: { model?: string; permission_mode?: string; effort_level?: string };
   events?: { payload: StreamJsonEvent }[];
   tags?: string[];
+  [k: string]: unknown;
+}
+
+/** Response of POST .../events (verified): one result per accepted event, sequence numbers as strings. */
+export interface SendEventsResult {
+  results: { event_id: string; sequence_num: string | number; duplicate?: boolean }[];
+  attestation_feedback?: unknown;
+  [k: string]: unknown;
+}
+
+/** An environment as GET /v1/environments returns it (bridge = a machine running claude remote-control or the Desktop app). */
+export interface WireEnvironment {
+  environment_id: string;
+  name?: string; // "<machine>:<directory basename>:<4 hex>"
+  description?: string;
+  state?: string;
+  kind?: 'bridge' | 'anthropic_cloud' | string;
+  created_at?: string;
+  bridge_info?: {
+    machine_name?: string;
+    machine_id?: string;
+    directory?: string;
+    branch?: string;
+    git_repo_url?: string | null;
+    online?: boolean;
+    max_sessions?: number;
+    cli_version?: string;
+    [k: string]: unknown;
+  } | null;
+  is_ccr_default?: boolean;
+  [k: string]: unknown;
+}
+
+export interface WireEnvironmentList {
+  environments?: WireEnvironment[];
+  data?: WireEnvironment[];
+  has_more?: boolean;
   [k: string]: unknown;
 }
 

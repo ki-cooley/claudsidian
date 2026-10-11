@@ -394,7 +394,7 @@ export async function startMockCcr({ port = 0, staticDir, latencyMs = 0 } = {}) 
     state.newSessionCounter += 1;
     const id = `cse_new${state.newSessionCounter}`;
     const env = ENVIRONMENTS[body.environment_id] ?? { kind: 'bridge', cwd: '/Users/kicooley-winters/workspace' };
-    const model = body.session_context?.model || 'claude-opus-5-5';
+    const model = body.config?.model || body.session_context?.model || 'claude-opus-5-5';
     const session = sessionObject(id, {
       title: typeof body.title === 'string' && body.title ? body.title : 'New session',
       environmentId: body.environment_id,
@@ -413,7 +413,40 @@ export async function startMockCcr({ port = 0, staticDir, latencyMs = 0 } = {}) 
     setWorker(session, 'idle', 'completed');
     const events = Array.isArray(body.events) ? body.events : [];
     for (const e of events) if (e && e.payload && typeof e.payload === 'object') acceptPayload(id, e.payload);
-    return send(res, 200, session);
+    // The real API wraps the created session (verified 2026-10-10).
+    return send(res, 200, { deduplicated: false, session });
+  }
+
+  /** GET /v1/environments: the bridge and cloud environments of the seed, shaped like the real endpoint. */
+  function listEnvironments(res) {
+    const environments = Object.entries(ENVIRONMENTS).map(([id, e]) => ({
+      environment_id: id,
+      name: e.kind === 'cloud' ? 'claude-code-default' : `MockMac:${path.basename(e.cwd)}:${id.slice(-4)}`,
+      description: e.kind === 'cloud' ? '' : 'Bridge environment (MockMac)',
+      state: 'active',
+      kind: e.kind === 'cloud' ? 'anthropic_cloud' : 'bridge',
+      created_at: isoAt(-86400),
+      bridge_info:
+        e.kind === 'cloud'
+          ? null
+          : { machine_name: 'MockMac', machine_id: 'mock-machine', directory: e.cwd, branch: 'HEAD', git_repo_url: null, online: id !== 'env_ws', max_sessions: 32, cli_version: '2.1.296' },
+      is_ccr_default: false,
+    }));
+    return send(res, 200, { environments, has_more: false });
+  }
+
+  /** GET /v1/sessions/{id}/events?after_id=<uuid>: the web client's incremental poll. */
+  function listEventsAfter(res, sessionId, query) {
+    const rows = rowsOf(sessionId);
+    if (!rows) return sendError(res, 404, 'not_found_error', `no session ${sessionId}`);
+    const limit = Math.min(Math.max(Number(query.limit) || 500, 1), 1000);
+    let start = 0;
+    if (query.after_id) {
+      const idx = rows.findIndex((r) => r.payload.uuid === query.after_id);
+      start = idx >= 0 ? idx + 1 : rows.length;
+    }
+    const page = rows.slice(start, start + limit);
+    return send(res, 200, { data: page.map((r) => ({ ...r, sequence_num: String(r.sequence_num) })), has_more: start + limit < rows.length });
   }
 
   function listEvents(res, sessionId, query) {
@@ -452,7 +485,7 @@ export async function startMockCcr({ port = 0, staticDir, latencyMs = 0 } = {}) 
         const body = await readBody(req);
         if (typeof body.title === 'string') session.title = body.title;
         session.updated_at = new Date().toISOString();
-        return send(res, 200, session);
+        return send(res, 200, { session });
       }
       return sendError(res, 405, 'invalid_request_error', 'method not allowed');
     }
@@ -488,8 +521,13 @@ export async function startMockCcr({ port = 0, staticDir, latencyMs = 0 } = {}) 
         for (const e of events) {
           if (!e || typeof e.payload !== 'object' || !e.payload) return sendError(res, 400, 'invalid_request_error', 'each event needs a payload');
         }
+        const before = rowsOf(id).length;
         for (const e of events) acceptPayload(id, e.payload);
-        return send(res, 200, { ok: true, accepted: events.length });
+        const results = rowsOf(id)
+          .slice(before)
+          .filter((r) => r.source === 'client')
+          .map((r) => ({ duplicate: false, event_id: r.payload.uuid, sequence_num: String(r.sequence_num) }));
+        return send(res, 200, { attestation_feedback: null, results });
       }
     }
     return sendError(res, 404, 'not_found_error', `no route ${pathname}`);
@@ -535,6 +573,10 @@ export async function startMockCcr({ port = 0, staticDir, latencyMs = 0 } = {}) 
       if (token === 'expired' || !state.tokens.has(token)) return sendError(res, 401, 'authentication_error', 'Invalid or expired token');
       if (pathname === '/api/oauth/profile') {
         return send(res, 200, { organization: { uuid: 'org-mock', name: 'Mock org' }, account: { uuid: 'acct-mock', email_address: 'mock@example.com' } });
+      }
+      if (pathname === '/v1/environments' && req.method === 'GET') return listEnvironments(res);
+      if (pathname.startsWith('/v1/sessions/') && pathname.endsWith('/events') && req.method === 'GET') {
+        return listEventsAfter(res, decodeURIComponent(pathname.slice('/v1/sessions/'.length, -'/events'.length)), query);
       }
       if (pathname.startsWith('/v1/code/sessions')) return handleSessions(req, res, pathname, query);
       return sendError(res, 404, 'not_found_error', `no route ${pathname}`);

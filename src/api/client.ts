@@ -8,7 +8,10 @@ import { ApiError, apiErrorFromResponse } from './errors';
 import type { HttpRequest, HttpResponse, HttpTransport } from './http';
 import type {
   CreateSessionRequest,
+  SendEventsResult,
   StreamJsonEvent,
+  WireEnvironment,
+  WireEnvironmentList,
   WireEventList,
   WireEventRow,
   WireSession,
@@ -110,7 +113,7 @@ export class CcrClient implements CcrApi {
 
   async getSession(id: string): Promise<WireSession> {
     const res = await this.request('GET', sessionPath(id));
-    return this.requireJson<WireSession>(res);
+    return unwrapSession(this.requireJson<Record<string, unknown>>(res));
   }
 
   async renameSession(id: string, title: string): Promise<void> {
@@ -133,26 +136,65 @@ export class CcrClient implements CcrApi {
     await this.request('POST', sessionPath(id, '/client/presence'), { body });
   }
 
-  async sendEvents(id: string, payloads: StreamJsonEvent[]): Promise<void> {
-    // uuids are assigned once, before any retry, so a retried POST carries the same ids.
-    const events = payloads.map((p) => ({ payload: p.uuid ? p : { ...p, uuid: uuidv4() } }));
-    await this.request('POST', sessionPath(id, '/events'), { body: { session_id: id, events } });
+  async sendEvents(id: string, payloads: StreamJsonEvent[]): Promise<SendEventsResult> {
+    // uuids are assigned once, before any retry, so a retried POST carries the same ids. User payloads carry the
+    // session id like the web client's do; the body shape {events:[{payload}]} is the one claude.ai/code sends.
+    const events = payloads.map((p) => {
+      const payload: StreamJsonEvent = p.uuid ? { ...p } : { ...p, uuid: uuidv4() };
+      if (payload.type === 'user' && !payload.session_id) payload.session_id = id;
+      return { payload };
+    });
+    const res = await this.request('POST', sessionPath(id, '/events'), { body: { events } });
+    const body = res.json<Partial<SendEventsResult>>();
+    return { ...(body ?? {}), results: Array.isArray(body?.results) ? body.results : [] };
   }
 
   async listEvents(id: string, opts: ListEventsOptions = {}): Promise<WireEventRow[]> {
-    const { limit = 200, sortOrder = 'asc', fromSequenceNum, page } = opts;
-    const res = await this.request('GET', sessionPath(id, '/events'), {
-      query: { limit, sort_order: sortOrder, from_sequence_num: fromSequenceNum, page },
-    });
+    const { limit = 200, sortOrder = 'asc', fromSequenceNum, page, afterId } = opts;
+    const res = afterId
+      ? await this.request('GET', `/v1/sessions/${encodeURIComponent(id)}/events`, { query: { limit, after_id: afterId } })
+      : await this.request('GET', sessionPath(id, '/events'), {
+          query: { limit, sort_order: sortOrder, from_sequence_num: fromSequenceNum, page },
+        });
     const body = res.json<Partial<WireEventList> & { events?: WireEventRow[] }>();
     if (Array.isArray(body?.data)) return body.data;
     if (Array.isArray(body?.events)) return body.events;
     return [];
   }
 
+  /**
+   * Create a session the way claude.ai/code does (verified 2026-10-10): config carries model and effort,
+   * events is usually empty (the first message follows as a separate send), tags mark the client.
+   * The response wraps the session in {session}; older shapes without the wrapper are accepted too.
+   */
   async createSession(req: CreateSessionRequest): Promise<WireSession> {
-    const res = await this.request('POST', '/v1/code/sessions', { body: req });
-    return this.requireJson<WireSession>(res);
+    const config: Record<string, unknown> = { sources: [], outcomes: [], ...(req.config ?? {}) };
+    const model = req.config?.model ?? req.session_context?.model;
+    if (model) config.model = model;
+    const effort = req.config?.effort_level ?? req.session_context?.effort_level;
+    if (effort) config.effort_level = effort;
+    const body: Record<string, unknown> = {
+      environment_id: req.environment_id,
+      config,
+      events: req.events ?? [],
+      tags: req.tags ?? ['remote-control-app'],
+    };
+    if (req.title) body.title = req.title;
+    const res = await this.request('POST', '/v1/code/sessions', { body });
+    return unwrapSession(this.requireJson<Record<string, unknown>>(res));
+  }
+
+  async listEnvironments(): Promise<WireEnvironment[]> {
+    try {
+      const res = await this.request('GET', '/v1/environments', { query: { limit: 100 } });
+      const body = res.json<Partial<WireEnvironmentList>>();
+      const list = Array.isArray(body?.environments) ? body.environments : Array.isArray(body?.data) ? body.data : [];
+      return list.filter((e) => !!e && typeof e.environment_id === 'string');
+    } catch (err) {
+      if (err instanceof ApiError && err.isAuth) throw err;
+      log.info('environments endpoint unavailable; using session-derived environments', { message: messageOf(err) });
+      return [];
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -160,7 +202,8 @@ export class CcrClient implements CcrApi {
   // -------------------------------------------------------------------------
 
   private async listSessionsPage(cursor?: string): Promise<WireSessionList> {
-    const query = cursor ? { cursor } : undefined;
+    const query: Record<string, QueryValue> = { limit: 100 };
+    if (cursor) query.cursor = cursor;
     try {
       const res = await this.request('GET', '/v1/code/sessions', { query, beta: this.betaOnList });
       return res.json<WireSessionList>() ?? { data: [] };
@@ -244,6 +287,13 @@ export class CcrClient implements CcrApi {
       throw err;
     }
   }
+}
+
+/** Create and rename responses wrap the session in {session}; list and get return it bare. */
+function unwrapSession(body: Record<string, unknown>): WireSession {
+  const inner = body.session;
+  if (inner && typeof inner === 'object' && typeof (inner as WireSession).id === 'string') return inner as WireSession;
+  return body as unknown as WireSession;
 }
 
 function backoffMs(attempt: number): number {

@@ -13,6 +13,8 @@ export interface Environment {
   label: string;
   cwd?: string;
   sessionCount: number;
+  /** false when the machine's remote-control server is offline (from the environments endpoint) */
+  online?: boolean;
 }
 
 export interface Banner {
@@ -52,6 +54,8 @@ export interface SessionStoreApi {
   environments(): Environment[];
 
   refreshSessions(): Promise<void>;
+  /** Fetch the environments endpoint so environments() can label machines and show offline ones. Optional for fakes. */
+  refreshEnvironments?(): Promise<void>;
   startListPolling(): void;
   stopListPolling(): void;
 

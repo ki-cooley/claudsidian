@@ -40,7 +40,7 @@ describe('CcrClient', () => {
     expect(h['anthropic-client-platform']).toBe('web_claude_ai');
     expect(h['x-organization-uuid']).toBe('org-1');
     expect(h['User-Agent']).toBe('claudsidian/test');
-    expect(t.calls[0]!.url).toBe('https://api.test/v1/code/sessions');
+    expect(t.calls[0]!.url).toBe('https://api.test/v1/code/sessions?limit=100');
   });
 
   it('omits the org header when no org is known', () => {
@@ -74,7 +74,8 @@ describe('CcrClient', () => {
     ]);
     expect(t.calls[0]!.url).toBe('https://api.test/v1/code/sessions/cse_1/events');
     const body = JSON.parse(t.calls[0]!.body as string);
-    expect(body.session_id).toBe('cse_1');
+    expect(body.session_id).toBeUndefined();
+    expect(body.events[0].payload.session_id).toBe('cse_1');
     expect(body.events).toHaveLength(2);
     expect(body.events[0].payload.uuid).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.events[0].payload.type).toBe('user');
@@ -281,7 +282,13 @@ describe('CcrClient', () => {
     ]);
     const s = await client(t).createSession({ environment_id: 'env_1', title: 'x' });
     expect(s.id).toBe('cse_new');
-    expect(JSON.parse(t.calls[0]!.body as string)).toEqual({ environment_id: 'env_1', title: 'x' });
+    expect(JSON.parse(t.calls[0]!.body as string)).toEqual({
+      environment_id: 'env_1',
+      title: 'x',
+      config: { sources: [], outcomes: [] },
+      events: [],
+      tags: ['remote-control-app'],
+    });
   });
 
   it('throws ApiError when a 2xx body is not a JSON object', async () => {
@@ -388,6 +395,44 @@ describe('CcrClient', () => {
   it('strips a trailing slash from the base url', async () => {
     const t = createMemoryTransport([{ method: 'GET', path: /\/v1\/code\/sessions$/, reply: () => jsonResponse(200, { data: [] }) }]);
     await client(t, { baseUrl: 'https://api.test/' }).listSessions();
-    expect(t.calls[0]!.url).toBe('https://api.test/v1/code/sessions');
+    expect(t.calls[0]!.url).toBe('https://api.test/v1/code/sessions?limit=100');
+  });
+  it('creates a session the way claude.ai/code does and unwraps the session wrapper', async () => {
+    const t = createMemoryTransport([{ method: 'POST', path: /\/v1\/code\/sessions$/, reply: () => jsonResponse(200, { deduplicated: false, session: { id: 'cse_new', title: '' } }) }]);
+    const s = await client(t).createSession({ environment_id: 'env_1', config: { model: 'claude-opus-5-5' }, tags: ['claudsidian'] });
+    expect(s.id).toBe('cse_new');
+    const body = JSON.parse(t.calls[0]!.body as string);
+    expect(body).toEqual({ environment_id: 'env_1', config: { sources: [], outcomes: [], model: 'claude-opus-5-5' }, events: [], tags: ['claudsidian'] });
+  });
+
+  it('maps session_context into config and defaults tags', async () => {
+    const t = createMemoryTransport([{ method: 'POST', path: /\/v1\/code\/sessions$/, reply: () => jsonResponse(200, { id: 'cse_bare' }) }]);
+    const s = await client(t).createSession({ environment_id: 'env_1', session_context: { model: 'm', effort_level: 'high' } });
+    expect(s.id).toBe('cse_bare');
+    const body = JSON.parse(t.calls[0]!.body as string);
+    expect(body.config).toEqual({ sources: [], outcomes: [], model: 'm', effort_level: 'high' });
+    expect(body.tags).toEqual(['remote-control-app']);
+  });
+
+  it('returns the per-event results of a send', async () => {
+    const t = createMemoryTransport([{ method: 'POST', path: /\/events$/, reply: () => jsonResponse(200, { attestation_feedback: null, results: [{ duplicate: false, event_id: 'u1', sequence_num: '7' }] }) }]);
+    const r = await client(t).sendEvents('cse_1', [{ type: 'user', uuid: 'u1', message: { role: 'user', content: 'hi' } }]);
+    expect(r.results).toEqual([{ duplicate: false, event_id: 'u1', sequence_num: '7' }]);
+  });
+
+  it('polls incrementally with after_id on the /v1/sessions path', async () => {
+    const t = createMemoryTransport([{ method: 'GET', path: /\/v1\/sessions\/cse_1\/events$/, reply: () => jsonResponse(200, { data: [{ sequence_num: '9', payload: { type: 'result' } }], has_more: false }) }]);
+    const rows = await client(t).listEvents('cse_1', { afterId: 'abc', limit: 500 });
+    expect(t.calls[0]!.url).toContain('/v1/sessions/cse_1/events?limit=500&after_id=abc');
+    expect(rows[0]!.payload.type).toBe('result');
+  });
+
+  it('lists environments and falls back to an empty list when the endpoint is missing', async () => {
+    const ok = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(200, { environments: [{ environment_id: 'env_1', kind: 'bridge', name: 'Mac:yes-chef:1234' }], has_more: false }) }]);
+    expect((await client(ok).listEnvironments()).map((e) => e.environment_id)).toEqual(['env_1']);
+    const missing = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(404, { type: 'error', error: { type: 'not_found_error', message: 'nope' } }) }]);
+    expect(await client(missing).listEnvironments()).toEqual([]);
+    const signedOut = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(401, { type: 'error', error: { type: 'authentication_error', message: 'expired' } }) }]);
+    await expect(client(signedOut).listEnvironments()).rejects.toBeInstanceOf(ApiError);
   });
 });
