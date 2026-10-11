@@ -3,6 +3,11 @@
 # Env: VAULT (default yes-chef), RC_NAME (yes-chef), RC_PERMISSION_MODE (auto), RC_CAPACITY (8).
 set -uo pipefail
 
+# Claude Code's own sandbox exports proxy variables that make a child `claude` hang on its eligibility
+# checks. launchd never sets them, but a hand run from inside a Claude Code session would; clear them so
+# the server always talks to api.anthropic.com directly.
+unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy GRPC_PROXY GIT_CONFIG_PARAMETERS
+
 VAULT="${VAULT:-/Users/kicooley-winters/workspace/projects/yes-chef}"
 RC_NAME="${RC_NAME:-yes-chef}"
 RC_PERMISSION_MODE="${RC_PERMISSION_MODE:-auto}"
