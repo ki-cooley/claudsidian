@@ -49,6 +49,10 @@ Then over CDP (port 9333): open the vault (the profile's `obsidian.json` must li
 
 Status: works on this machine (2026-10-11, Obsidian 1.13.7). A second instance with its own `--user-data-dir` coexists with the running one. `node e2e/obsidian/drive.mjs` (sandbox off, mock server on 8765 via `node test/mock-ccr/server.mjs --port 8765`) connects over CDP with Playwright, accepts the vault-trust dialog, enables the plugin, points it at the mock, opens the view on desktop and under `app.emulateMobile(true)`, sends a message, toggles cooking mode, opens the sign-in modal, and writes screenshots to `e2e/out/obsidian/`. Obsidian's own lucide icons render where the harness shim shows placeholders.
 
+Transport probes against the same instance (sandbox off, echo server first with `node e2e/obsidian/echo-server.mjs 9876`): `node e2e/obsidian/probe-ua.mjs` shows which headers really leave `requestUrl`, `fetch`, and node `https` from the renderer, and `node e2e/obsidian/exchange-e2e.mjs` reloads the plugin and runs its own sign-in exchange with a bogus code (expected failure: the server's `Invalid 'code' in request. (HTTP 400)`, never the edge's 429). The scratch vault's `data.json` must point at the real endpoints for that one; the driver leaves it on the mock.
+
+Live smoke without re-authorizing: `node scripts/oauth-login.mjs begin` prints the claude.ai URL, `finish <code>` stores the tokens in `~/workspace/private/claudsidian-oauth/token.env` (mode 600), `refresh` and `show` maintain them. Live tests read that file.
+
 ## 5. Live smoke
 
 After Ki's one-time sign-in in desktop Obsidian and with the LaunchAgent running (`docs/host-setup.md`). Run on the iPad where the step allows it.

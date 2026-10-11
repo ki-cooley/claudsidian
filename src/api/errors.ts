@@ -48,9 +48,19 @@ export function apiErrorFromResponse(status: number, text: string, headers: Reco
   let requestId: string | undefined = headers['request-id'] ?? headers['x-request-id'];
   try {
     body = text ? JSON.parse(text) : undefined;
-    const b = body as { error?: { type?: string; message?: string }; request_id?: string } | undefined;
-    if (b?.error?.message) message = `${b.error.message} (HTTP ${status})`;
-    errorType = b?.error?.type;
+    const b = body as
+      | { error?: { type?: string; message?: string } | string; error_description?: string; request_id?: string }
+      | undefined;
+    if (typeof b?.error === 'string') {
+      // OAuth-style envelope: {"error":"invalid_grant","error_description":"..."}
+      message = `${b.error_description ?? b.error} (HTTP ${status})`;
+      errorType = b.error;
+    } else if (b?.error?.message) {
+      message = `${b.error.message} (HTTP ${status})`;
+      errorType = b.error.type;
+    } else {
+      errorType = b?.error?.type;
+    }
     requestId = b?.request_id ?? requestId;
   } catch {
     if (text) message = `${text.slice(0, 200)} (HTTP ${status})`;
