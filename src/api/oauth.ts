@@ -9,6 +9,12 @@ export const CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 export const OAUTH_REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback';
 export const OAUTH_SCOPES = ['org:create_api_key', 'user:profile', 'user:inference', 'user:sessions:claude_code'];
 export const OAUTH_BETA = 'oauth-2025-04-20';
+/**
+ * Cloudflare in front of the token endpoint answers 429 "Rate limited" (no request id, never
+ * reaches the app) to browser-shaped and generic user agents; the SDK user agent Claude Code
+ * sends gets through. Verified 2026-10-11 against platform.claude.com.
+ */
+export const OAUTH_USER_AGENT = 'anthropic-sdk-typescript/0.94.0 userOAuthProvider';
 
 function base64Url(bytes: Uint8Array): string {
   let bin = '';

@@ -121,6 +121,7 @@ describe('AuthManager', () => {
     });
     expect((calls[0]!.body as { code_verifier: string }).code_verifier).toMatch(/^[A-Za-z0-9_-]{43,}$/);
     expect(calls[0]!.headers['anthropic-beta']).toBe('oauth-2025-04-20');
+    expect(calls[0]!.headers['User-Agent']).toBe('anthropic-sdk-typescript/0.94.0 userOAuthProvider');
     expect(calls[0]!.headers['Content-Type'] ?? calls[0]!.headers['content-type']).toBe('application/json');
     expect(auth.isSignedIn()).toBe(true);
     expect(auth.state).toEqual(s);
@@ -238,6 +239,7 @@ describe('AuthManager', () => {
     expect(calls.filter((c) => c.url.endsWith('/token')).length).toBe(1);
     expect(calls[0]!.body).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'R1', client_id: 'c' });
     expect(calls[0]!.headers['anthropic-beta']).toBe('oauth-2025-04-20');
+    expect(calls[0]!.headers['User-Agent']).toBe('anthropic-sdk-typescript/0.94.0 userOAuthProvider');
     expect(auth.state?.refreshToken).toBe('R2');
     expect(auth.state?.expiresAt).toBe(1_000_000 + 3600 * 1000);
     expect(auth.state?.refreshedAt).toBe(1_000_000);

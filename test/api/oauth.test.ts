@@ -5,6 +5,7 @@ import {
   OAUTH_BETA,
   OAUTH_REDIRECT_URI,
   OAUTH_SCOPES,
+  OAUTH_USER_AGENT,
   buildAuthorizeUrl,
   challengeS256,
   parsePastedCode,
@@ -17,6 +18,7 @@ describe('oauth helpers', () => {
     expect(OAUTH_REDIRECT_URI).toBe('https://platform.claude.com/oauth/code/callback');
     expect(OAUTH_SCOPES).toEqual(['org:create_api_key', 'user:profile', 'user:inference', 'user:sessions:claude_code']);
     expect(OAUTH_BETA).toBe('oauth-2025-04-20');
+    expect(OAUTH_USER_AGENT).toBe('anthropic-sdk-typescript/0.94.0 userOAuthProvider');
   });
 
   it('makes a url-safe verifier of 43+ chars', () => {

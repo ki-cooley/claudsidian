@@ -8,7 +8,7 @@ import type { AuthApi } from './auth-api';
 import type { AuthState } from './auth-types';
 import { ApiError, apiErrorFromResponse } from './errors';
 import type { HttpResponse, HttpTransport } from './http';
-import { CLAUDE_CODE_CLIENT_ID, OAUTH_BETA, OAUTH_REDIRECT_URI, OAUTH_SCOPES, buildAuthorizeUrl, challengeS256, parsePastedCode, randomUrlSafe } from './oauth';
+import { CLAUDE_CODE_CLIENT_ID, OAUTH_BETA, OAUTH_REDIRECT_URI, OAUTH_SCOPES, buildAuthorizeUrl, challengeS256, parsePastedCode, randomUrlSafe, OAUTH_USER_AGENT } from './oauth';
 import { log } from '../util/log';
 import { realTimers, type TimerApi } from '../util/timers';
 
@@ -166,7 +166,7 @@ export class AuthManager implements AuthApi {
     return this.deps.transport({
       method: 'POST',
       url: this.deps.tokenUrl,
-      headers: { 'Content-Type': 'application/json', 'anthropic-beta': OAUTH_BETA },
+      headers: { 'Content-Type': 'application/json', 'anthropic-beta': OAUTH_BETA, 'User-Agent': OAUTH_USER_AGENT },
       body,
     });
   }
