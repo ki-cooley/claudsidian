@@ -87,3 +87,29 @@ The web app talks to `https://claude.ai/v1/code/...` (same-origin proxy with coo
 - Session object keys seen: `id`, `title`, `status`, `status_bucket`, `worker_status`, `connection_status`, `environment_id` (empty string for interactive `/rc` sessions), `environment_kind` (`bridge`), `config` (`model`, `effort_level`, `origin`, `mcp_connector_ids`, `outcomes`, `sources`), `created_at`, `updated_at`, `last_event_at`, `user_message_count` (string), `tags` (for example `remote-control-sdk`, `remote-control-app`, `config:no-git-repo`), `unread`, `participants`, `relations`, `external_metadata` (`model`, `effort_level`, `context_usage`, `rate_limit_info`, `container_cc_version`, `cross_session_inbound`, `artifacts`).
 - Environments (web): `GET /v1/environment_providers/private/organizations/{org}/environments?limit=1000` -> `{environments: [...], has_more, first_id, last_id}`. Each: `{kind: "bridge" | "anthropic_cloud", environment_id, name ("<machine>:<dir basename>:<4 hex>"), description, created_at, state, owner_account_uuid, config, bridge_info: {max_sessions, machine_name, machine_id, directory, branch, git_repo_url, online, spawn_mode, cli_version, runner, device_uuid}, is_ccr_default}`. For the bearer-auth API the candidate is `GET /v1/environments?beta=true` (seen in the CLI binary); the plugin tries it with the ccr beta header and falls back to session-derived environments when it 404s or 400s. `bridge_info.directory` and `bridge_info.online` are what the new-session picker should display.
 - A `claude remote-control` server registers one environment per machine and directory (`POST /v1/environments/bridge`), so the vault server will appear as `<machine>:yes-chef:<hex>` with `directory` equal to the vault path.
+
+## Verified create, send, and rename shapes (claude.ai/code capture, 2026-10-10 late)
+
+Creating a Remote Control session from the controller side:
+
+```
+POST /v1/code/sessions
+{"environment_id":"env_...","config":{"sources":[],"outcomes":[],"model":"claude-opus-5-5","effort_level":"xhigh"},"events":[],"tags":["remote-control-app"]}
+-> 200 {"deduplicated":false,"session":{...WireSession..., "session_url":"https://claude.ai/code/cshk_...", "security_tier":"standard", "requires_action_details_list":[], "metadata":{}, "client_presence":[]}}
+```
+
+Notes: the body uses `config` (not `session_context`), `events` is empty, and the first user message is posted afterwards with `POST .../events`; the web also posts a `set_model` control request in the same events call (`request_id` like `set-model-<ms>-<rand>`). The response wraps the session in `session`; `PUT /v1/code/sessions/{id}` (`{"title":"..."}`) returns the same wrapper. The session object carries `session_url` (a `cshk_` share-style link that opens the session). The web immediately follows with `GET .../environments/{environment_id}`, `GET .../events?limit=200&sort_order=desc`, then `GET .../events?limit=500&sort_order=asc`, then presence.
+
+Sending events (web client shape):
+
+```
+POST /v1/code/sessions/{id}/events
+{"events":[{"payload":{"type":"user","uuid":"<v4>","session_id":"session_...","parent_tool_use_id":null,"message":{"role":"user","content":"plain string"}}}]}
+-> 200 {"attestation_feedback":null,"results":[{"duplicate":false,"event_id":"<uuid>","sequence_num":"3"}]}
+```
+
+Notes: no top-level `session_id` in the web's body (the vendored reference shows one from the CLI side; the server accepted both in our probes). `message.content` was a plain string. Each event in the web's body also carried `device_attestation: {kid: "tdcred_...", signature}` from the browser's enrolled trusted device; the plugin cannot produce one. If the account is not under a Trusted Devices requirement the server accepts unsigned events (the claude-code-remote MCP probes earlier today did), and a 403 mentioning trusted devices is the signal that it is. The response returns the stored `sequence_num` per event, which the store can use to seed the poll cursor.
+
+Incremental polling as the web does it: initial history `GET /v1/code/sessions/{id}/events?limit=500&sort_order=asc`, then `GET /v1/sessions/{id}/events?limit=500&after_id=<last event uuid>` (note the `/v1/sessions/` path and the uuid cursor) returning `{"data":[...],"has_more":false}`. Session list liveness: `GET /v1/code/sessions/watch?exclude_tags=-&resume_token=<token from the list>` is a long-poll (it hangs until something changes; never fetch it synchronously) and `POST /v1/code/sessions/heartbeat_check {"session_ids":[...]}` returns `{checks_enabled, results:[{session_id, outcome:"fresh"|..., last_heartbeat_at}]}` for the "Mac offline" dot.
+
+Observed on a Desktop-hosted bridge session created this way: the `system/init` event had `cwd: ""`, so group sessions by environment (`bridge_info.directory`) first and by init cwd second.
