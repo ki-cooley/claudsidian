@@ -141,6 +141,8 @@ export class SessionStore implements SessionStoreApi {
   /** Environments from GET /v1/environments, merged into environments(); refreshed at most once a minute. */
   private envCache: WireEnvironment[] = [];
   private envFetchedAt = -1;
+  /** Bumped when envCache changes so components that call environments() during render re-render. */
+  private readonly envVersion = signal(0);
   private readonly transcripts = new Map<string, Signal<TranscriptState>>();
   private readonly tracks = new Map<string, SessionTrack>();
   private readonly cwdCache = new Map<string, string>();
@@ -182,6 +184,7 @@ export class SessionStore implements SessionStoreApi {
   }
 
   environments(): Environment[] {
+    void this.envVersion.value; // subscribe render-time callers to environment refreshes
     const byId = new Map<string, Environment>();
     for (const e of this.envCache) {
       const kind = e.kind === 'anthropic_cloud' ? 'cloud' : (e.kind ?? 'unknown');
@@ -229,6 +232,7 @@ export class SessionStore implements SessionStoreApi {
     try {
       this.envCache = await this.deps.client.listEnvironments();
       this.envFetchedAt = Date.now();
+      this.envVersion.value += 1;
     } catch (err) {
       log.debug('refreshEnvironments failed', { message: messageOf(err) });
     }
@@ -692,6 +696,7 @@ export class SessionStore implements SessionStoreApi {
   }
 
   private afterSend(sessionId: string): void {
+    this.clearBanner('error', 'offline');
     if (this.polledId !== sessionId || !this.sessionPoller) return;
     this.sessionPoller.setMode(this.visible.value ? 'active' : 'background');
     this.sessionPoller.kick();

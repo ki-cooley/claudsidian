@@ -1,3 +1,4 @@
+import { effect } from '@preact/signals';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../src/api/errors';
 import type { ControlResponseEvent, UserEvent,
@@ -138,6 +139,27 @@ describe('SessionStore sessions list', () => {
     expect(req).toEqual({ environment_id: 'env_mac', config: {}, events: [], tags: ['remote-control-app', 'claudsidian'] });
     expect(client.sentPayloads('cse_new_1')).toEqual([]);
     expect(client.calls.some((c) => c.startsWith('renameSession'))).toBe(false);
+  });
+
+  it('environments() re-runs signal effects when the environments endpoint lands', async () => {
+    const seen: number[] = [];
+    const stop = effect(() => {
+      seen.push(store.environments().length);
+    });
+    client.environments = [{ environment_id: 'env_late', name: 'Mac:yes-chef:0001', kind: 'bridge', bridge_info: { directory: '/Users/kicooley-winters/workspace/projects/yes-chef', online: true } }];
+    await store.refreshEnvironments();
+    stop();
+    expect(seen[0]).toBe(0);
+    expect(seen[seen.length - 1]).toBeGreaterThan(0);
+  });
+
+  it('a successful send clears the error banner left by a failed one', async () => {
+    await store.open('cse_a');
+    client.failNext = new ApiError({ status: 404, message: 'Injected 404 (HTTP 404)' });
+    await expect(store.send('cse_a', 'first')).rejects.toBeInstanceOf(ApiError);
+    expect(store.banner.value?.kind).toBe('error');
+    await store.send('cse_a', 'second');
+    expect(store.banner.value).toBeNull();
   });
 
   it('environments merges the environments endpoint with session-derived groups', async () => {
