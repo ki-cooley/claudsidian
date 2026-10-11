@@ -248,7 +248,7 @@ CI (GitHub Actions): typecheck, lint, unit, mock-server integration, harness bui
 ## 11. Security and privacy
 
 - Tokens live only in plugin data; never in git, never logged. The debug log redacts bearer tokens and base64 image data.
-- Session content comes from Claude and tool output and is untrusted for rendering: markdown goes through Obsidian's `MarkdownRenderer` (sanitised); tool inputs are rendered as text, never as HTML; links open via Obsidian's handlers.
+- Session content comes from Claude and tool output and is untrusted for rendering: markdown goes through Obsidian's `MarkdownRenderer` (sanitised), and because sanitising is not the same as not loading, the chat then scrubs the rendered nodes (`src/ui/components/common/markdown-sanitize.ts`): iframes, media, vault embeds and non-vault images are removed or replaced by a tap-to-load placeholder, and links with schemes other than http(s) or vault-internal are unwrapped, so nothing in session output fetches a URL without a tap. Tool inputs are rendered as text, never as HTML; links open via Obsidian's handlers.
 - The plugin never auto-approves permission requests; cards require a tap. Sessions created from the plugin default to the permission mode chosen in settings (Ki's default: auto).
 - Network calls go only to `api.anthropic.com`, `platform.claude.com`, and `claude.ai` (sign-in). The base URL is overridable for the mock server only.
 
