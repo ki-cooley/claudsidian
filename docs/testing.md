@@ -55,6 +55,8 @@ Live smoke without re-authorizing: `node scripts/oauth-login.mjs begin` prints t
 
 ## 5. Live smoke
 
+Desktop verified 2026-10-11 (2.0.2) via `node e2e/obsidian/live-smoke.mjs` with a real token from `scripts/oauth-login.mjs`: the plugin lists the real sessions, opens the yes-chef bridge session, sends a message, and the session replies through the plugin ("reached me in the yes-chef vault, and I got the project context"); zero console errors/warnings. Still to confirm on the iPad by Ki: the items below that need touch, camera, and Obsidian Sync.
+
 After Ki's one-time sign-in in desktop Obsidian and with the LaunchAgent running (`docs/host-setup.md`). Run on the iPad where the step allows it.
 
 - [ ] Sessions list loads; the yes-chef sessions appear under "This vault" with status dots.

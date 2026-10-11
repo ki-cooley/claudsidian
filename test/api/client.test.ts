@@ -430,7 +430,8 @@ describe('CcrClient', () => {
   it('lists environments and falls back to an empty list when the endpoint is missing', async () => {
     const ok = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(200, { environments: [{ environment_id: 'env_1', kind: 'bridge', name: 'Mac:yes-chef:1234' }], has_more: false }) }]);
     expect((await client(ok).listEnvironments()).map((e) => e.environment_id)).toEqual(['env_1']);
-    expect(ok.calls[0]!.url).toBe('https://api.test/v1/environments?limit=100&beta=true');
+    expect(ok.calls[0]!.url).toBe('https://api.test/v1/environments?limit=100');
+    expect(ok.calls[0]!.headers!['anthropic-beta']).toBe('environments-2025-11-01');
     const missing = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(404, { type: 'error', error: { type: 'not_found_error', message: 'nope' } }) }]);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(await client(missing).listEnvironments()).toEqual([]);

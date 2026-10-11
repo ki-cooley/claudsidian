@@ -41,4 +41,13 @@ describe('migrateSettings', () => {
     expect(out.cookingMode).toBe(false);
     expect(out.vaultPathOnMac).toBe(DEFAULT_SETTINGS.vaultPathOnMac);
   });
+  it('rewrites the legacy edge-gated token host to the working one', () => {
+    expect(migrateSettings({ version: 2, oauthTokenUrl: 'https://platform.claude.com/v1/oauth/token' }).oauthTokenUrl).toBe(DEFAULT_SETTINGS.oauthTokenUrl);
+    expect(migrateSettings({ version: 2, oauthTokenUrl: 'https://console.anthropic.com/v1/oauth/token' }).oauthTokenUrl).toBe(DEFAULT_SETTINGS.oauthTokenUrl);
+    expect(DEFAULT_SETTINGS.oauthTokenUrl).toBe('https://api.anthropic.com/v1/oauth/token');
+  });
+
+  it('keeps a user-set token host that is not a known legacy default', () => {
+    expect(migrateSettings({ version: 2, oauthTokenUrl: 'https://my-proxy.example/v1/oauth/token' }).oauthTokenUrl).toBe('https://my-proxy.example/v1/oauth/token');
+  });
 });

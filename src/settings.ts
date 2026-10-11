@@ -49,7 +49,7 @@ export interface ClaudsidianSettings {
 export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   version: 2,
   apiBaseUrl: 'https://api.anthropic.com',
-  oauthTokenUrl: 'https://platform.claude.com/v1/oauth/token',
+  oauthTokenUrl: 'https://api.anthropic.com/v1/oauth/token',
   oauthAuthorizeUrl: 'https://claude.ai/oauth/authorize',
   clientPlatform: 'web_claude_ai',
   vaultPathOnMac: '/Users/kicooley-winters/workspace/projects/yes-chef',
@@ -88,6 +88,17 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * and `providers`; none of it carries over, so anything without `version: 2` starts from defaults.
  * Unknown keys are dropped; missing keys get defaults; nested objects are merged one level deep.
  */
+/**
+ * platform.claude.com and console.anthropic.com front the OAuth token endpoint with an edge that
+ * rejects any non-SDK User-Agent with 429, and Obsidian mobile cannot override the User-Agent, so
+ * sign-in and refresh fail on the iPad. api.anthropic.com runs the same exchange without that gate.
+ * Rewrite the old default so existing installs pick up the working host.
+ */
+const LEGACY_TOKEN_URLS = new Set([
+  'https://platform.claude.com/v1/oauth/token',
+  'https://console.anthropic.com/v1/oauth/token',
+]);
+
 export function migrateSettings(raw: unknown): ClaudsidianSettings {
   if (!isObject(raw) || raw.version !== 2) return structuredClone(DEFAULT_SETTINGS);
   const out: ClaudsidianSettings = structuredClone(DEFAULT_SETTINGS);
@@ -105,5 +116,6 @@ export function migrateSettings(raw: unknown): ClaudsidianSettings {
       (out as unknown as Record<string, unknown>)[key] = v;
     }
   }
+  if (LEGACY_TOKEN_URLS.has(out.oauthTokenUrl)) out.oauthTokenUrl = DEFAULT_SETTINGS.oauthTokenUrl;
   return out;
 }

@@ -23,6 +23,8 @@ import { uuidv4 } from '../util/uuid';
 
 export const ANTHROPIC_VERSION = '2023-06-01';
 export const CCR_BETA = 'ccr-byoc-2025-07-29';
+/** The environments endpoint rejects CCR_BETA; it wants its own beta value (docs/protocol.md). */
+export const ENVIRONMENTS_BETA = 'environments-2025-11-01';
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_AFTER_MS = 5000;
 
@@ -40,7 +42,7 @@ export interface CcrClientOptions {
 
 export function buildHeaders(
   token: string,
-  opts: { orgUuid?: string; clientPlatform: string; userAgent: string; beta: boolean },
+  opts: { orgUuid?: string; clientPlatform: string; userAgent: string; beta: boolean; betaValue?: string },
 ): Record<string, string> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -48,7 +50,7 @@ export function buildHeaders(
     'anthropic-client-platform': opts.clientPlatform,
     'User-Agent': opts.userAgent,
   };
-  if (opts.beta) headers['anthropic-beta'] = CCR_BETA;
+  if (opts.beta) headers['anthropic-beta'] = opts.betaValue ?? CCR_BETA;
   if (opts.orgUuid) headers['x-organization-uuid'] = opts.orgUuid;
   return headers;
 }
@@ -59,6 +61,7 @@ interface RequestOptions {
   query?: Record<string, QueryValue>;
   body?: unknown; // JSON-serialised here, so transports always see a string
   beta?: boolean; // default true
+  betaValue?: string; // overrides CCR_BETA when beta is on
   /** Non-2xx statuses that still count as success (409 on archive). */
   okStatuses?: number[];
 }
@@ -186,8 +189,8 @@ export class CcrClient implements CcrApi {
 
   async listEnvironments(): Promise<WireEnvironment[]> {
     try {
-      // beta=true is what the CLI's SDK appends to this call (docs/protocol.md).
-      const res = await this.request('GET', '/v1/environments', { query: { limit: 100, beta: 'true' } });
+      // The environments endpoint needs its own beta value, not CCR_BETA (docs/protocol.md).
+      const res = await this.request('GET', '/v1/environments', { query: { limit: 100 }, betaValue: ENVIRONMENTS_BETA });
       const body = res.json<Partial<WireEnvironmentList>>();
       const list = Array.isArray(body?.environments) ? body.environments : Array.isArray(body?.data) ? body.data : [];
       return list.filter((e) => !!e && typeof e.environment_id === 'string');
@@ -248,6 +251,7 @@ export class CcrClient implements CcrApi {
         clientPlatform: this.opts.clientPlatform(),
         userAgent: this.opts.userAgent,
         beta: opts.beta ?? true,
+        betaValue: opts.betaValue,
       });
       if (body !== undefined) headers['Content-Type'] = 'application/json';
 

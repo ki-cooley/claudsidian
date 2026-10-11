@@ -19,7 +19,7 @@ const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback';
 const SCOPES = ['org:create_api_key', 'user:profile', 'user:inference', 'user:sessions:claude_code'];
 const AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
-const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
+const TOKEN_URL = 'https://api.anthropic.com/v1/oauth/token';
 const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
 // The token endpoint's edge answers 429 to anything but the SDK user agent (docs/protocol.md).
 const USER_AGENT = 'anthropic-sdk-typescript/0.94.0 userOAuthProvider';
@@ -68,13 +68,14 @@ function readEnv() {
   const out = {};
   for (const line of readFileSync(envFile, 'utf8').split('\n')) {
     const m = /^([A-Z_]+)=(.*)$/.exec(line.trim());
-    if (m) out[m[1]] = m[2];
+    if (m) out[m[1]] = m[2].replace(/^"(.*)"$/, '$1');
   }
   return out;
 }
 
 function writeEnv(e) {
-  const lines = Object.entries(e).map(([k, v]) => `${k}=${v}`);
+  // Quoted so the file can be sourced by a shell (scopes contain spaces).
+  const lines = Object.entries(e).map(([k, v]) => `${k}="${String(v).replace(/"/g, '')}"`);
   writePrivate(envFile, lines.join('\n') + '\n');
 }
 

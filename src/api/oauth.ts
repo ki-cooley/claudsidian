@@ -12,7 +12,8 @@ export const OAUTH_BETA = 'oauth-2025-04-20';
 /**
  * Cloudflare in front of the token endpoint answers 429 "Rate limited" (no request id, never
  * reaches the app) to browser-shaped and generic user agents; the SDK user agent Claude Code
- * sends gets through. Verified 2026-10-11 against platform.claude.com.
+ * sends gets through. The plugin points the exchange at api.anthropic.com, which has no such gate
+ * (so it works on mobile where the User-Agent cannot be set); the SDK User-Agent is sent anyway.
  */
 export const OAUTH_USER_AGENT = 'anthropic-sdk-typescript/0.94.0 userOAuthProvider';
 
