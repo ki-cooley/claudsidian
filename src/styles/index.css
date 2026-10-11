@@ -1,2 +1,9 @@
-/* Claudsidian styles. Each feature keeps its own file; this is the bundle entry. */
+/* Claudsidian styles. Each feature keeps its own file; this is the bundle entry. Order matters: base sets the
+   tokens, the feature files consume them, and the mode files (mobile, cooking) override the tokens last. */
 @import './base.css';
+@import './sessions.css';
+@import './chat.css';
+@import './composer.css';
+@import './cards.css';
+@import './mobile.css';
+@import './cooking.css';

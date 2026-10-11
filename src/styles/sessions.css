@@ -1,0 +1,502 @@
+/* Sessions screen: toolbar, grouped rows, status dots, the contained bottom sheet, the new session form.
+   Obsidian variables only; the pulsing dot is the single piece of motion. Scale and tap targets follow
+   .is-mobile / .is-cooking set on the view container by the shell. */
+
+.claudsidian-sessions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+}
+
+.claudsidian-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Toolbar ---------------------------------------------------------------- */
+
+.claudsidian-sessions-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.claudsidian-sessions-heading {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.claudsidian-show-archived {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 6px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.claudsidian-show-archived input {
+  margin: 0;
+}
+
+/* Buttons (private primitives; same classes as the shared set) ----------- */
+
+.claudsidian-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: var(--font-ui-small);
+  line-height: 1;
+  white-space: nowrap;
+}
+.claudsidian-btn.is-icon-only {
+  width: 32px;
+  padding: 0;
+}
+.claudsidian-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-s, 16px);
+  height: var(--icon-s, 16px);
+  color: inherit;
+}
+.claudsidian-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.claudsidian-sessions-refresh.is-loading .claudsidian-icon {
+  animation: claudsidian-spin 1.2s linear infinite;
+}
+
+/* Banner ------------------------------------------------------------------ */
+
+.claudsidian-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 10px 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  border-left: 3px solid var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.claudsidian-banner-text {
+  flex: 1;
+}
+.claudsidian-banner.is-offline {
+  border-left-color: var(--text-faint);
+}
+.claudsidian-banner.is-error {
+  border-left-color: var(--color-red);
+}
+.claudsidian-banner.is-auth {
+  border-left-color: var(--color-orange);
+}
+.claudsidian-banner.is-info {
+  border-left-color: var(--interactive-accent);
+}
+
+/* List ----------------------------------------------------------------------- */
+
+.claudsidian-sessions-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 24px;
+}
+.claudsidian-session-group {
+  padding: 8px 0 4px;
+}
+.claudsidian-session-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 14px 4px;
+}
+.claudsidian-session-group-title {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.claudsidian-session-group-count {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.claudsidian-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.claudsidian-session-row {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-m);
+  margin: 0 6px;
+}
+.claudsidian-session-row:hover {
+  background: var(--background-modifier-hover);
+}
+.claudsidian-session-main {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 4px 8px 8px;
+  text-align: left;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.claudsidian-session-main:focus-visible,
+.claudsidian-session-more:focus-visible,
+.claudsidian-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.claudsidian-session-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.claudsidian-session-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.claudsidian-session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+.claudsidian-session-row.is-unread .claudsidian-session-title {
+  font-weight: 600;
+}
+.claudsidian-session-time {
+  flex: none;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.claudsidian-session-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+.claudsidian-session-needs {
+  flex: none;
+  color: var(--color-orange);
+  font-weight: 600;
+}
+.claudsidian-session-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claudsidian-session-row.is-needs_you .claudsidian-session-summary {
+  color: var(--text-normal);
+}
+.claudsidian-session-row.is-offline .claudsidian-session-title,
+.claudsidian-session-row.is-offline .claudsidian-session-sub {
+  color: var(--text-muted);
+}
+.claudsidian-session-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 44px;
+  margin-right: 2px;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.claudsidian-session-more:hover {
+  color: var(--text-normal);
+}
+
+/* Status dot ------------------------------------------------------------------ */
+
+.claudsidian-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* sits on the first text line */
+  padding-top: calc((1.4em - 10px) / 2);
+}
+.claudsidian-status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.claudsidian-status.is-working .claudsidian-status-dot {
+  background: var(--interactive-accent);
+  animation: claudsidian-pulse 1.8s ease-in-out infinite;
+}
+.claudsidian-status.is-needs_you .claudsidian-status-dot {
+  background: var(--color-orange);
+  box-shadow: 0 0 0 3px var(--background-modifier-border);
+}
+.claudsidian-status.is-idle .claudsidian-status-dot {
+  background: var(--text-faint);
+}
+.claudsidian-status.is-offline .claudsidian-status-dot {
+  background: transparent;
+  border: 1.5px solid var(--text-faint);
+}
+.claudsidian-status-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+@keyframes claudsidian-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+@keyframes claudsidian-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Spinner and empty state ------------------------------------------------------- */
+
+.claudsidian-spinner {
+  width: 22px;
+  height: 22px;
+  margin: 40px auto;
+  border-radius: 50%;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--interactive-accent);
+  animation: claudsidian-spin 0.9s linear infinite;
+}
+.claudsidian-empty-state,
+.claudsidian-signed-out {
+  max-width: 36em;
+  margin: 40px auto;
+  padding: 0 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.claudsidian-empty-title,
+.claudsidian-signed-out-title {
+  margin: 0 0 6px;
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.claudsidian-empty-text,
+.claudsidian-signed-out-text {
+  margin: 0 0 16px;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+.claudsidian-empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.claudsidian-signed-out {
+  margin-top: 56px;
+}
+
+/* Sheet (contained in the view) ---------------------------------------------- */
+
+.claudsidian-sheet-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.claudsidian-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--background-modifier-cover);
+}
+.claudsidian-sheet {
+  position: relative;
+  max-height: 85%;
+  overflow-y: auto;
+  padding: 10px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--radius-l, 12px) var(--radius-l, 12px) 0 0;
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  box-shadow: 0 -8px 24px var(--background-modifier-box-shadow);
+}
+.claudsidian-sheet-title {
+  padding: 4px 0 10px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claudsidian-session-actions .claudsidian-btn {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 44px;
+  margin-bottom: 6px;
+  font-size: var(--font-ui-medium);
+}
+
+/* New session form ---------------------------------------------------------------- */
+
+.claudsidian-new-session-form,
+.claudsidian-new-session-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.claudsidian-new-session-empty p {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.claudsidian-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.claudsidian-field-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.claudsidian-field input,
+.claudsidian-field select,
+.claudsidian-field textarea {
+  width: 100%;
+  min-height: 36px;
+  font-size: var(--font-ui-medium);
+}
+.claudsidian-field textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+.claudsidian-field-row {
+  display: flex;
+  gap: 10px;
+}
+.claudsidian-new-session-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.claudsidian-new-session-error {
+  margin: 0;
+  font-size: var(--font-ui-small);
+  color: var(--color-red);
+}
+
+/* Mobile and cooking mode ------------------------------------------------------- */
+
+.is-mobile .claudsidian-sessions-toolbar {
+  padding: 10px 12px 10px 16px;
+}
+.is-mobile .claudsidian-btn,
+.is-mobile .claudsidian-show-archived {
+  min-height: 44px;
+}
+.is-mobile .claudsidian-btn.is-icon-only {
+  width: 44px;
+}
+.is-mobile .claudsidian-session-main {
+  min-height: 52px;
+  padding: 10px 4px 10px 10px;
+}
+.is-mobile .claudsidian-session-more {
+  width: 48px;
+}
+.is-mobile .claudsidian-field input,
+.is-mobile .claudsidian-field select,
+.is-mobile .claudsidian-field textarea {
+  min-height: 44px;
+}
+.is-phone .claudsidian-field-row {
+  flex-direction: column;
+}
+
+.is-cooking .claudsidian-sessions {
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1.2));
+}
+.is-cooking .claudsidian-btn,
+.is-cooking .claudsidian-session-actions .claudsidian-btn {
+  min-height: 48px;
+}
+.is-cooking .claudsidian-btn.is-icon-only {
+  width: 48px;
+}
+.is-cooking .claudsidian-session-main {
+  min-height: 56px;
+}
+.is-cooking .claudsidian-session-more {
+  width: 52px;
+  min-height: 56px;
+}
+.is-cooking .claudsidian-session-sub {
+  font-size: var(--font-ui-medium);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudsidian-status.is-working .claudsidian-status-dot,
+  .claudsidian-sessions-refresh.is-loading .claudsidian-icon {
+    animation: none;
+  }
+  .claudsidian-status.is-working .claudsidian-status-dot {
+    box-shadow: 0 0 0 3px var(--background-modifier-border);
+  }
+}

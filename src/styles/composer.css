@@ -1,0 +1,156 @@
+/*
+ * The composer: textarea row with its tools and send/stop, attachment thumbnails, and the
+ * suggestion popup for @notes and /commands floating above it.
+ */
+
+.claudsidian-composer {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.claudsidian-chat.is-cooking .claudsidian-composer + .claudsidian-quick {
+  padding-top: 0;
+}
+.claudsidian-chat.is-cooking .claudsidian-composer {
+  padding-bottom: 8px;
+}
+
+.claudsidian-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.claudsidian-composer-tools,
+.claudsidian-composer-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.claudsidian-composer-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 36px;
+  max-height: 40vh;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  resize: none;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
+  line-height: 1.4;
+}
+.claudsidian-chat.is-mobile .claudsidian-composer-input {
+  min-height: 44px;
+}
+.claudsidian-chat.is-cooking .claudsidian-composer-input {
+  min-height: calc(2 * 1.4em + 18px);
+  padding: 9px 12px;
+}
+
+.claudsidian-composer-send.claudsidian-btn {
+  min-width: 36px;
+  min-height: 36px;
+}
+.claudsidian-composer-stop.claudsidian-btn {
+  min-width: 36px;
+  min-height: 36px;
+}
+.claudsidian-chat.is-mobile .claudsidian-composer-send.claudsidian-btn,
+.claudsidian-chat.is-mobile .claudsidian-composer-stop.claudsidian-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+.claudsidian-chat.is-cooking .claudsidian-composer-send.claudsidian-btn,
+.claudsidian-chat.is-cooking .claudsidian-composer-stop.claudsidian-btn {
+  min-width: 56px;
+  min-height: 48px;
+}
+
+/* attachments */
+.claudsidian-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.claudsidian-attachment {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+.claudsidian-attachment img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.claudsidian-attachment-remove.claudsidian-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+/* suggestion popup */
+.claudsidian-suggest {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 100%;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 40vh;
+  margin-bottom: 4px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+}
+.claudsidian-suggest-item {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.claudsidian-suggest-item:hover,
+.claudsidian-suggest-item.is-selected {
+  background: var(--background-modifier-hover);
+}
+.claudsidian-suggest-empty {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+}
+.claudsidian-chat.is-mobile .claudsidian-suggest-item {
+  min-height: 44px;
+}

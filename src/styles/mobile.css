@@ -1,0 +1,39 @@
+/* Claudsidian mobile (.is-mobile, .is-phone on the view): 44 px targets, roomier padding, the composer pinned
+   above the home indicator, and row actions in place of hover-only ones. Class hooks (.claudsidian-composer,
+   .claudsidian-hover-actions, .claudsidian-row-actions) are the names the chat screen is expected to use. */
+
+.claudsidian-view.is-mobile {
+  --claudsidian-tap: 44px;
+  --claudsidian-gap: 10px;
+  --claudsidian-pad: 14px;
+}
+
+.claudsidian-view.is-phone {
+  --claudsidian-pad: 12px;
+}
+
+.claudsidian-view.is-mobile :where(.claudsidian-composer) {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-bottom: calc(var(--claudsidian-pad) + env(safe-area-inset-bottom, 0px));
+  background: var(--background-primary);
+}
+
+.claudsidian-view.is-mobile :where(.claudsidian-hover-actions) {
+  display: none;
+}
+
+.claudsidian-view.is-mobile :where(.claudsidian-row-actions) {
+  display: flex;
+  gap: var(--claudsidian-gap);
+}
+
+.claudsidian-view.is-mobile :where(input, textarea, select) {
+  /* iOS zooms into fields smaller than 16px */
+  font-size: max(16px, var(--claudsidian-font));
+}
+
+.claudsidian-view.is-mobile :where(textarea) {
+  -webkit-overflow-scrolling: touch;
+}

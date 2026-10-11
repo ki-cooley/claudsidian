@@ -1,1 +1,178 @@
-.claudsidian-view { display: flex; flex-direction: column; height: 100%; }
+/* Claudsidian base: the view column, the spacing and type tokens every screen consumes, modals, the ribbon
+   dot, and notice actions. Colours come only from Obsidian's theme variables so themes and dark mode just work.
+   Element-level defaults use :where() so a feature file's single class always wins. */
+
+.claudsidian-view {
+  /* tokens: cooking mode and mobile override these, feature files consume them */
+  --claudsidian-scale: 1;
+  --claudsidian-tap: 32px;
+  --claudsidian-gap: 8px;
+  --claudsidian-pad: 12px;
+  --claudsidian-radius: var(--radius-m);
+  --claudsidian-measure: 72ch;
+  --claudsidian-font: calc(var(--font-ui-medium) * var(--claudsidian-scale));
+  --claudsidian-font-small: calc(var(--font-ui-small) * var(--claudsidian-scale));
+  --claudsidian-hairline: 1px solid var(--background-modifier-border);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  font-size: var(--claudsidian-font);
+  line-height: 1.45;
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.claudsidian-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* element defaults inside the view */
+.claudsidian-view :where(button) {
+  min-height: var(--claudsidian-tap);
+  font-size: inherit;
+}
+
+.claudsidian-view :where(input, textarea, select) {
+  font-size: inherit;
+}
+
+.claudsidian-view :where(textarea) {
+  line-height: inherit;
+}
+
+.claudsidian-view :where(pre, code) {
+  font-size: calc(var(--font-smaller) * var(--claudsidian-scale));
+}
+
+.claudsidian-view :where(.claudsidian-muted) {
+  color: var(--text-muted);
+  font-size: var(--claudsidian-font-small);
+}
+
+.claudsidian-view :where(.claudsidian-empty) {
+  padding: calc(var(--claudsidian-pad) * 2) var(--claudsidian-pad);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* modals: rename, confirm, quick ask, sign in */
+.claudsidian-modal .claudsidian-modal-input,
+.claudsidian-modal .claudsidian-modal-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: var(--font-ui-medium);
+}
+
+.claudsidian-modal .claudsidian-modal-textarea {
+  min-height: 4.5em;
+  resize: vertical;
+}
+
+.claudsidian-modal .claudsidian-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.claudsidian-modal .claudsidian-modal-actions button {
+  min-height: 36px;
+}
+
+body.is-mobile .claudsidian-modal .claudsidian-modal-actions button {
+  flex: 1 1 auto;
+  min-height: 44px;
+}
+
+.claudsidian-confirm-text {
+  margin: 0;
+}
+
+.claudsidian-quick-ask-target {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudsidian-quick-ask-selection {
+  max-height: 9em;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-ui-small);
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+}
+
+.claudsidian-sign-in-step {
+  margin-top: 16px;
+}
+
+.claudsidian-sign-in-label {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.claudsidian-sign-in input[type='text'] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.claudsidian-sign-in-url {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.claudsidian-sign-in-url input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-ui-small);
+}
+
+.claudsidian-sign-in-error {
+  margin-top: 8px;
+  color: var(--color-red);
+  font-size: var(--font-ui-small);
+}
+
+/* ribbon: a dot while a session needs input and the view is not showing it */
+.side-dock-ribbon-action.claudsidian-ribbon {
+  position: relative;
+}
+
+.claudsidian-ribbon-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-orange);
+  pointer-events: none;
+}
+
+/* the "Insert at cursor" button inside a notice */
+.claudsidian-notice-action {
+  margin-left: 10px;
+  min-height: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudsidian-view *,
+  .claudsidian-view *::before,
+  .claudsidian-view *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

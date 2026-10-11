@@ -42,6 +42,8 @@ export interface ClaudsidianSettings {
   auth: AuthState | null;
   /** last opened session id, restored on view open */
   lastSessionId: string;
+  /** per-install uuid sent with presence; generated on first load */
+  clientId: string;
 }
 
 export const DEFAULT_SETTINGS: ClaudsidianSettings = {
@@ -74,6 +76,7 @@ export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   debugLog: false,
   auth: null,
   lastSessionId: '',
+  clientId: '',
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {

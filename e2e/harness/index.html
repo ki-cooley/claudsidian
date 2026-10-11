@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claudsidian harness</title>
+<link rel="stylesheet" href="./main.css">
+</head>
+<body class="app-container">
+  <div id="harness-error" role="alert"></div>
+  <nav id="harness-tabs" aria-label="Panes">
+    <button type="button" data-pane="note" role="tab">Note</button>
+    <button type="button" data-pane="claude" role="tab">Claude</button>
+    <span class="harness-tabs-spacer"></span>
+    <button type="button" id="harness-open-settings">Settings</button>
+  </nav>
+  <div id="workspace" class="workspace">
+    <div id="ribbon" class="workspace-ribbon side-dock-ribbon mod-left"></div>
+    <div id="editor" class="workspace-split mod-root harness-editor-pane"></div>
+    <div id="sidebar" class="workspace-split mod-right-split"></div>
+  </div>
+  <div id="statusbar" class="status-bar"></div>
+  <div id="notices" class="notice-container"></div>
+  <div id="settings" class="harness-settings"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
