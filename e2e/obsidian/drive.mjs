@@ -13,6 +13,13 @@ const outDir = path.resolve('e2e/out/obsidian');
 mkdirSync(outDir, { recursive: true });
 
 const log = (...a) => console.log('[drive]', ...a);
+// Reset the mock server so titles and histories are the seeded ones regardless of earlier runs.
+try {
+  const r = await fetch(`${api}/__mock/reset`, { method: 'POST' });
+  log('mock reset:', r.status);
+} catch (err) {
+  log('mock reset failed (is the mock server running on', api, '?):', String(err));
+}
 const browser = await chromium.connectOverCDP(endpoint);
 const context = browser.contexts()[0];
 const page = context.pages().find((p) => p.url().startsWith('app://obsidian.md'));
@@ -105,7 +112,9 @@ const iconStats = await ev(() => {
 log('icons', JSON.stringify(iconStats));
 await shot('01-desktop-sessions');
 
-// Open the vault session, send a message, wait for the echo.
+// Open the vault session, send a message, wait for the echo. Return to the list first in case the view restored a session.
+await ev(() => window.app.plugins.plugins['claudsidian'].store.close());
+await ev(() => window.app.plugins.plugins['claudsidian'].store.refreshSessions());
 await waitFor(() => document.body.innerText.includes('L10 menu questions'), 'session list');
 await dismissModals();
 await page.getByText('L10 menu questions', { exact: false }).first().click();
