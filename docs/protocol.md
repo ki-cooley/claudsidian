@@ -1,0 +1,80 @@
+# Remote Control controller protocol, as the plugin uses it
+
+Companion to the vendored reference (`docs/reference/claude-rc-api-reference.md`). This file records only what Claudsidian relies on, plus what was verified and when. Update the "verified" notes whenever a live check changes them.
+
+## Base and headers
+
+Base URL: `https://api.anthropic.com` (settings `apiBaseUrl`; the mock server overrides it).
+
+Every request:
+
+| Header | Value |
+|---|---|
+| `Authorization` | `Bearer <access token>` |
+| `anthropic-version` | `2023-06-01` |
+| `anthropic-beta` | `ccr-byoc-2025-07-29` (feature-detect: if the bare `GET /v1/code/sessions` rejects it with 400, retry once without and remember) |
+| `anthropic-client-platform` | `web_claude_ai` (settings `clientPlatform`; the worker treats a message as a human controller message only for `ios`, `android`, `web_claude_ai`, `desktop_app`) |
+| `x-organization-uuid` | the signed-in organization |
+| `Content-Type` | `application/json` on bodies |
+| `User-Agent` | `claudsidian/<version>` |
+
+Verified 2026-10-10: `OPTIONS` on the sessions path returns 405 with no CORS headers, so browsers cannot call this API cross-origin. The plugin uses Obsidian's `requestUrl`.
+
+## Endpoints
+
+| Purpose | Request | Notes |
+|---|---|---|
+| List sessions | `GET /v1/code/sessions` | `{data: WireSession[], next_cursor?, resume_token?}`; follow `next_cursor` with `?cursor=` until null |
+| Get session | `GET /v1/code/sessions/{id}` | `WireSession` |
+| Rename | `PUT /v1/code/sessions/{id}` body `{title}` | |
+| Archive | `POST /v1/code/sessions/{id}/archive` body `{}` | 200 or 409 both mean archived |
+| Mark read | `POST /v1/code/sessions/{id}/mark_read` body `{}` or `{sequence_num}` | |
+| Presence | `POST /v1/code/sessions/{id}/client/presence` body `{client_id, connected_at}` / `{client_id, clear: true}` | `client_id` is a per-install uuid |
+| Send | `POST /v1/code/sessions/{id}/events` body `{session_id, events: [{payload}]}` | each payload has a `uuid`; 200 means queued, not applied |
+| History | `GET /v1/code/sessions/{id}/events?limit=200&sort_order=asc&from_sequence_num=N` | `{data: [{sequence_num, payload}]}`; `sequence_num` may be a string; if the server ignores `from_sequence_num`, fall back to `sort_order=desc&limit=50` and merge by sequence |
+| Create | `POST /v1/code/sessions` body `{environment_id, title?, session_context?: {model?, permission_mode?}, events?: [{payload}]}` | verified: a session created this way in a bridge environment started on the Mac and ran (2026-10-10, via the claude-code-remote MCP). The exact accepted body is confirmed in the first live smoke; on 400 show the server's message |
+
+## Events sent
+
+```json
+{"type":"user","uuid":"<v4>","message":{"role":"user","content":[{"type":"text","text":"..."}]},"parent_tool_use_id":null}
+{"type":"control_request","uuid":"<v4>","request_id":"<v4>","request":{"subtype":"interrupt"}}
+{"type":"control_request","uuid":"<v4>","request_id":"<v4>","request":{"subtype":"set_model","model":"claude-opus-5-5"}}
+{"type":"control_request","uuid":"<v4>","request_id":"<v4>","request":{"subtype":"set_permission_mode","mode":"acceptEdits"}}
+{"type":"control_response","uuid":"<v4>","response":{"subtype":"success","request_id":"<their request_id>","response":{"behavior":"allow","updatedInput":{...}}}}
+{"type":"control_response","uuid":"<v4>","response":{"subtype":"success","request_id":"<their request_id>","response":{"behavior":"deny","message":"..."}}}
+```
+
+Images go in the user message as `{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"..."}}` blocks. Slash commands (`/model x`, `/effort x`, `/compact`, `/clear`, `/context`, `/usage`, `/rename x`, `/recap`) are plain user text and run locally on the host.
+
+## Events received
+
+`payload.type` and what the reducer does with it:
+
+- `system/init`: records `cwd`, `model`, `permissionMode`, `effort`, `slash_commands`, `tools`.
+- `system/*` other subtypes: muted system line (`compact_boundary`, `permission_denied`, `api_retry`) or ignored (`task_*`, `status`, hook events).
+- `user`: our own echo (match by `uuid` to clear in-flight), another device's message (render as user), or tool results (`content[].type == "tool_result"`, attach to the tool item by `tool_use_id`; never render as a bubble).
+- `assistant`: content blocks become items: `text` -> assistant_text, `thinking` -> thinking, `tool_use` -> tool (status running). Same `message.id` as earlier partials replaces them. Non-null `parent_tool_use_id` nests under that tool item.
+- `stream_event`: `message_start` opens a message id; `content_block_start` + `content_block_delta` build partial text, thinking, or tool input; `content_block_stop` and `message_stop` close them.
+- `result`: closes the turn (`idle`), appends a result item; `is_error` or an `error_*` subtype marks it as an error.
+- `control_request` with `request.subtype == "can_use_tool"`: a permission item, or a question item when `tool_name == "AskUserQuestion"`; turn becomes `needs_input` until a `control_response` with the same `request_id` arrives (ours or the worker's).
+- `control_response`: resolves pending items; `subtype == "error"` on one of our control requests surfaces as an error item with the server's text.
+- anything else: ignored, but counted in the debug log.
+
+A turn is "working" from the first `assistant`/`stream_event` after our send (or from the send itself) until `result`. The `worker_status` on the session object (`running`, `requires_action`, `idle`) is the list view's source of truth between polls.
+
+## Auth
+
+Claude Code's public OAuth client: `9d1c250a-e61b-44d9-88ed-5944d1962f5e`. PKCE S256, manual-code flow:
+
+1. Authorize URL (settings `oauthAuthorizeUrl`, default `https://claude.ai/oauth/authorize`) with `code=true`, `client_id`, `response_type=code`, `redirect_uri=https://platform.claude.com/oauth/code/callback`, `scope=org:create_api_key user:profile user:inference user:sessions:claude_code`, `code_challenge`, `code_challenge_method=S256`, `state`.
+2. The page shows `code#state` to paste. Accept `code`, `code#state`, or a pasted callback URL with `?code=&state=`.
+3. Exchange at `https://platform.claude.com/v1/oauth/token` with header `anthropic-beta: oauth-2025-04-20` and JSON `{grant_type:"authorization_code", code, state, code_verifier, client_id, redirect_uri}`.
+4. Refresh with `{grant_type:"refresh_token", refresh_token, client_id}` at the same endpoint.
+5. Organization uuid: from the token response when present (`organization.uuid` or `org_uuid`), else `GET https://api.anthropic.com/api/oauth/profile` with the bearer token (`organization.uuid`), else the settings field.
+
+Items 1 and 5 carry the most uncertainty: the first live sign-in must confirm the authorize parameters and the profile endpoint, and the sign-in modal must show the server's error text verbatim when the exchange fails.
+
+## Errors
+
+Standard envelope `{"type":"error","error":{"type","message"},"request_id"}`. The client raises `ApiError` with `status`, `errorType`, `requestId`, `retryAfterMs`. Policy: 401 -> refresh once and retry; 429 -> wait `retry-after` (default 5 s) and retry once; 5xx and network -> retry up to 3 times with 1 s, 2 s, 4 s; 403 -> surface verbatim (trusted devices, org policy); 404 on a session -> treat as archived or gone.
