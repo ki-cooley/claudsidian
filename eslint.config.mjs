@@ -12,7 +12,10 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts', 'test/**/*.tsx'],
-    rules: { 'no-restricted-imports': 'off' },
+    files: ['test/**/*.ts', 'test/**/*.tsx', 'e2e/**/*.ts', 'e2e/**/*.tsx'],
+    rules: {
+      'no-restricted-imports': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
   },
 );

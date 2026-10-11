@@ -89,7 +89,9 @@ function finish(sessionId, text, extra = {}) {
 }
 
 function defaultScenario(sessionId, text) {
-  const reply = `Echo: ${text}`;
+  // Echo only the user's own words; the appended [Obsidian context] block is for the host, not the reply.
+  const spoken = text.split('\n\n[Obsidian context]')[0];
+  const reply = `Echo: ${spoken}`;
   const third = Math.max(1, Math.ceil(reply.length / 3));
   const parts = [reply.slice(0, third), reply.slice(third, third * 2), reply.slice(third * 2)];
   const msgId = `msg_${randomUUID().slice(0, 12)}`;
