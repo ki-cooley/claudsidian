@@ -1,6 +1,6 @@
 # Testing
 
-Five layers, cheapest first. CI runs the first two plus the harness build; the rest are local.
+Five layers, cheapest first. CI runs layers 1 and 2 (unit and mock-server integration) and the production build; layers 3 to 5 are local.
 
 ## 1. Unit (vitest, jsdom)
 
@@ -19,7 +19,7 @@ npm run mock-ccr              # node test/mock-ccr/server.mjs, prints its port
 npx vitest run test/integration
 ```
 
-A dependency-free Node server implementing the endpoints in `docs/protocol.md` plus the OAuth token endpoint, with scripted scenarios: plain reply, tool calls with results, streaming deltas, permission prompt, AskUserQuestion, error result, slow network, 429, token expiry. See `test/mock-ccr/README.md` for the scenario names and how to pick one. The integration tests start it themselves on a free port.
+A dependency-free Node server implementing the endpoints in `docs/protocol.md` plus the OAuth token endpoint, with scripted scenarios: plain reply, tool calls with results, streaming deltas, permission prompt, AskUserQuestion, error result, slow network, 429, token expiry. See `test/mock-ccr/README.md` for the scenario names and how to pick one. The integration tests start it themselves on a free port. Inside a Claude Code sandbox, binding a port fails with `listen EPERM`; run `npx vitest run test/integration` with the sandbox off (or with `sandbox.network.allowLocalBinding` enabled).
 
 ## 3. Browser e2e harness
 
@@ -37,8 +37,8 @@ Loads the plugin bundle in a page whose `obsidian` module is a shim (App, Vault,
 Never drive Ki's running Obsidian. Start a second instance on a throwaway profile and vault:
 
 ```
-PROFILE=$TMPDIR/obsidian-profile
-VAULT=$TMPDIR/claudsidian-test-vault
+PROFILE=/Users/kicooley-winters/workspace/scratch/obsidian-profile
+VAULT=/Users/kicooley-winters/workspace/scratch/claudsidian-test-vault   # seeded with three notes and the plugin enabled
 mkdir -p "$PROFILE" "$VAULT/.obsidian/plugins/claudsidian"
 cp main.js manifest.json styles.css "$VAULT/.obsidian/plugins/claudsidian/"
 /Applications/Obsidian.app/Contents/MacOS/Obsidian \

@@ -40,7 +40,7 @@ The plugin is a remote control. The work happens on the Mac, where `claude remot
 - checks `claude auth status --json` for `"loggedIn": true` and, when that fails, prints the three preconditions above and exits 1 (launchd retries every 15 s, so the log shows the reason rather than a silent crash loop);
 - `exec claude remote-control --name "${RC_NAME:-yes-chef}" --permission-mode "${RC_PERMISSION_MODE:-auto}" --capacity "${RC_CAPACITY:-8}"`.
 
-The flags `--name <name>`, `--permission-mode <mode>`, and `--capacity <n>` were confirmed against the Claude Code 2.1.296 binary (its `remote-control` help text). Re-check with `claude remote-control --help` on a logged-in shell after upgrades; if a flag is rejected, remove it from the script and note it here.
+The flags `--name <name>`, `--permission-mode <mode>` (acceptEdits, auto, bypassPermissions, default, dontAsk, plan), and `--capacity <n>` were confirmed by running `claude remote-control --help` on this Mac with Claude Code 2.1.296 (2026-10-10), and a 75-second run in the vault registered the environment and printed `Ready · yes-chef · main`. Re-check after upgrades; if a flag is rejected, remove it from the script and note it here. The script also clears `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `GRPC_PROXY`, and `GIT_CONFIG_PARAMETERS`: a `claude` child started from inside a Claude Code session inherits that session's sandbox proxy and hangs on its eligibility checks.
 
 LaunchAgent settings: `RunAtLoad`, `KeepAlive`, `ThrottleInterval 15`, `WorkingDirectory` = vault, `PATH=/Users/kicooley-winters/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`, `HOME` and `VAULT` set. stdout and stderr both go to `~/Library/Logs/claudsidian-rc.log`.
 
@@ -48,7 +48,7 @@ LaunchAgent settings: `RunAtLoad`, `KeepAlive`, `ThrottleInterval 15`, `WorkingD
 
 - `launchctl print gui/$(id -u)/com.kicooley.claudsidian-rc | head -20` shows `state = running`.
 - `tail -f ~/Library/Logs/claudsidian-rc.log` shows the start line and no precondition message.
-- claude.ai/code lists the Mac as an environment named `yes-chef`; the plugin's "New session" sheet offers it as the default environment once one session has run there.
+- claude.ai/code lists the Mac as an environment named `<machine>:yes-chef:<hex>`; the server also prints a deep link of the form `https://claude.ai/code?environment=<environment_id>`. The plugin's "New session" sheet lists it from the environments endpoint (with an offline marker when the server is down) and falls back to environments seen on existing sessions.
 
 ## Operate
 
@@ -62,7 +62,7 @@ LaunchAgent settings: `RunAtLoad`, `KeepAlive`, `ThrottleInterval 15`, `WorkingD
 
 ## How sessions get created
 
-The plugin creates a session with `POST /v1/code/sessions` against the environment the server registered (`environment_id` taken from existing sessions in the vault, or the default in settings). The server picks it up, starts a `claude` process with `cwd` = vault, and the plugin polls its events. Nothing else needs to run on the Mac. Up to `--capacity` sessions run concurrently; the server stays up between sessions.
+The plugin creates a session with `POST /v1/code/sessions` against the environment the server registered (the body carries `environment_id`, a `config` with the model, no events, and tags), then sends the permission mode and the first message as events and sets the title with a rename, the same sequence claude.ai/code uses. The server picks the session up, starts a `claude` process with `cwd` = vault, and the plugin polls its events. Nothing else needs to run on the Mac. Up to `--capacity` sessions run concurrently; the server stays up between sessions. Each new session loads this machine's full Claude Code context (plugins, MCP servers, skills), which cost about 79K cached input tokens per session during testing.
 
 ## Caveats
 
