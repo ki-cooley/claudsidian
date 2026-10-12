@@ -298,9 +298,12 @@ export class CcrClient implements CcrApi {
 }
 
 /** Create and rename responses wrap the session in {session}; list and get return it bare. */
+/** Create/rename answer `{session}`; GET answers `{response_shape}` (seen live 2026-10-11); some answer bare. */
 function unwrapSession(body: Record<string, unknown>): WireSession {
-  const inner = body.session;
-  if (inner && typeof inner === 'object' && typeof (inner as WireSession).id === 'string') return inner as WireSession;
+  for (const key of ['session', 'response_shape']) {
+    const inner = body[key];
+    if (inner && typeof inner === 'object' && typeof (inner as WireSession).id === 'string') return inner as WireSession;
+  }
   return body as unknown as WireSession;
 }
 

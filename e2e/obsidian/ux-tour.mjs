@@ -1,0 +1,416 @@
+// UX tour: drives the second Obsidian instance (CDP 9333) through the plugin's real states against the
+// live API and captures screenshots plus DOM metrics for review. Writes e2e/out/ux/round<N>/<profile>/*.png
+// and index.json. Needs the scratch vault seeded with a token (scripts/oauth-login.mjs + seed) and the
+// LaunchAgent host running. Usage:
+//   node e2e/obsidian/ux-tour.mjs --round 1 [--profiles desktop300,desktop420,ipad-portrait,ipad-landscape,iphone]
+//                                 [--no-send] [--session "yes-chef"] [--long "Make gen-prep seed mechanically from dish and component files"]
+import { chromium } from 'playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith('--') ? [a.slice(2), all[i + 1] ?? true] : [])).filter((x) => x.length));
+const round = String(args.round ?? '1');
+const profiles = String(args.profiles ?? 'desktop300,desktop420,ipad-portrait,ipad-landscape,iphone').split(',');
+const send = !('no-send' in args);
+const vaultSession = args.session ?? 'yes-chef';
+const longSession = args.long ?? 'Make gen-prep seed mechanically from dish and component files';
+const contextNote = args.note ?? 'menus/latitude 10/tasks.md';
+const outRoot = path.resolve(`e2e/out/ux/round${round}`);
+mkdirSync(outRoot, { recursive: true });
+const log = (...a) => console.log('[tour]', ...a);
+
+const PROFILES = {
+  desktop300: { mobile: false, sidebar: 300 },
+  desktop420: { mobile: false, sidebar: 420 },
+  'ipad-portrait': { mobile: true, width: 1024, height: 1366 },
+  'ipad-landscape': { mobile: true, width: 1366, height: 1024 },
+  iphone: { mobile: true, width: 390, height: 844 },
+};
+
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9333');
+const context = browser.contexts()[0];
+const page = context.pages().find((p) => p.url().startsWith('app://obsidian.md'));
+if (!page) throw new Error('no Obsidian page over CDP');
+const cdp = await context.newCDPSession(page);
+const consoleLog = [];
+page.on('console', (m) => {
+  if (m.type() === 'error' || m.type() === 'warning') consoleLog.push(`${m.type()}: ${m.text().slice(0, 240)}`);
+});
+page.on('pageerror', (e) => consoleLog.push(`pageerror: ${String(e).slice(0, 240)}`));
+
+const index = [];
+let profileName = 'none';
+let shotNo = 0;
+const ev = (fn, ...a) => page.evaluate(fn, ...a);
+const sleep = (ms) => page.waitForTimeout(ms);
+
+async function waitFor(fn, label, ms = 20000, arg) {
+  const start = Date.now();
+  for (;;) {
+    let v = null;
+    try {
+      v = await page.evaluate(fn, arg);
+    } catch {
+      v = null;
+    }
+    if (v) return v;
+    if (Date.now() - start > ms) throw new Error(`timeout: ${label}`);
+    await sleep(250);
+  }
+}
+
+async function metrics() {
+  return ev(() => {
+    const root = document.querySelector('.claudsidian-root');
+    if (!root) return { present: false };
+    const rows = [...root.querySelectorAll('.claudsidian-session-row')];
+    const clipped = rows.filter((r) => { const el = r.querySelector('.claudsidian-session-summary, .claudsidian-session-sub'); if (!el || el.clientHeight === 0) return false; const cs = getComputedStyle(el); return el.scrollHeight > el.clientHeight + 2 && cs.overflowY !== 'visible' && cs.textOverflow !== 'ellipsis'; }).length;
+    const view = document.querySelector('.claudsidian-view') ?? root;
+    const r = view.getBoundingClientRect();
+    const overflowX = view.scrollWidth > view.clientWidth + 1;
+    const smallTargets = [...root.querySelectorAll('button, [role="button"], .claudsidian-tap')].filter((b) => {
+      const b2 = b.getBoundingClientRect();
+      return b2.width > 0 && (b2.width < 32 || b2.height < 32);
+    }).length;
+    const textLength = root.innerText.length;
+    return { present: true, rows: rows.length, clippedRows: clipped, overflowX, viewWidth: Math.round(r.width), viewHeight: Math.round(r.height), smallTargets, textLength };
+  });
+}
+
+async function shot(name, opts = {}) {
+  shotNo++;
+  const dir = path.join(outRoot, profileName);
+  mkdirSync(dir, { recursive: true });
+  const base = `${String(shotNo).padStart(2, '0')}-${name}`;
+  const m = await metrics().catch(() => ({ present: false }));
+  const entry = { profile: profileName, name, files: [], metrics: m, note: opts.note ?? '', consoleTail: consoleLog.slice(-3) };
+  try {
+    if (opts.full || !m.present) {
+      const f = path.join(dir, `${base}-full.png`);
+      await page.screenshot({ path: f });
+      entry.files.push(f);
+    }
+    if (m.present) {
+      const f = path.join(dir, `${base}.png`);
+      const box = await ev(() => {
+        const el = document.querySelector('.claudsidian-view') ?? document.querySelector('.claudsidian-root');
+        const r = el.getBoundingClientRect();
+        return { x: Math.max(0, r.x - 2), y: Math.max(0, r.y - 2), width: r.width + 4, height: r.height + 4 };
+      });
+      await page.screenshot({ path: f, clip: box });
+      entry.files.push(f);
+    }
+  } catch (e) {
+    entry.error = String(e?.message ?? e);
+  }
+  index.push(entry);
+  log('shot', base, JSON.stringify(m));
+  return entry;
+}
+
+async function dismissModals() {
+  await ev(() => {
+    for (const b of document.querySelectorAll('.modal-close-button')) b.click();
+    for (const n of document.querySelectorAll('.notice')) n.click();
+  }).catch(() => {});
+}
+
+async function plugin() {
+  return waitFor(() => !!window.app.plugins.plugins['claudsidian'], 'plugin loaded');
+}
+
+async function openView() {
+  await ev(() => window.app.commands.executeCommandById('claudsidian:open'));
+  await waitFor(() => !!document.querySelector('.claudsidian-root'), 'view root');
+  await sleep(800);
+}
+
+async function toList() {
+  await ev(() => window.app.plugins.plugins['claudsidian'].store.close?.());
+  await waitFor(() => !!document.querySelector('.claudsidian-session-list') || !!document.querySelector('.claudsidian-sessions'), 'session list', 20000);
+  await sleep(600);
+}
+
+async function openSessionByTitle(title) {
+  const ok = await ev((t) => {
+    const rows = [...document.querySelectorAll('.claudsidian-session-row')];
+    const row = rows.find((r) => (r.querySelector('.claudsidian-session-title')?.textContent ?? '').trim() === t);
+    if (!row) return false;
+    (row.querySelector('.claudsidian-session-main') ?? row).click();
+    return true;
+  }, title);
+  if (!ok) throw new Error(`session row not found: ${title}`);
+  await waitFor(() => !!document.querySelector('.claudsidian-composer-input'), 'composer', 20000);
+  await sleep(1500);
+}
+
+async function setProfile(name) {
+  profileName = name;
+  shotNo = 0;
+  const p = PROFILES[name];
+  if (!p) throw new Error(`unknown profile ${name}`);
+  await dismissModals();
+  if (p.mobile) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: p.width, height: p.height, deviceScaleFactor: 2, mobile: true });
+    await ev(() => window.app.emulateMobile(true));
+    await sleep(1500);
+  } else {
+    await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+    await ev(() => window.app.emulateMobile(false));
+    await sleep(1200);
+    await ev((w) => {
+      const split = window.app.workspace.rightSplit;
+      try {
+        split.expand?.();
+      } catch {}
+      try {
+        if (typeof split.setSize === 'function') split.setSize(w);
+        else {
+          const el = document.querySelector('.mod-right-split');
+          if (el) el.style.width = `${w}px`;
+        }
+      } catch {}
+    }, p.sidebar);
+    await sleep(600);
+  }
+  await openView();
+  log('profile', name, JSON.stringify(await ev(() => ({ w: window.innerWidth, h: window.innerHeight, mobile: !!window.app.isMobile }))));
+}
+
+async function mutationRate(ms = 5000) {
+  return ev(async (ms) => {
+    const root = document.querySelector('.claudsidian-root');
+    if (!root) return null;
+    let n = 0;
+    const before = [...root.querySelectorAll('.claudsidian-session-row, .claudsidian-item')].slice(0, 30).map((e) => e.getBoundingClientRect().top);
+    const mo = new MutationObserver((list) => (n += list.length));
+    mo.observe(root, { childList: true, subtree: true, characterData: true, attributes: true });
+    await new Promise((r) => setTimeout(r, ms));
+    mo.disconnect();
+    const after = [...root.querySelectorAll('.claudsidian-session-row, .claudsidian-item')].slice(0, 30).map((e) => e.getBoundingClientRect().top);
+    const shifted = before.filter((t, i) => after[i] !== undefined && Math.abs(after[i] - t) > 1).length;
+    return { mutationsPerSec: +(n / (ms / 1000)).toFixed(1), shiftedElements: shifted };
+  }, ms);
+}
+
+async function step(name, fn) {
+  try {
+    await fn();
+  } catch (e) {
+    log(`step ${name} failed:`, String(e?.message ?? e).slice(0, 200));
+    index.push({ profile: profileName, name: `${name} (failed)`, error: String(e?.message ?? e).slice(0, 300) });
+    await dismissModals();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
+await plugin();
+// Make sure the view exists once before profiles so emulateMobile has something to re-layout.
+await openView();
+
+for (const name of profiles) {
+  await step(`profile ${name}`, async () => setProfile(name));
+  const isMobile = PROFILES[name]?.mobile;
+
+  await step('list', async () => {
+    await toList();
+    await ev(() => window.app.plugins.plugins['claudsidian'].store.refreshSessions?.());
+    await sleep(2500);
+    await shot('list-top', { full: true });
+    const mr = await mutationRate(5000);
+    index.push({ profile: profileName, name: 'list-idle-metrics', metrics: mr });
+    log('list idle', JSON.stringify(mr));
+    await ev(() => {
+      const el = document.querySelector('.claudsidian-session-list') ?? document.querySelector('.claudsidian-sessions-body');
+      if (el) el.scrollTop = el.scrollHeight / 2;
+    });
+    await sleep(500);
+    await shot('list-middle');
+    await ev(() => {
+      const el = document.querySelector('.claudsidian-session-list') ?? document.querySelector('.claudsidian-sessions-body');
+      if (el) el.scrollTop = 0;
+    });
+    await sleep(300);
+  });
+
+  await step('row-menu', async () => {
+    const opened = await ev(() => {
+      const b = document.querySelector('.claudsidian-session-row .claudsidian-session-more');
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    if (opened) {
+      await sleep(600);
+      await shot('row-menu', { full: true });
+      await page.keyboard.press('Escape');
+      await sleep(300);
+      await dismissModals();
+    }
+  });
+
+  await step('new-sheet', async () => {
+    const opened = await ev(() => {
+      const b = document.querySelector('.claudsidian-sessions-new');
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    if (opened) {
+      await sleep(1200);
+      await shot('new-session-sheet', { full: true });
+      await page.keyboard.press('Escape');
+      await sleep(300);
+      await ev(() => document.querySelector('.claudsidian-ss-sheet-backdrop')?.click());
+      await sleep(300);
+    }
+  });
+
+  await step('long-session', async () => {
+    await toList();
+    await openSessionByTitle(longSession);
+    await shot('long-bottom', { full: true });
+    const mr = await mutationRate(4000);
+    index.push({ profile: profileName, name: 'chat-idle-metrics', metrics: mr });
+    log('chat idle', JSON.stringify(mr));
+    await ev(() => {
+      const el = document.querySelector('.claudsidian-transcript-wrap') ?? document.querySelector('.claudsidian-transcript');
+      if (el) el.scrollTop = 0;
+    });
+    await sleep(600);
+    await shot('long-top');
+    const older = await ev(() => {
+      const b = document.querySelector('.claudsidian-older');
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    if (older) {
+      await sleep(2500);
+      await shot('long-after-earlier');
+    }
+    const expanded = await ev(() => {
+      const t = document.querySelector('.claudsidian-tool .claudsidian-tool-row, .claudsidian-tool-summary, .claudsidian-tool');
+      if (!t) return false;
+      t.click();
+      return true;
+    });
+    if (expanded) {
+      await sleep(600);
+      await shot('long-tool-expanded');
+    }
+    await ev(() => {
+      const el = document.querySelector('.claudsidian-transcript-wrap') ?? document.querySelector('.claudsidian-transcript');
+      if (el) el.scrollTop = el.scrollHeight / 2;
+    });
+    await sleep(500);
+    await shot('long-middle');
+  });
+
+  await step('context-note', async () => {
+    // Open a real note in the main area, select some lines, then come back to the plugin so chips appear.
+    await ev(async (p) => {
+      await window.app.workspace.openLinkText(p, '', false);
+    }, contextNote);
+    await sleep(1500);
+    await ev(() => {
+      const editor = window.app.workspace.activeEditor?.editor;
+      if (editor) {
+        const last = Math.min(editor.lineCount() - 1, 12);
+        editor.setSelection({ line: Math.max(0, last - 4), ch: 0 }, { line: last, ch: 0 });
+      }
+    });
+    await sleep(500);
+    if (isMobile) await openView();
+    await toList();
+    await openSessionByTitle(vaultSession);
+    await shot('chat-with-context', { full: true });
+    await page.locator('.claudsidian-composer-input').first().click();
+    await page.locator('.claudsidian-composer-input').first().fill('whats left on this for tomorrow, just the stuff i cant push');
+    await sleep(600);
+    await shot('composer-typed');
+    await page.locator('.claudsidian-composer-input').first().fill('');
+    await page.locator('.claudsidian-composer-input').first().type('@');
+    await sleep(900);
+    await shot('composer-at-suggest');
+    await page.keyboard.press('Escape');
+    await page.locator('.claudsidian-composer-input').first().fill('');
+  });
+
+  if (send && !isMobile && name === 'desktop300') {
+    await step('send-and-stream', async () => {
+      const input = page.locator('.claudsidian-composer-input').first();
+      await input.fill('whats left on this for tomorrow, just the stuff i cant push');
+      await input.press('Enter');
+      const start = Date.now();
+      let n = 0;
+      let lastLen = -1;
+      let stable = 0;
+      while (Date.now() - start < 150000) {
+        await sleep(2500);
+        const st = await ev(() => { const h = document.querySelector('.claudsidian-header .claudsidian-status, .claudsidian-status'); return { status: h?.textContent?.trim() ?? '', busy: !!h?.classList.contains('is-busy'), len: document.querySelector('.claudsidian-root')?.innerText.length ?? 0 }; });
+        if (n < 7 && (st.len !== lastLen || n === 0)) {
+          await shot(`stream-t${Math.round((Date.now() - start) / 1000)}s`);
+          n++;
+        }
+        if (st.len === lastLen) stable++;
+        else stable = 0;
+        lastLen = st.len;
+        if (stable >= 3 && !st.busy && !/working|running|thinking/i.test(st.status)) break;
+      }
+      await shot('reply-final', { full: true });
+      const mr = await mutationRate(4000);
+      index.push({ profile: profileName, name: 'chat-after-reply-idle-metrics', metrics: mr });
+    });
+
+    await step('ask-user-question', async () => {
+      const input = page.locator('.claudsidian-composer-input').first();
+      await input.fill('use the AskUserQuestion tool to ask me whether the dessert goes in a bowl or on a plate (two options), then just say ok after i answer');
+      await input.press('Enter');
+      await waitFor(() => !!document.querySelector('.claudsidian-question'), 'question card', 240000);
+      await sleep(800);
+      await shot('question-card', { full: true });
+      await ev(() => document.querySelector('.claudsidian-question .claudsidian-option')?.click());
+      await sleep(2500);
+      await shot('question-answered');
+      await sleep(8000);
+      await shot('question-after-ok');
+    });
+  }
+
+  await step('cooking', async () => {
+    await ev(() => window.app.commands.executeCommandById('claudsidian:toggle-cooking'));
+    await sleep(1200);
+    await shot('cooking-chat', { full: true });
+    await toList();
+    await shot('cooking-list');
+    await ev(() => window.app.commands.executeCommandById('claudsidian:toggle-cooking'));
+    await sleep(600);
+  });
+
+  if (!isMobile && name === 'desktop300') {
+    await step('settings', async () => {
+      await ev(() => {
+        window.app.setting.open();
+        window.app.setting.openTabById('claudsidian');
+      });
+      await sleep(1200);
+      await shot('settings-tab', { full: true });
+      await ev(() => {
+        const el = document.querySelector('.vertical-tab-content');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      await sleep(400);
+      await shot('settings-tab-bottom', { full: true });
+      await ev(() => window.app.setting.close());
+      await sleep(400);
+    });
+  }
+}
+
+// Back to a sane desktop state.
+await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+await ev(() => window.app.emulateMobile(false)).catch(() => {});
+writeFileSync(path.join(outRoot, 'index.json'), JSON.stringify({ round, generatedAt: new Date().toISOString(), entries: index, console: consoleLog.slice(0, 60) }, null, 2));
+log('done; entries', index.length, 'console lines', consoleLog.length, '->', path.join(outRoot, 'index.json'));
+await browser.close().catch(() => {});

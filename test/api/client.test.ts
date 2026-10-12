@@ -441,4 +441,11 @@ describe('CcrClient', () => {
     const signedOut = createMemoryTransport([{ method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(401, { type: 'error', error: { type: 'authentication_error', message: 'expired' } }) }]);
     await expect(client(signedOut).listEnvironments()).rejects.toBeInstanceOf(ApiError);
   });
+
+  it('unwraps the response_shape envelope the live GET uses', async () => {
+    const t = createMemoryTransport([{ method: 'GET', path: /\/v1\/code\/sessions\/cse_1$/, reply: () => jsonResponse(200, { response_shape: { id: 'cse_1', title: 'wrapped', status: 'active' } }) }]);
+    const s = await client(t).getSession('cse_1');
+    expect(s.id).toBe('cse_1');
+    expect(s.title).toBe('wrapped');
+  });
 });
