@@ -1,5 +1,7 @@
-/* Claudsidian mobile (.is-mobile, .is-phone on the view): 44 px targets, roomier padding, the composer pinned
-   above the home indicator, and row actions in place of hover-only ones. Class hooks (.claudsidian-composer, */
+/* Claudsidian mobile (.is-mobile, .is-phone / .is-tablet on the view): 44 px targets, roomier padding, the
+   dock above the home indicator and the on-screen keyboard, and on phones a top and bottom inset for
+   Obsidian's floating header and navbar. Class hooks (.claudsidian-dock, .claudsidian-composer) come from
+   the chat screen. */
 
 .claudsidian-view.is-mobile {
   --claudsidian-tap: 44px;
@@ -11,14 +13,33 @@
   --claudsidian-pad: 12px;
 }
 
-.claudsidian-view.is-mobile :where(.claudsidian-composer) {
+/* The chat screen pads itself by the keyboard's height (ChatScreen sets --claudsidian-kb from the visual
+   viewport), so the dock stays above the keys when the webview does not shrink for them. */
+.claudsidian-view.is-mobile .claudsidian-chat {
+  padding-bottom: var(--claudsidian-kb, 0px);
+}
+
+/* Tablet (and any mobile that is not a phone): nothing floats over the view, one padding for the home
+   indicator. Obsidian mobile already pads the shell and publishes the leftover as
+   --safe-area-inset-bottom; env() is only the fallback for a build without it. */
+.claudsidian-view.is-mobile .claudsidian-dock {
   position: sticky;
   bottom: 0;
   z-index: 1;
-  /* Obsidian mobile already pads the shell for the home indicator and publishes the leftover as
-     --safe-area-inset-bottom; env() is only the fallback for a build without it. */
-  padding-bottom: calc(var(--claudsidian-pad) + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
   background: var(--background-primary);
+}
+
+/* Phone: Obsidian's header floats over the top of the view and the navbar over its bottom. ChatView
+   measures both into --claudsidian-phone-top / --claudsidian-phone-bottom; the fallbacks are Obsidian's
+   own variables for the header and navbar. The bottom inset already covers the safe area (the navbar sits
+   in it), so the dock drops its own safe-area padding and nothing is applied twice. */
+.claudsidian-view.is-phone {
+  padding-top: var(--claudsidian-phone-top, calc(var(--view-header-height, 44px) + var(--view-header-top-offset, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))));
+  padding-bottom: max(var(--claudsidian-phone-bottom, var(--navbar-height, 0px)), var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+.claudsidian-view.is-phone .claudsidian-dock {
+  padding-bottom: 0;
 }
 
 .claudsidian-view.is-mobile :where(input, textarea, select) {

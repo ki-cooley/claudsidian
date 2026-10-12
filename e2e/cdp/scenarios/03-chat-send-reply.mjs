@@ -1,7 +1,7 @@
 // 03: open the vault session, type hello, send; the user bubble shows at once, the echo arrives within 5 s,
 // the context chips named the active note, and the sent message carried the [Obsidian context] block.
-// On mobile profiles Enter inserts a newline (send is the button); on desktop Enter sends.
-import { COMPOSER, SESSIONS, SIDEBAR, assert, clickSend, openSession, sentUserTexts, waitForAssistantText } from './helpers.mjs';
+// Enter sends on every profile and Shift+Enter inserts a newline (owner: hit Enter to send, keyboard dismisses on mobile).
+import { COMPOSER, SESSIONS, SIDEBAR, assert, openSession, sentUserTexts, waitForAssistantText } from './helpers.mjs';
 
 export const meta = { title: 'Chat send and reply with context' };
 
@@ -13,23 +13,25 @@ export async function run(d, ctx) {
   await ctx.step('context chips show the active note', async () => {
     await d.waitFor(`${SIDEBAR} >> text*=menu.md`, 5000, 'a chip naming menu.md');
   });
-  await ctx.step(ctx.profile.mobile ? 'Enter inserts a newline on mobile' : 'Shift+Enter inserts a newline on desktop', async () => {
+  await ctx.step('Shift+Enter inserts a newline', async () => {
     await d.fill(COMPOSER, 'hello');
     await d.focus(COMPOSER);
-    await d.press(ctx.profile.mobile ? 'Enter' : 'Shift+Enter');
+    await d.press('Shift+Enter');
     const value = await d.text(COMPOSER);
     assert(value.includes('\n'), `composer holds ${JSON.stringify(value)}, expected a newline`);
     const sent = sentUserTexts(ctx, SESSIONS.vault.id).filter((t) => t.startsWith('hello'));
     assert(sent.length === 0, 'the newline key sent the message');
     await d.fill(COMPOSER, 'hello');
   });
-  await ctx.step('send', async () => {
-    if (ctx.profile.mobile) await clickSend(d);
-    else {
-      await d.focus(COMPOSER);
-      await d.press('Enter');
-    }
+  await ctx.step('Enter sends', async () => {
+    await d.focus(COMPOSER);
+    await d.press('Enter');
   });
+  if (ctx.profile.mobile) {
+    await ctx.step('the composer loses focus after a send on mobile (keyboard dismissed)', async () => {
+      await d.waitFor(() => !(document.activeElement && document.activeElement.matches('.claudsidian-composer-input')), 1000, 'the textarea to blur');
+    });
+  }
   await ctx.step('user bubble appears immediately', async () => {
     await d.waitFor(() => {
       const s = window.__claudsidian.store;

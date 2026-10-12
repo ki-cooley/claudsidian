@@ -331,7 +331,7 @@ export class ClaudsidianSettingTab extends PluginSettingTab {
     this.heading(el, 'Advanced');
     new Setting(el)
       .setName('API base URL')
-      .setDesc('Controller API origin. Change only for a mock server.')
+      .setDesc('Controller API origin. Change only for a mock server; applies at once, no reload.')
       .addText((t) => {
         t.setPlaceholder(DEFAULT_SETTINGS.apiBaseUrl).setValue(this.settings.apiBaseUrl);
         // Keystrokes commit as soon as they form a valid origin; leaving the field with anything else restores

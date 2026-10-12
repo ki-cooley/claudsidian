@@ -1,22 +1,28 @@
 /**
  * A can_use_tool request: the tool's summary and input, then Allow, Allow and remember (when the
  * host offered rules, with the rules it would persist spelled out above the buttons) and Deny with
- * an optional reason. A resolved request folds to one line.
+ * an optional reason. A tap disables the buttons and spins the tapped one until the store
+ * confirms (or ten seconds pass). A resolved request folds to one line.
  */
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import type { PermissionUpdate } from '../../../../api/types';
-import { summarizeTool } from '../../../../core/tool-summary';
 import type { PermissionItem } from '../../../../core/types';
 import { Button } from '../../common/Button';
 import { Icon } from '../../common/Icon';
+import { Spinner } from '../../common/Spinner';
+import { useBusy } from './busy';
+import { pathRoots, toolSummary, type PathRoots } from './paths';
 import { ToolInput } from './ToolInput';
 
 export interface PermissionCardProps {
   item: PermissionItem;
   cooking: boolean;
-  onAllow: (remember: boolean) => void;
-  onDeny: (message?: string) => void;
+  onAllow: (remember: boolean) => void | Promise<unknown>;
+  onDeny: (message?: string) => void | Promise<unknown>;
+  /** vault path, then session cwd */
+  roots?: PathRoots;
+  /** a single root, kept for callers that only know the session cwd */
   cwd?: string;
 }
 
@@ -73,8 +79,10 @@ export function describeSuggestions(suggestions: PermissionUpdate[]): SuggestedR
 export function PermissionCard(p: PermissionCardProps): JSX.Element {
   const [denying, setDenying] = useState(false);
   const [reason, setReason] = useState('');
+  const busy = useBusy();
   const { item } = p;
-  const summary = summarizeTool(item.toolName, item.input, p.cwd);
+  const roots = p.roots ?? pathRoots(p.cwd);
+  const summary = toolSummary(item.toolName, item.input, roots);
 
   if (item.resolved) {
     const allowed = item.resolved === 'allow';
@@ -88,23 +96,27 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
     );
   }
 
+  const waiting = busy.key !== null;
   const confirmDeny = (): void => {
     const text = reason.trim();
-    p.onDeny(text ? text : undefined);
+    busy.run('deny', () => p.onDeny(text ? text : undefined));
   };
   const rules = describeSuggestions(item.suggestions);
+  const spinner = <Spinner size="small" label="Sending" />;
 
   return (
-    <div class={`claudsidian-permission ${p.cooking ? 'is-cooking' : ''}`} role="group" aria-label="Permission request">
+    <div class={`claudsidian-permission ${p.cooking ? 'is-cooking' : ''} ${waiting ? 'is-busy' : ''}`} role="group" aria-labelledby={`${item.id}-kicker`}>
       <div class="claudsidian-perm-head">
         <Icon name="shield-question" size="small" />
-        <span class="claudsidian-perm-kicker">Wants to run</span>
+        <span class="claudsidian-perm-kicker" id={`${item.id}-kicker`}>
+          Wants to run
+        </span>
       </div>
       <div class="claudsidian-perm-title">{summary}</div>
       {item.decisionReason ? <div class="claudsidian-perm-reason-line">{item.decisionReason}</div> : null}
       {item.blockedPath ? <div class="claudsidian-perm-reason-line">Outside the allowed paths: {item.blockedPath}</div> : null}
       <div class="claudsidian-perm-body">
-        <ToolInput name={item.toolName} input={item.input} cwd={p.cwd} />
+        <ToolInput name={item.toolName} input={item.input} roots={roots} />
       </div>
       {denying ? (
         <div class="claudsidian-perm-deny">
@@ -114,6 +126,7 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
             placeholder="Reason (optional)"
             aria-label="Reason for denying"
             value={reason}
+            disabled={waiting}
             onInput={(ev) => setReason((ev.currentTarget as HTMLInputElement).value)}
             onKeyDown={(ev) => {
               if (ev.key === 'Enter') {
@@ -123,8 +136,11 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
             }}
           />
           <div class="claudsidian-perm-actions">
-            <Button label="Confirm deny" kind="danger" onClick={confirmDeny} />
-            <Button label="Back" onClick={() => setDenying(false)} />
+            <Button kind="danger" disabled={waiting} onClick={confirmDeny}>
+              {busy.key === 'deny' ? spinner : null}
+              <span class="claudsidian-btn-label">Confirm deny</span>
+            </Button>
+            <Button label="Back" disabled={waiting} onClick={() => setDenying(false)} />
           </div>
         </div>
       ) : (
@@ -145,9 +161,17 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
             </div>
           ) : null}
           <div class="claudsidian-perm-actions">
-            <Button label="Allow" kind="primary" onClick={() => p.onAllow(false)} />
-            {rules.length > 0 ? <Button label="Allow and remember" title={rules.map((r) => r.text).join(', ')} onClick={() => p.onAllow(true)} /> : null}
-            <Button label="Deny" onClick={() => setDenying(true)} />
+            <Button kind="primary" disabled={waiting} onClick={() => busy.run('allow', () => p.onAllow(false))}>
+              {busy.key === 'allow' ? spinner : null}
+              <span class="claudsidian-btn-label">Allow</span>
+            </Button>
+            {rules.length > 0 ? (
+              <Button disabled={waiting} title={rules.map((r) => r.text).join(', ')} onClick={() => busy.run('remember', () => p.onAllow(true))}>
+                {busy.key === 'remember' ? spinner : null}
+                <span class="claudsidian-btn-label">Allow and remember</span>
+              </Button>
+            ) : null}
+            <Button label="Deny" disabled={waiting} onClick={() => setDenying(true)} />
           </div>
         </>
       )}

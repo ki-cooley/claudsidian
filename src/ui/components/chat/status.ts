@@ -1,4 +1,7 @@
-/** The header's status pill: one label and tone from the transcript turn and the session's connection. */
+/**
+ * The header's status pill (one label and tone from the transcript turn and the session's
+ * connection) and the friendly labels for the model and permission-mode chips.
+ */
 import type { SessionSummary, TurnState } from '../../../core/types';
 
 export type StatusTone = 'working' | 'needs' | 'idle' | 'offline' | 'error';
@@ -33,4 +36,44 @@ export function sessionStatus(turn: TurnState, session: SessionSummary | undefin
     default:
       return { label: 'Idle', tone: 'idle', busy: false };
   }
+}
+
+const MODEL_FAMILY: Record<string, string> = {
+  fable: 'Fable',
+  opus: 'Opus',
+  sonnet: 'Sonnet',
+  haiku: 'Haiku',
+};
+
+/**
+ * "claude-opus-5-5" reads "Opus 5.5", "claude-fable-5-1" "Fable 5.1", "claude-3-5-sonnet-20241022"
+ * "Sonnet 3.5" (date suffixes and vendor prefixes dropped). An id with no known family keeps its
+ * tail after "claude-" so a custom model still reads as itself.
+ */
+export function modelLabel(id: string | undefined): string {
+  if (!id) return '';
+  const tail = /^(?:[\w.-]*\.)?claude-(.+)$/.exec(id)?.[1] ?? id;
+  const parts = tail.split('-').filter(Boolean);
+  const family = parts.map((p) => MODEL_FAMILY[p.toLowerCase()]).find((f): f is string => f !== undefined);
+  if (!family) return tail;
+  const version = parts
+    .filter((p) => /^\d{1,2}$/.test(p))
+    .slice(0, 2)
+    .join('.');
+  return version ? `${family} ${version}` : family;
+}
+
+const MODE_LABEL: Record<string, string> = {
+  default: 'Ask',
+  acceptEdits: 'Accept edits',
+  plan: 'Plan',
+  auto: 'Auto',
+  bypassPermissions: 'Bypass',
+  dontAsk: "Don't ask",
+};
+
+/** "acceptEdits" reads "Accept edits"; an unknown mode keeps its id. */
+export function permissionModeLabel(mode: string | undefined): string {
+  if (!mode) return '';
+  return MODE_LABEL[mode] ?? mode;
 }

@@ -15,6 +15,7 @@ import {
 } from '../api/payloads';
 import {
   isCanUseTool,
+  isSystemInit,
   type ContentBlock,
   type CreateSessionRequest,
   type ImageBlock,
@@ -22,8 +23,9 @@ import {
   type StreamJsonEvent,
   type WireEnvironment,
   type WireEventRow,
+  type WireSession,
 } from '../api/types';
-import type { ClaudsidianSettings } from '../settings';
+import { MAX_SESSION_CWDS, type ClaudsidianSettings } from '../settings';
 import { log } from '../util/log';
 import { realTimers, type TimerApi } from '../util/timers';
 import { Poller, type PollMode } from './poller';
@@ -31,6 +33,7 @@ import type {
   Banner,
   CreateSessionOptions,
   Environment,
+  RefreshOptions,
   SendOptions,
   SessionStoreApi,
   StoreEvent,
@@ -38,12 +41,16 @@ import type {
 import { applyEvents, findItem, markControlSent, markOffline, markSent } from './transcript';
 import {
   createTranscript,
+  sameSummary,
   summarizeSession,
   type OutgoingAttachment,
   type SessionSummary,
   type TranscriptItem,
   type TranscriptState,
 } from './types';
+
+/** The directory maps the store learns and hands back for data.json. */
+export type LearnedDirs = Pick<ClaudsidianSettings, 'environmentDirs' | 'sessionCwds'>;
 
 export interface SessionStoreDeps {
   client: CcrApi;
@@ -52,6 +59,8 @@ export interface SessionStoreDeps {
   clientId: string;
   timers?: TimerApi;
   onNotice?: (text: string) => void;
+  /** Persist learned directories (environment id -> dir, session id -> cwd) so grouping is right on the next load. */
+  persistLearned?: (patch: LearnedDirs) => Promise<void> | void;
 }
 
 const HISTORY_LIMIT = 200;
@@ -64,6 +73,14 @@ const IMAGE_DATA_PLACEHOLDER = '<image omitted>';
 const PRESENCE_INTERVAL_MS = 60_000;
 /** consecutive 401s from polling before the auth banner shows (one is a refresh race, not a sign-out) */
 const AUTH_FAILURES_FOR_BANNER = 2;
+/** Bridge environments with no known directory probed per list refresh (one listEvents call each). */
+const ENV_PROBE_LIMIT = 3;
+/** An environment whose probe found no cwd is not probed again within this window. */
+const ENV_PROBE_COOLDOWN_MS = 600_000;
+/** Rows read from the oldest end of a session when looking for its init event. */
+const ENV_PROBE_ROWS = 40;
+/** mark_read POSTs per session while rows stream are spaced by at least this; the turn end flushes at once. */
+const MARK_READ_MIN_INTERVAL_MS = 2000;
 
 const AUTH_BANNER: Banner = { kind: 'auth', text: 'Signed out. Sign in to see your sessions.' };
 const OFFLINE_BANNER: Banner = { kind: 'offline', text: 'No connection. Retrying.' };
@@ -88,6 +105,12 @@ interface SessionTrack {
   offline: boolean;
   /** in-flight loadOlder, so overlapping calls share one request */
   loadingOlder: Promise<boolean> | null;
+  /** highest seq the server was told was read (-1 before any) */
+  markedSeq: number;
+  /** when the last mark_read was sent, -Infinity before any */
+  markAt: number;
+  /** trailing mark_read timer while the throttle window is open */
+  markTimer: unknown;
 }
 
 function seqOf(row: WireEventRow): number {
@@ -185,6 +208,41 @@ function byLastEventDesc(a: SessionSummary, b: SessionSummary): number {
   return (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0);
 }
 
+function bySortAtDesc(a: SessionSummary, b: SessionSummary): number {
+  return (b.sortAt ?? b.lastEventAt ?? 0) - (a.sortAt ?? a.lastEventAt ?? 0);
+}
+
+/**
+ * The list's top rank, mirroring statusOf() === 'needs_you' in src/ui/components/sessions/status.ts (the store
+ * cannot import the UI). A row keeps its place between polls unless this changes; the two must agree.
+ */
+function needsAttention(s: SessionSummary): boolean {
+  if (s.connectionStatus !== 'connected') return false;
+  return s.workerStatus === 'requires_action' || (s.summary?.needsAction ?? '').trim() !== '';
+}
+
+/** cwd of the first system/init row, when it carries one (Desktop-hosted sessions report ''). */
+function initCwdOf(rows: WireEventRow[]): string | undefined {
+  for (const row of rows) {
+    const p = row.payload;
+    if (p && isSystemInit(p) && typeof p.cwd === 'string' && p.cwd) return p.cwd;
+  }
+  return undefined;
+}
+
+/** Drop `pending` from user items whose echo has landed (the reducer took their uuid out of inFlightUserUuids). */
+function settlePending(state: TranscriptState): TranscriptState {
+  let items: TranscriptItem[] | undefined;
+  state.items.forEach((item, i) => {
+    if (item.kind !== 'user' || !item.pending || state.inFlightUserUuids.includes(item.id)) return;
+    if (!items) items = state.items.slice();
+    const settled = { ...item };
+    delete settled.pending;
+    items[i] = settled;
+  });
+  return items ? { ...state, items } : state;
+}
+
 export class SessionStore implements SessionStoreApi {
   readonly sessions = signal<SessionSummary[]>([]);
   readonly sessionsLoading = signal(false);
@@ -202,7 +260,15 @@ export class SessionStore implements SessionStoreApi {
   private readonly envVersion = signal(0);
   private readonly transcripts = new Map<string, Signal<TranscriptState>>();
   private readonly tracks = new Map<string, SessionTrack>();
+  /** session id -> init cwd, oldest first (seeded from settings.sessionCwds, bounded to MAX_SESSION_CWDS) */
   private readonly cwdCache = new Map<string, string>();
+  /** environment id -> directory (seeded from settings.environmentDirs) */
+  private readonly envDirs = new Map<string, string>();
+  /** environment id -> when its newest session was last probed for an init cwd */
+  private readonly envProbeAt = new Map<string, number>();
+  private persistQueued = false;
+  /** a resort was asked for; consumed by the next doRefresh to run */
+  private pendingResort = false;
   private readonly listeners = new Map<StoreEvent, Set<Listener>>();
   private readonly unsubscribeVisible: () => void;
   private sessionPoller: Poller | null = null;
@@ -218,6 +284,9 @@ export class SessionStore implements SessionStoreApi {
   constructor(deps: SessionStoreDeps) {
     this.deps = deps;
     this.timers = deps.timers ?? realTimers;
+    const saved = deps.settings();
+    for (const [id, cwd] of Object.entries(saved.sessionCwds ?? {})) if (cwd) this.cwdCache.set(id, cwd);
+    for (const [id, dir] of Object.entries(saved.environmentDirs ?? {})) if (dir) this.envDirs.set(id, dir);
     let initial = true;
     this.unsubscribeVisible = this.visible.subscribe((v) => {
       if (initial) {
@@ -246,7 +315,7 @@ export class SessionStore implements SessionStoreApi {
     for (const e of this.envCache) {
       const kind = e.kind === 'anthropic_cloud' ? 'cloud' : (e.kind ?? 'unknown');
       const env: Environment = { id: e.environment_id, kind, label: environmentLabelFromWire(e), sessionCount: 0 };
-      const dir = e.bridge_info?.directory;
+      const dir = e.bridge_info?.directory || this.envDirs.get(e.environment_id);
       if (dir) env.cwd = dir;
       if (typeof e.bridge_info?.online === 'boolean') env.online = e.bridge_info.online;
       byId.set(e.environment_id, env);
@@ -262,13 +331,14 @@ export class SessionStore implements SessionStoreApi {
     }
     for (const [id, g] of groups) {
       const existing = byId.get(id);
+      const cwd = this.envDirs.get(id) ?? g.cwd;
       if (existing) {
         existing.sessionCount = g.count;
-        if (!existing.cwd && g.cwd) existing.cwd = g.cwd;
+        if (!existing.cwd && cwd) existing.cwd = cwd;
         continue;
       }
-      const env: Environment = { id, kind: g.kind, label: environmentLabel(g.kind, g.cwd), sessionCount: g.count };
-      if (g.cwd) env.cwd = g.cwd;
+      const env: Environment = { id, kind: g.kind, label: environmentLabel(g.kind, cwd), sessionCount: g.count };
+      if (cwd) env.cwd = cwd;
       byId.set(id, env);
     }
     const envs = [...byId.values()];
@@ -289,19 +359,116 @@ export class SessionStore implements SessionStoreApi {
     try {
       this.envCache = await this.deps.client.listEnvironments();
       this.envFetchedAt = Date.now();
+      let learned = false;
+      for (const e of this.envCache) {
+        const dir = e.bridge_info?.directory;
+        if (dir && this.learnEnvDir(e.environment_id, dir)) learned = true;
+      }
       this.envVersion.value += 1;
+      if (learned) this.persistLearned();
     } catch (err) {
       log.debug('refreshEnvironments failed', { message: messageOf(err) });
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Learned directories
+  // ---------------------------------------------------------------------------
+
+  /** Remember a session's init cwd (newest last, bounded). True when it changed. */
+  private rememberCwd(sessionId: string, cwd: string): boolean {
+    if (this.cwdCache.get(sessionId) === cwd) return false;
+    this.cwdCache.delete(sessionId);
+    this.cwdCache.set(sessionId, cwd);
+    while (this.cwdCache.size > MAX_SESSION_CWDS) {
+      const oldest = this.cwdCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.cwdCache.delete(oldest);
+    }
+    return true;
+  }
+
+  /** Remember an environment's directory and let environments() callers re-render. True when it changed. */
+  private learnEnvDir(environmentId: string, dir: string): boolean {
+    if (!environmentId || !dir || this.envDirs.get(environmentId) === dir) return false;
+    this.envDirs.set(environmentId, dir);
+    this.envVersion.value += 1;
+    return true;
+  }
+
+  /** Hand both maps to the plugin once per burst of learning. */
+  private persistLearned(): void {
+    if (this.persistQueued || !this.deps.persistLearned) return;
+    this.persistQueued = true;
+    queueMicrotask(() => {
+      this.persistQueued = false;
+      const patch: LearnedDirs = {
+        environmentDirs: Object.fromEntries(this.envDirs),
+        sessionCwds: Object.fromEntries(this.cwdCache),
+      };
+      try {
+        void Promise.resolve(this.deps.persistLearned?.(patch)).catch((err: unknown) => {
+          log.debug('persisting learned directories failed', { message: messageOf(err) });
+        });
+      } catch (err) {
+        log.debug('persisting learned directories failed', { message: messageOf(err) });
+      }
+    });
+  }
+
+  /**
+   * "This vault" on a cold start: a bridge environment with no known directory gets one from the init event of
+   * its newest session, at most ENV_PROBE_LIMIT environments per refresh (one request each) and not the same
+   * environment again within ENV_PROBE_COOLDOWN_MS.
+   */
+  private async resolveEnvironmentDirs(): Promise<void> {
+    const now = this.timers.now();
+    const newest = new Map<string, SessionSummary>();
+    let learned = false;
+    for (const s of this.sessions.value) {
+      if (s.archived || s.environmentKind !== 'bridge' || !s.environmentId || this.envDirs.has(s.environmentId)) continue;
+      if (s.cwd) {
+        if (this.learnEnvDir(s.environmentId, s.cwd)) learned = true;
+        continue;
+      }
+      const cur = newest.get(s.environmentId);
+      if (!cur || (s.lastEventAt ?? 0) > (cur.lastEventAt ?? 0)) newest.set(s.environmentId, s);
+    }
+    if (learned) this.persistLearned();
+    const targets = [...newest.values()]
+      .filter((s) => now - (this.envProbeAt.get(s.environmentId) ?? -Infinity) >= ENV_PROBE_COOLDOWN_MS)
+      .sort(byLastEventDesc)
+      .slice(0, ENV_PROBE_LIMIT);
+    for (const s of targets) this.envProbeAt.set(s.environmentId, now);
+    await Promise.all(targets.map((s) => this.probeCwd(s)));
+  }
+
+  private async probeCwd(s: SessionSummary): Promise<void> {
+    try {
+      const rows = await this.deps.client.listEvents(s.id, { limit: ENV_PROBE_ROWS, sortOrder: 'asc' });
+      if (this.disposed) return;
+      const cwd = initCwdOf(rows);
+      if (!cwd) return;
+      const changed = this.rememberCwd(s.id, cwd);
+      const learned = this.learnEnvDir(s.environmentId, cwd);
+      if (changed) this.patchSession(s.id, { cwd });
+      if (changed || learned) this.persistLearned();
+    } catch (err) {
+      log.debug('cwd probe failed', { sessionId: s.id, message: messageOf(err) });
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Sessions list
   // ---------------------------------------------------------------------------
 
-  /** Refresh the list. A call during an in-flight refresh queues one follow-up refresh and resolves with it. */
-  refreshSessions(): Promise<void> {
+  /**
+   * Refresh the list. A call during an in-flight refresh queues one follow-up refresh and resolves with it.
+   * Rows keep their relative order between calls; `resort` (screen mount, manual refresh) orders everything
+   * by last activity again.
+   */
+  refreshSessions(opts: RefreshOptions = {}): Promise<void> {
+    if (opts.resort) this.pendingResort = true;
     if (this.refreshing) {
       if (!this.refreshQueued) {
         this.refreshQueued = this.refreshing.then(() => {
@@ -318,26 +485,54 @@ export class SessionStore implements SessionStoreApi {
   }
 
   private async doRefresh(): Promise<void> {
-    this.sessionsLoading.value = true;
+    const resort = this.pendingResort;
+    this.pendingResort = false;
+    const previous = this.sessions.value;
+    // The spinner is for the first load only; a background poll must not flicker the toolbar.
+    if (previous.length === 0) this.sessionsLoading.value = true;
     try {
       const wire = await this.deps.client.listSessions();
-      const list = wire.map((w) => summarizeSession(w, this.cwdCache.get(w.id)));
-      list.sort(byLastEventDesc);
-      this.sessions.value = list;
+      const list = this.mergeList(this.sessions.value, wire, resort);
+      if (list !== this.sessions.value) this.sessions.value = list;
       if (Date.now() - this.envFetchedAt > 60_000) {
         this.envFetchedAt = Date.now(); // throttle; refreshEnvironments sets it again on success
         void this.refreshEnvironments();
       }
       this.sessionsError.value = null;
       this.clearBanner('auth', 'offline');
+      void this.resolveEnvironmentDirs();
     } catch (err) {
       this.sessionsError.value = messageOf(err);
       if (err instanceof ApiError && err.isAuth) this.banner.value = AUTH_BANNER;
       else if (err instanceof ApiError && err.isNetwork) this.banner.value = OFFLINE_BANNER;
       log.debug('refreshSessions failed', { message: messageOf(err) });
     } finally {
-      this.sessionsLoading.value = false;
+      if (this.sessionsLoading.value) this.sessionsLoading.value = false;
     }
+  }
+
+  /**
+   * Summaries for the wire rows, reusing the previous object for a row whose rendered fields did not change,
+   * ordered by sortAt. Between polls a row keeps its sortAt unless its rank (needs you or not) changed; a row
+   * new to the list surfaces above everything; a resort (or an empty previous list) freezes lastEventAt into
+   * sortAt for every row. Returns `previous` itself when nothing changed, so the signal is not republished.
+   */
+  private mergeList(previous: SessionSummary[], wire: WireSession[], resort: boolean): SessionSummary[] {
+    const full = resort || previous.length === 0;
+    const prevById = new Map(previous.map((s) => [s.id, s]));
+    let top = this.timers.now();
+    for (const s of previous) if (s.sortAt !== undefined && s.sortAt >= top) top = s.sortAt + 1;
+    const list = wire.map((w) => {
+      const next = summarizeSession(w, this.cwdCache.get(w.id));
+      const prev = prevById.get(w.id);
+      if (full || !prev) next.sortAt = full ? (next.lastEventAt ?? 0) : Math.max(next.lastEventAt ?? 0, top);
+      else if (needsAttention(prev) !== needsAttention(next)) next.sortAt = next.lastEventAt ?? 0;
+      else next.sortAt = prev.sortAt ?? prev.lastEventAt ?? 0;
+      return prev && sameSummary(prev, next) ? prev : next;
+    });
+    list.sort(bySortAtDesc);
+    const unchanged = list.length === previous.length && list.every((s, i) => s === previous[i]);
+    return unchanged ? previous : list;
   }
 
   startListPolling(): void {
@@ -400,6 +595,11 @@ export class SessionStore implements SessionStoreApi {
     const id = this.selectedId.value;
     if (id) this.stopSession(id);
     this.selectedId.value = null;
+    this.clearBanner('error'); // "session not found" belongs to the chat it came from, not the list
+  }
+
+  dismissBanner(): void {
+    this.banner.value = null;
   }
 
   /** Concurrent calls for one session share the in-flight request (a scroll handler firing twice). */
@@ -476,8 +676,9 @@ export class SessionStore implements SessionStoreApi {
     const { fresh } = this.applyRows(sessionId, rows);
     this.handleSuccess(sessionId);
     if (fresh.length > 0) {
-      if (fresh.some((r) => r.payload.type === 'result')) this.emit('turn_end', sessionId, sig.value);
-      this.markReadIfVisible(sessionId);
+      const turnEnded = fresh.some((r) => r.payload.type === 'result');
+      if (turnEnded) this.emit('turn_end', sessionId, sig.value);
+      this.markReadIfVisible(sessionId, { flush: turnEnded });
     }
     this.announceNeedsInput(sessionId);
     this.sessionPoller?.setMode(this.modeFor(sessionId));
@@ -520,7 +721,7 @@ export class SessionStore implements SessionStoreApi {
     const sig = this.transcriptSignal(sessionId);
     const track = this.trackFor(sessionId);
     const before = sig.value;
-    const next = applyEvents(before, rows);
+    const next = settlePending(applyEvents(before, rows));
     if (next !== before) sig.value = next;
     const fresh = rows.filter((r) => seqOf(r) > before.lastSeq).sort(bySeqAsc);
     if (fresh.length > 0) {
@@ -532,11 +733,14 @@ export class SessionStore implements SessionStoreApi {
     return { fresh };
   }
 
+  /** The init cwd names the session's directory and, through it, its environment's; both are persisted. */
   private cacheCwd(sessionId: string, state: TranscriptState): void {
     const cwd = state.init?.cwd;
-    if (!cwd || this.cwdCache.get(sessionId) === cwd) return;
-    this.cwdCache.set(sessionId, cwd);
-    this.patchSession(sessionId, { cwd });
+    if (!cwd) return;
+    const changed = this.rememberCwd(sessionId, cwd);
+    const learned = this.learnEnvDir(this.session(sessionId)?.environmentId ?? '', cwd);
+    if (changed) this.patchSession(sessionId, { cwd });
+    if (changed || learned) this.persistLearned();
   }
 
   private startSessionPoller(sessionId: string): void {
@@ -563,6 +767,9 @@ export class SessionStore implements SessionStoreApi {
       this.sessionPoller = null;
       this.polledId = null;
     }
+    // A trailing mark_read still owed goes out now rather than after the session has left the screen.
+    const track = this.tracks.get(sessionId);
+    if (track && track.markTimer !== undefined) this.postMarkRead(sessionId, this.transcriptSignal(sessionId).value.lastSeq);
     this.stopPresence();
     void this.deps.client.presence(sessionId, this.deps.clientId, false).catch((err: unknown) => {
       log.debug('presence clear failed', { message: messageOf(err) });
@@ -639,11 +846,38 @@ export class SessionStore implements SessionStoreApi {
     if (announce) this.emit('needs_input', sessionId, state);
   }
 
-  private markReadIfVisible(sessionId: string): void {
+  /**
+   * Tell the server what was seen: at most one POST per MARK_READ_MIN_INTERVAL_MS while rows stream (a trailing
+   * post carries the newest seq when the window closes), at once with `flush` (turn end, leaving the session).
+   */
+  private markReadIfVisible(sessionId: string, opts: { flush?: boolean } = {}): void {
     if (!this.visible.value) return;
     const state = this.transcriptSignal(sessionId).value;
     if (state.lastSeq < 0) return;
-    void this.deps.client.markRead(sessionId, state.lastSeq).catch((err: unknown) => {
+    const track = this.trackFor(sessionId);
+    if (state.lastSeq <= track.markedSeq) return;
+    const due = track.markAt + MARK_READ_MIN_INTERVAL_MS - this.timers.now();
+    if (opts.flush || due <= 0) {
+      this.postMarkRead(sessionId, state.lastSeq);
+      return;
+    }
+    if (track.markTimer !== undefined) return; // the trailing post reads the newest seq when it fires
+    track.markTimer = this.timers.setTimeout(() => {
+      track.markTimer = undefined;
+      this.markReadIfVisible(sessionId, { flush: true });
+    }, due);
+  }
+
+  private postMarkRead(sessionId: string, seq: number): void {
+    const track = this.trackFor(sessionId);
+    if (track.markTimer !== undefined) {
+      this.timers.clearTimeout(track.markTimer);
+      track.markTimer = undefined;
+    }
+    if (seq <= track.markedSeq) return;
+    track.markedSeq = seq;
+    track.markAt = this.timers.now();
+    void this.deps.client.markRead(sessionId, seq).catch((err: unknown) => {
       log.debug('markRead failed', { message: messageOf(err) });
     });
     if (this.session(sessionId)?.unread) this.patchSession(sessionId, { unread: false });
@@ -701,15 +935,19 @@ export class SessionStore implements SessionStoreApi {
     const sig = this.transcriptSignal(sessionId);
     const before = sig.value;
     const optimistic = markSent(before, payload, text, images.length);
-    sig.value = optimistic;
-    const added = optimistic.items.filter((item) => !before.items.includes(item));
+    // The optimistic item is pending until the server echoes it; the reducer then replaces it by uuid.
+    const sent = optimistic.items[optimistic.items.length - 1];
+    const sentId = sent?.id;
+    const items =
+      sent && sent.kind === 'user' ? [...optimistic.items.slice(0, -1), { ...sent, pending: true }] : optimistic.items;
+    sig.value = { ...optimistic, items };
     try {
       await this.deps.client.sendEvents(sessionId, [payload]);
     } catch (err) {
       const current = sig.value;
       sig.value = {
         ...current,
-        items: current.items.filter((item) => !added.includes(item)),
+        items: current.items.filter((item) => item.id !== sentId),
         inFlightUserUuids: current.inFlightUserUuids.filter((u) => u !== payload.uuid),
         turn: current.turn === 'sending' ? before.turn : current.turn,
       };
@@ -908,6 +1146,9 @@ export class SessionStore implements SessionStoreApi {
         historyLoaded: false,
         offline: false,
         loadingOlder: null,
+        markedSeq: -1,
+        markAt: -Infinity,
+        markTimer: undefined,
       };
       this.tracks.set(sessionId, track);
     }

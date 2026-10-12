@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, migrateSettings } from '../src/settings';
+import { DEFAULT_SETTINGS, MAX_SESSION_CWDS, migrateSettings } from '../src/settings';
 
 describe('migrateSettings', () => {
   it('returns defaults for null (fresh install)', () => {
@@ -49,5 +49,32 @@ describe('migrateSettings', () => {
 
   it('keeps a user-set token host that is not a known legacy default', () => {
     expect(migrateSettings({ version: 2, oauthTokenUrl: 'https://my-proxy.example/v1/oauth/token' }).oauthTokenUrl).toBe('https://my-proxy.example/v1/oauth/token');
+  });
+});
+
+describe('migrateSettings learned directories', () => {
+  it('keeps the string entries of environmentDirs and sessionCwds and drops the rest', () => {
+    const out = migrateSettings({
+      version: 2,
+      environmentDirs: { env_a: '/x', env_b: 3, env_c: '' },
+      sessionCwds: { cse_1: '/y', cse_2: null },
+    });
+    expect(out.environmentDirs).toEqual({ env_a: '/x' });
+    expect(out.sessionCwds).toEqual({ cse_1: '/y' });
+  });
+
+  it('keeps only the newest MAX_SESSION_CWDS session cwds (last entries win)', () => {
+    const many: Record<string, string> = {};
+    for (let i = 0; i < MAX_SESSION_CWDS + 5; i++) many[`cse_${i}`] = `/d${i}`;
+    const out = migrateSettings({ version: 2, sessionCwds: many });
+    expect(Object.keys(out.sessionCwds)).toHaveLength(MAX_SESSION_CWDS);
+    expect(out.sessionCwds.cse_4).toBeUndefined();
+    expect(out.sessionCwds.cse_5).toBe('/d5');
+    expect(out.sessionCwds[`cse_${MAX_SESSION_CWDS + 4}`]).toBe(`/d${MAX_SESSION_CWDS + 4}`);
+  });
+
+  it('starts both maps empty on a fresh install and when the stored value is not an object', () => {
+    expect(migrateSettings(null).environmentDirs).toEqual({});
+    expect(migrateSettings({ version: 2, environmentDirs: 'nope', sessionCwds: ['a'] })).toMatchObject({ environmentDirs: {}, sessionCwds: {} });
   });
 });

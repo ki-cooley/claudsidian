@@ -1,9 +1,10 @@
 /**
- * A bottom sheet anchored to the plugin's own root: a backdrop, a titled panel and SheetAction rows.
- * Tapping the backdrop or pressing Escape closes it.
+ * A bottom sheet anchored to the plugin's own root: a backdrop, a titled panel with an X, and SheetAction rows.
+ * Tapping the backdrop, the X or pressing Escape closes it. The dialog is named by its title element
+ * (aria-labelledby), never by an aria-label, which Obsidian would also show as a hover tooltip.
  */
 import type { ComponentChildren, JSX } from 'preact';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useId } from 'preact/hooks';
 import { Button } from './Button';
 import { Icon } from './Icon';
 
@@ -17,6 +18,7 @@ export interface SheetProps {
 }
 
 export function Sheet(p: SheetProps): JSX.Element {
+  const titleId = useId();
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.key === 'Escape') {
@@ -35,13 +37,19 @@ export function Sheet(p: SheetProps): JSX.Element {
         if (ev.target === ev.currentTarget) p.onClose();
       }}
     >
-      <div class={['claudsidian-sheet', p.class ?? ''].filter(Boolean).join(' ')} role="dialog" aria-modal="true" aria-label={p.title ?? p.label ?? 'Menu'}>
+      <div class={['claudsidian-sheet', p.class ?? ''].filter(Boolean).join(' ')} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         {p.title !== undefined ? (
           <div class="claudsidian-sheet-head">
-            <div class="claudsidian-sheet-title">{p.title}</div>
+            <div class="claudsidian-sheet-title" id={titleId}>
+              {p.title}
+            </div>
             <Button icon="x" ariaLabel="Close" kind="ghost" onClick={p.onClose} />
           </div>
-        ) : null}
+        ) : (
+          <span class="claudsidian-sr-only" id={titleId}>
+            {p.label ?? 'Menu'}
+          </span>
+        )}
         <div class="claudsidian-sheet-body">{p.children}</div>
       </div>
     </div>

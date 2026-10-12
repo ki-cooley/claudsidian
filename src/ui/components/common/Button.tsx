@@ -1,4 +1,8 @@
-/** The one button: icon, label or both; primary and danger map onto Obsidian's mod-cta and mod-warning. */
+/**
+ * The one button: icon, label or both; primary and danger map onto Obsidian's mod-cta and mod-warning.
+ * aria-label is set only on icon-only buttons (Obsidian turns aria-label into a hover tooltip, so a
+ * button with visible text must not carry one or the tooltip duplicates its label).
+ */
 import type { ComponentChildren, JSX } from 'preact';
 import { Icon } from './Icon';
 
@@ -11,8 +15,9 @@ export interface ButtonProps {
   size?: 'small' | 'medium' | 'large';
   disabled?: boolean;
   pressed?: boolean;
-  /** required for icon-only buttons */
+  /** required for icon-only buttons; ignored when a visible label or children are present */
   ariaLabel?: string;
+  /** native tooltip; set only when passed explicitly */
   title?: string;
   class?: string;
   onClick?: (ev: MouseEvent) => void;
@@ -44,9 +49,9 @@ export function Button(p: ButtonProps): JSX.Element {
       type="button"
       class={cls}
       disabled={p.disabled}
-      aria-label={p.ariaLabel ?? (iconOnly ? p.icon : undefined)}
+      aria-label={iconOnly ? (p.ariaLabel ?? p.icon) : undefined}
       aria-pressed={p.pressed === undefined ? undefined : p.pressed ? 'true' : 'false'}
-      title={p.title ?? (iconOnly ? p.ariaLabel : undefined)}
+      title={p.title}
       onClick={p.onClick}
     >
       {p.icon ? <Icon name={p.icon} /> : null}

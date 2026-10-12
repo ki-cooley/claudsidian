@@ -12,6 +12,7 @@
   --claudsidian-measure: 72ch;
   --claudsidian-font: calc(var(--font-ui-medium) * var(--claudsidian-scale));
   --claudsidian-font-small: calc(var(--font-ui-small) * var(--claudsidian-scale));
+  --claudsidian-font-smaller: calc(var(--font-ui-smaller) * var(--claudsidian-scale));
   --claudsidian-hairline: 1px solid var(--background-modifier-border);
 
   display: flex;
@@ -33,12 +34,50 @@
   min-height: 0;
 }
 
-/* element defaults inside the view */
-.claudsidian-view :where(button) {
-  min-height: var(--claudsidian-tap);
-  font-size: inherit;
+/* Button reset. Obsidian styles every <button>: `button` (0,0,1) fixes height 30px, nowrap, centred content and
+   Obsidian's radius; `button:not(.clickable-icon)` (0,1,1) adds the grey fill and input shadow; its highest global
+   button rules are (0,2,1): `.is-tablet button:not(.clickable-icon)` (padding), `button:not(.clickable-icon).mobile-tap`,
+   `button.mod-cta:hover`, `.is-mobile button.mod-warning`. One selector here, (0,2,1) on every platform, ties those
+   and wins by source order (plugin CSS loads after app.css). Deliberately no mobile variant: a selector carrying
+   the view's `is-mobile` would reach (0,3,x) and outrank every two-class feature rule on the iPad. The hover,
+   focus-visible and disabled variants are (0,3,1), above Obsidian's `button:hover` and `button.mod-cta:hover`.
+   Every plugin button class then sets what it wants explicitly, written `.<screen> button.<class>` so it is at
+   least (0,2,1) and, loaded later in the bundle, wins the tie: padding, radius, background, min-height (the tap
+   targets: --claudsidian-tap). test/ui/sessions/styles.test.ts pins this arithmetic. */
+.claudsidian-root button:not(.clickable-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+  white-space: normal;
+  text-align: left;
+  cursor: pointer;
+}
+.claudsidian-root button:not(.clickable-icon):hover {
+  background: none;
+  box-shadow: none;
+}
+.claudsidian-root button:not(.clickable-icon):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.claudsidian-root button:not(.clickable-icon):disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
+/* element defaults inside the view */
 .claudsidian-view :where(input, textarea, select) {
   font-size: inherit;
 }

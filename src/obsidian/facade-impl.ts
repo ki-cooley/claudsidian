@@ -96,6 +96,21 @@ export class ObsidianFacade implements PluginFacade {
       .sort((a, b) => a.localeCompare(b));
   }
 
+  /** Obsidian's recent-files list, kept to markdown notes that still exist, newest first. */
+  getRecentFiles(limit: number): string[] {
+    const workspace = this.plugin.app.workspace as { getLastOpenFiles?: () => string[] };
+    if (typeof workspace.getLastOpenFiles !== 'function') return [];
+    const vault = this.plugin.app.vault;
+    const out: string[] = [];
+    for (const path of workspace.getLastOpenFiles()) {
+      if (out.length >= limit) break;
+      if (!path.toLowerCase().endsWith('.md') || out.includes(path)) continue;
+      if (vault.getAbstractFileByPath(path) === null) continue;
+      out.push(path);
+    }
+    return out;
+  }
+
   async openFile(path: string): Promise<void> {
     await this.plugin.app.workspace.openLinkText(path, '', false);
   }

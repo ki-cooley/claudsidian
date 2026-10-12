@@ -378,6 +378,93 @@ for (const name of profiles) {
     });
   }
 
+  if (send && !isMobile && name === 'desktop300') {
+    await step('queued-send', async () => {
+      // Owner note: a message sent while the session works must show immediately as pending.
+      const input = page.locator('.claudsidian-composer-input').first();
+      await input.fill('count slowly from 1 to 40, one number per line, and pause a second between each');
+      await input.press('Enter');
+      await sleep(3500);
+      await input.fill('and the day after?');
+      await input.press('Enter');
+      await sleep(1200);
+      await shot('queued-message');
+      const stopped = await ev(() => {
+        const b = document.querySelector('.claudsidian-composer-stop');
+        if (!b || b.disabled) return false;
+        b.click();
+        return true;
+      });
+      await sleep(2500);
+      await shot('after-stop', { note: stopped ? 'stop clicked' : 'stop button not available' });
+      await waitFor(() => { const h = document.querySelector('.claudsidian-header .claudsidian-status, .claudsidian-status'); return h && !h.classList.contains('is-busy'); }, 'idle after stop', 60000).catch(() => {});
+      await sleep(800);
+      await shot('idle-after-stop');
+    });
+
+    await step('catch-up-after-reopen', async () => {
+      const input = page.locator('.claudsidian-composer-input').first();
+      await input.fill('list the next three prep tasks on this list, one line each, nothing else');
+      await input.press('Enter');
+      await sleep(1500);
+      await ev(() => window.app.plugins.plugins['claudsidian'].store.close?.());
+      await sleep(25000);
+      await openSessionByTitle(vaultSession);
+      await sleep(2500);
+      const info = await ev(() => {
+        const el = document.querySelector('.claudsidian-transcript-wrap') ?? document.querySelector('.claudsidian-transcript');
+        const atBottom = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 8 : null;
+        const text = document.querySelector('.claudsidian-root')?.innerText ?? '';
+        return { atBottom, hasJump: !!document.querySelector('.claudsidian-jump'), tail: text.slice(-300) };
+      });
+      log('catch-up:', JSON.stringify(info));
+      index.push({ profile: profileName, name: 'catch-up-info', metrics: info });
+      await shot('catch-up-after-reopen', { full: true });
+    });
+  }
+
+  if (send && !isMobile && name === 'desktop300' && 'create' in args) {
+    await step('create-and-permission', async () => {
+      await toList();
+      await ev(() => document.querySelector('.claudsidian-sessions-new')?.click());
+      await sleep(1200);
+      await shot('create-sheet-open', { full: true });
+      const filled = await ev(() => {
+        const title = document.querySelector('.claudsidian-new-session-title input, .claudsidian-new-session-title textarea, .claudsidian-new-session input[type="text"]');
+        if (title) { title.value = 'claudsidian ux tour'; title.dispatchEvent(new Event('input', { bubbles: true })); }
+        const mode = document.querySelector('.claudsidian-new-session-mode select');
+        if (mode) { mode.value = 'default'; mode.dispatchEvent(new Event('change', { bubbles: true })); }
+        return { title: !!title, mode: !!mode, modeValue: mode?.value };
+      });
+      log('create form:', JSON.stringify(filled));
+      await sleep(400);
+      await shot('create-sheet-filled');
+      await ev(() => {
+        const btns = [...document.querySelectorAll('.claudsidian-new-session-actions button, .claudsidian-sheet-action')];
+        const create = btns.find((b) => /create|start/i.test(b.textContent ?? ''));
+        create?.click();
+      });
+      await waitFor(() => !!document.querySelector('.claudsidian-composer-input'), 'new session composer', 60000);
+      await sleep(2000);
+      await shot('new-session-opened', { full: true });
+      const input = page.locator('.claudsidian-composer-input').first();
+      await input.fill("append the line 'ux tour was here' to inbox/claudsidian-ux-tour.md (create it if missing)");
+      await input.press('Enter');
+      await waitFor(() => !!document.querySelector('.claudsidian-permission'), 'permission card', 180000);
+      await sleep(800);
+      await shot('permission-card', { full: true });
+      await ev(() => {
+        const btns = [...document.querySelectorAll('.claudsidian-permission button')];
+        (btns.find((b) => /allow|yes/i.test(b.textContent ?? '')) ?? btns[0])?.click();
+      });
+      await sleep(2500);
+      await shot('permission-allowed');
+      await waitFor(() => { const h = document.querySelector('.claudsidian-header .claudsidian-status, .claudsidian-status'); return h && !h.classList.contains('is-busy'); }, 'idle after permission', 120000).catch(() => {});
+      await sleep(800);
+      await shot('after-permission-turn', { full: true });
+    });
+  }
+
   await step('cooking', async () => {
     await ev(() => window.app.commands.executeCommandById('claudsidian:toggle-cooking'));
     await sleep(1200);

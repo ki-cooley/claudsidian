@@ -20,8 +20,11 @@ import { ClaudsidianSettingTab } from './ui/SettingsTab';
 import { setDebugLogging } from './util/log';
 import { uuidv4 } from './util/uuid';
 
-/** Settings the services read once at load; changing them takes a plugin reload. */
-const RELOAD_KEYS: (keyof ClaudsidianSettings)[] = ['apiBaseUrl', 'oauthTokenUrl', 'oauthAuthorizeUrl'];
+/**
+ * The client and the auth manager read these through functions, so a change applies on the next request;
+ * the list is refreshed right away so a bad host shows up as the ordinary error banner.
+ */
+const URL_KEYS: (keyof ClaudsidianSettings)[] = ['apiBaseUrl', 'oauthTokenUrl', 'oauthAuthorizeUrl'];
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -40,7 +43,6 @@ export default class ClaudsidianPlugin extends Plugin {
   private notifications: Notifications | null = null;
   private ribbonEl: HTMLElement | null = null;
   private readonly needsInput = new Set<string>();
-  private reloadNoticeShown = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -57,12 +59,12 @@ export default class ClaudsidianPlugin extends Plugin {
         this.settings.auth = s;
         await this.saveSettings();
       },
-      tokenUrl: this.settings.oauthTokenUrl,
-      authorizeUrl: this.settings.oauthAuthorizeUrl,
-      profileUrl: `${this.settings.apiBaseUrl}/api/oauth/profile`,
+      tokenUrl: () => this.settings.oauthTokenUrl,
+      authorizeUrl: () => this.settings.oauthAuthorizeUrl,
+      profileUrl: () => `${this.settings.apiBaseUrl}/api/oauth/profile`,
     });
     this.client = new CcrClient({
-      baseUrl: this.settings.apiBaseUrl,
+      baseUrl: () => this.settings.apiBaseUrl,
       transport: obsidianTransport,
       getAccessToken: () => this.auth.getAccessToken(),
       onUnauthorized: async () => {
@@ -82,6 +84,11 @@ export default class ClaudsidianPlugin extends Plugin {
       settings: () => this.settings,
       clientId: this.settings.clientId,
       onNotice: (text) => new Notice(text),
+      // Learned directories only feed grouping and the new-session sheet, which read the store; no view re-render.
+      persistLearned: (patch) => {
+        Object.assign(this.settings, patch);
+        return this.saveData(this.settings);
+      },
     });
     this.capture = new ContextCapture(this.app, { ownViewType: VIEW_TYPE_CHAT });
     this.capture.install(this);
@@ -153,17 +160,15 @@ export default class ClaudsidianPlugin extends Plugin {
 
   /** Apply a patch (when given), persist, and tell the view. */
   async saveSettings(patch?: Partial<ClaudsidianSettings>): Promise<void> {
+    let urlChanged = false;
     if (patch) {
-      const needsReload = RELOAD_KEYS.some((k) => patch[k] !== undefined && patch[k] !== this.settings[k]);
+      urlChanged = URL_KEYS.some((k) => patch[k] !== undefined && patch[k] !== this.settings[k]);
       Object.assign(this.settings, patch);
-      if (needsReload && !this.reloadNoticeShown) {
-        this.reloadNoticeShown = true;
-        new Notice('Claudsidian: reload the plugin to use the new URL.');
-      }
     }
     await this.saveData(this.settings);
     setDebugLogging(this.settings.debugLog);
     this.settingsChanged.value += 1;
+    if (urlChanged && this.store) void this.store.refreshSessions();
   }
 
   /** Open (or reveal) the chat view: right sidebar on desktop, a full-screen leaf on mobile. */

@@ -47,9 +47,9 @@ function deps(overrides: Partial<ConstructorParameters<typeof AuthManager>[0]> =
       stored = s;
       saves.push(s);
     },
-    tokenUrl: 'https://t/token',
-    authorizeUrl: 'https://a/authorize',
-    profileUrl: 'https://p/profile',
+    tokenUrl: () => 'https://t/token',
+    authorizeUrl: () => 'https://a/authorize',
+    profileUrl: () => 'https://p/profile',
     timers: {
       setTimeout: (fn: () => void) => {
         fn();
@@ -450,5 +450,23 @@ describe('AuthManager', () => {
     const s = await auth.completeSignIn(`c#${state}`);
     expect(calls[0]!.body).toMatchObject({ client_id: 'custom-client' });
     expect(s.clientId).toBe('custom-client');
+  });
+});
+
+describe('AuthManager URL deps', () => {
+  it('reads the token and authorize URLs at each use, so a settings change applies to the next call', async () => {
+    let tokenUrl = 'https://t/token';
+    let authorizeUrl = 'https://a/authorize';
+    const base = deps({ tokenUrl: () => tokenUrl, authorizeUrl: () => authorizeUrl });
+    const auth = new AuthManager(base.d);
+    const { state } = await auth.beginSignIn();
+    await auth.completeSignIn(`code-1#${state}`);
+    expect(base.calls[0]!.url).toBe('https://t/token');
+    tokenUrl = 'https://t2/token';
+    authorizeUrl = 'https://a2/authorize';
+    await auth.refresh();
+    expect(base.calls.at(-1)!.url).toBe('https://t2/token');
+    const again = await auth.beginSignIn();
+    expect(new URL(again.url).origin).toBe('https://a2');
   });
 });

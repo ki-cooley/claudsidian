@@ -1,6 +1,7 @@
 /* Claudsidian cooking mode (.is-cooking on the view): type scaled by --claudsidian-scale (set from the
-   font-scale setting), 48 px targets, a two-line composer, full-width quick replies, compact tool lines.
-   Loaded last so its tokens win over mobile's. */
+   font-scale setting), 48 px targets (56 px in the dock), fewer things on screen (no model or mode chips,
+   no message action icons, one compact context chip), and a session list that scales without a
+   horizontal scroll. Loaded last so its tokens win over mobile's. */
 
 .claudsidian-view.is-cooking {
   --claudsidian-tap: 48px;
@@ -12,10 +13,89 @@
 
 .claudsidian-view.is-cooking :where(button) {
   min-height: var(--claudsidian-tap);
+}
+
+/* ---- chat: what goes away in the kitchen ----------------------------------- */
+
+/* the header's meta row keeps "Needs you" and the chef hat; model and mode chips and the idle/working
+   status word are not kitchen information */
+.claudsidian-view.is-cooking .claudsidian-header-row.is-meta .claudsidian-meta-chip:not(.is-static),
+.claudsidian-view.is-cooking .claudsidian-header-row.is-meta .claudsidian-status:not(.is-needs) {
+  display: none;
+}
+.claudsidian-view.is-cooking .claudsidian-header-row.is-meta:not(:has(.claudsidian-status.is-needs, .claudsidian-meta-chip.is-static)) {
+  display: none;
+}
+
+/* copy, insert and new-note icons under every reply */
+.claudsidian-view.is-cooking .claudsidian-msg-actions {
+  display: none;
+}
+
+/* the status word scaled so "Needs you" reads from a distance */
+.claudsidian-view.is-cooking .claudsidian-status.is-needs {
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale));
+  min-height: var(--claudsidian-tap);
   padding-inline: var(--claudsidian-pad);
 }
 
-.claudsidian-view.is-cooking :where(textarea) {
-  min-height: calc(2 * 1.5em + 2 * var(--claudsidian-gap));
+/* ---- sessions list: one scale, no horizontal scroll ------------------------ */
+
+.claudsidian-view.is-cooking .claudsidian-sessions {
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale));
+  overflow-x: hidden;
+}
+.claudsidian-view.is-cooking .claudsidian-sessions-toolbar {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.claudsidian-view.is-cooking .claudsidian-sessions-heading {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale));
+}
+.claudsidian-view.is-cooking .claudsidian-session-group-head {
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale));
+  min-height: var(--claudsidian-tap);
+}
+.claudsidian-view.is-cooking .claudsidian-session-row {
+  min-width: 0;
+  overflow: hidden;
+}
+.claudsidian-view.is-cooking .claudsidian-session-main {
+  min-height: calc(var(--claudsidian-tap) + 1.6em);
+}
+.claudsidian-view.is-cooking .claudsidian-session-title {
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale));
+}
+.claudsidian-view.is-cooking .claudsidian-session-sub,
+.claudsidian-view.is-cooking .claudsidian-session-time,
+.claudsidian-view.is-cooking .claudsidian-session-summary {
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale));
+  line-height: 1.3;
+}
+.claudsidian-view.is-cooking .claudsidian-ss-btn {
+  min-height: var(--claudsidian-tap);
+}
+.claudsidian-view.is-cooking .claudsidian-ss-btn.is-icon-only {
+  width: var(--claudsidian-tap);
 }
 
+/* Cooking mode keeps one composer tool: the photo. Mentioning other notes is a desk task and the open note is
+   attached automatically, so the @ button goes; the photo button and the chef-hat toggle take full kitchen targets. */
+.claudsidian-chat.is-cooking button.claudsidian-composer-tool[aria-label='Mention a note'] {
+  display: none;
+}
+.claudsidian-chat.is-cooking .claudsidian-composer-tools button.claudsidian-btn.is-icon,
+.claudsidian-chat.is-mobile.is-cooking .claudsidian-composer-tools button.claudsidian-btn.is-icon {
+  min-width: 48px;
+  min-height: 48px;
+  margin-bottom: 4px;
+}
+.claudsidian-chat.is-cooking button.claudsidian-meta-chip.is-cooking-toggle {
+  min-width: 48px;
+  min-height: 48px;
+  justify-content: center;
+}

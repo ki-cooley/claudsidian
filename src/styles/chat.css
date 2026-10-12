@@ -3,6 +3,11 @@
  * Obsidian variables only; the accent colour is reserved for primary actions and the working
  * indicator. --claudsidian-scale (1 by default, the cooking font scale when set) multiplies
  * every size that should grow in cooking mode.
+ *
+ * Buttons: base.css resets every <button> under .claudsidian-root at (0,2,1), so each button
+ * class here is written as `.claudsidian-chat button.claudsidian-x` (0,2,1, later in the bundle)
+ * and sets its own padding, radius, background and size explicitly. Mobile and cooking variants
+ * carry the same qualifier.
  */
 
 /* ---- common widgets ---------------------------------------------------- */
@@ -28,51 +33,86 @@
   width: 18px;
 }
 
-.claudsidian-chat .claudsidian-btn {
+/* an accessible name that takes no space (containers use aria-labelledby, never aria-label, so Obsidian shows no tooltip) */
+.claudsidian-chat .claudsidian-sr-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.claudsidian-chat button.claudsidian-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   min-height: 32px;
   padding: 4px 12px;
+  border: 0;
   border-radius: var(--radius-m);
+  background: var(--interactive-normal);
+  box-shadow: var(--input-shadow);
+  color: var(--text-normal);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
   line-height: 1.2;
-  cursor: pointer;
   white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
 }
-.claudsidian-chat .claudsidian-btn.is-icon {
+.claudsidian-chat button.claudsidian-btn:hover:not(:disabled) {
+  background: var(--interactive-hover);
+}
+.claudsidian-chat button.claudsidian-btn.is-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.claudsidian-chat button.claudsidian-btn.is-primary:hover:not(:disabled) {
+  background: var(--interactive-accent-hover);
+}
+.claudsidian-chat button.claudsidian-btn.is-danger {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+.claudsidian-chat button.claudsidian-btn.is-danger:hover:not(:disabled) {
+  background: var(--background-modifier-error-hover);
+}
+.claudsidian-chat button.claudsidian-btn.is-icon {
   padding: 4px;
   min-width: 32px;
 }
-.claudsidian-chat .claudsidian-btn.is-small {
+.claudsidian-chat button.claudsidian-btn.is-small {
   min-height: 28px;
   min-width: 28px;
   padding: 2px 8px;
 }
-.claudsidian-chat .claudsidian-btn.is-small.is-icon {
+.claudsidian-chat button.claudsidian-btn.is-small.is-icon {
   padding: 2px;
 }
-.claudsidian-chat .claudsidian-btn.is-large {
+.claudsidian-chat button.claudsidian-btn.is-large {
   min-height: 44px;
   padding: 8px 16px;
   font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
 }
-.claudsidian-chat .claudsidian-btn.is-ghost {
+.claudsidian-chat button.claudsidian-btn.is-ghost {
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
 }
-.claudsidian-chat .claudsidian-btn.is-ghost:hover:not(:disabled),
-.claudsidian-chat .claudsidian-btn.is-ghost.is-pressed {
+.claudsidian-chat button.claudsidian-btn.is-ghost:hover:not(:disabled),
+.claudsidian-chat button.claudsidian-btn.is-ghost.is-pressed {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
-.claudsidian-chat .claudsidian-btn:disabled {
+.claudsidian-chat button.claudsidian-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.claudsidian-chat .claudsidian-btn:focus-visible {
+.claudsidian-chat button.claudsidian-btn:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 1px;
 }
@@ -81,16 +121,18 @@
   text-overflow: ellipsis;
 }
 
-.claudsidian-link-btn {
-  background: none;
-  border: 0;
-  box-shadow: none;
+.claudsidian-chat button.claudsidian-link-btn {
+  display: inline;
+  min-height: 0;
   padding: 2px 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
   color: var(--text-accent);
   font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
   cursor: pointer;
 }
-.claudsidian-link-btn:hover {
+.claudsidian-chat button.claudsidian-link-btn:hover {
   text-decoration: underline;
 }
 
@@ -108,6 +150,11 @@
   width: 12px;
   height: 12px;
   border-width: 2px;
+}
+.claudsidian-chat button.claudsidian-btn .claudsidian-spinner {
+  border-color: currentColor;
+  border-top-color: transparent;
+  opacity: 0.8;
 }
 
 .claudsidian-chat .claudsidian-banner {
@@ -147,7 +194,7 @@
 .claudsidian-chat .claudsidian-sheet {
   max-height: 80%;
   overflow-y: auto;
-  padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 8px calc(8px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   background: var(--background-primary);
   border-top: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-l) var(--radius-l) 0 0;
@@ -172,9 +219,10 @@
   flex-direction: column;
   gap: 2px;
 }
-.claudsidian-sheet-action {
+.claudsidian-chat button.claudsidian-sheet-action {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
   width: 100%;
   min-height: 44px;
@@ -186,12 +234,13 @@
   color: var(--text-normal);
   font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
   text-align: left;
+  white-space: normal;
   cursor: pointer;
 }
-.claudsidian-sheet-action:hover:not(:disabled) {
+.claudsidian-chat button.claudsidian-sheet-action:hover:not(:disabled) {
   background: var(--background-modifier-hover);
 }
-.claudsidian-sheet-action:disabled {
+.claudsidian-chat button.claudsidian-sheet-action:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -202,8 +251,8 @@
   flex: 1;
   min-width: 0;
 }
-.claudsidian-sheet-action.is-danger,
-.claudsidian-sheet-action.is-danger .claudsidian-icon {
+.claudsidian-chat button.claudsidian-sheet-action.is-danger,
+.claudsidian-chat button.claudsidian-sheet-action.is-danger .claudsidian-icon {
   color: var(--color-red);
 }
 .claudsidian-sheet-action.is-selected .claudsidian-sheet-action-label {
@@ -262,55 +311,83 @@
   background: var(--background-primary);
 }
 
+/* ---- header ------------------------------------------------------------ */
+
 .claudsidian-header {
+  position: relative;
+  z-index: 2;
   flex: 0 0 auto;
   padding: 6px 8px 8px;
   border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
 }
 .claudsidian-header-row {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.claudsidian-header-row.is-meta {
-  padding: 4px 0 0 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.claudsidian-header-row.is-meta::-webkit-scrollbar {
-  display: none;
-}
-.claudsidian-header-title {
-  flex: 1;
   min-width: 0;
-  padding: 6px 4px;
+}
+/* chips wrap onto a second line on desktop widths */
+.claudsidian-header-row.is-meta {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 4px 0 0 4px;
+}
+/* a plain left-aligned title that ellipsises; the whole thing is the rename tap target */
+.claudsidian-chat button.claudsidian-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 6px;
   border: 0;
+  border-radius: var(--radius-s);
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
   font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
   font-weight: 600;
+  line-height: 1.3;
   text-align: left;
+  cursor: pointer;
+}
+.claudsidian-chat button.claudsidian-header-title:hover {
+  background: var(--background-modifier-hover);
+}
+.claudsidian-header-title-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
-}
-.claudsidian-header-title:hover {
-  color: var(--text-accent);
 }
 
-.claudsidian-chat .claudsidian-status {
+/* the status chip: static for idle/working/offline, a button when the session needs the person */
+.claudsidian-chat .claudsidian-status,
+.claudsidian-chat button.claudsidian-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+  min-height: 24px;
   padding: 2px 10px 2px 8px;
+  border: 0;
   border-radius: 999px;
   background: var(--background-secondary);
+  box-shadow: none;
   color: var(--text-muted);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  line-height: 1.3;
   white-space: nowrap;
+}
+.claudsidian-chat button.claudsidian-status {
+  cursor: pointer;
+}
+.claudsidian-chat button.claudsidian-status:hover {
+  background: var(--background-modifier-hover);
 }
 .claudsidian-chat .claudsidian-status-dot {
   width: 8px;
@@ -342,56 +419,77 @@
   box-shadow: inset 0 0 0 2px var(--text-faint);
 }
 
-.claudsidian-meta-chip {
+/* model and mode chips: tappable ones carry a chevron and a border, static ones neither */
+.claudsidian-chat .claudsidian-meta-chip,
+.claudsidian-chat button.claudsidian-meta-chip {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   flex: 0 0 auto;
   max-width: 180px;
-  padding: 2px 8px;
+  min-height: 24px;
+  padding: 2px 6px 2px 8px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
   font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+  line-height: 1.3;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
-.claudsidian-meta-chip:hover {
+.claudsidian-meta-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.claudsidian-meta-chevron {
+  opacity: 0.7;
+}
+.claudsidian-chat button.claudsidian-meta-chip:hover {
   color: var(--text-normal);
   border-color: var(--text-muted);
 }
-.claudsidian-meta-chip.is-static {
-  cursor: default;
+.claudsidian-chat .claudsidian-meta-chip.is-static {
   padding: 2px 6px;
+  border: 0;
+  background: var(--background-secondary);
+  cursor: default;
 }
 
 /* ---- transcript ------------------------------------------------------- */
 
 .claudsidian-transcript-wrap {
   position: relative;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 .claudsidian-transcript {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overflow-anchor: none;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 10px 12px 16px;
+  scroll-padding-top: 10px;
+}
+.claudsidian-transcript-inner {
+  min-width: 0;
 }
 .claudsidian-empty {
   padding: 32px 12px;
   text-align: center;
   color: var(--text-muted);
 }
-.claudsidian-older {
+.claudsidian-chat button.claudsidian-older {
   display: block;
+  min-height: 28px;
   margin: 0 auto 12px;
   padding: 4px 12px;
   border: 1px solid var(--background-modifier-border);
@@ -400,9 +498,10 @@
   box-shadow: none;
   color: var(--text-muted);
   font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+  white-space: nowrap;
   cursor: pointer;
 }
-.claudsidian-older:hover:not(:disabled) {
+.claudsidian-chat button.claudsidian-older:hover:not(:disabled) {
   color: var(--text-normal);
 }
 
@@ -415,26 +514,73 @@
 .claudsidian-item[data-kind='system'] + .claudsidian-item[data-kind='system'] {
   margin-top: 4px;
 }
+.claudsidian-item[data-kind='result'] + .claudsidian-item,
+.claudsidian-item + .claudsidian-item[data-kind='result'] {
+  margin-top: 4px;
+}
 
-.claudsidian-jump {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
+/* the jump control sits in its own gutter between the transcript and the composer, never over text */
+.claudsidian-jump-gutter {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 4px 12px 6px;
+  background: var(--background-primary);
+}
+.claudsidian-chat button.claudsidian-jump {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px 14px;
+  min-height: 32px;
+  padding: 4px 14px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
   background: var(--background-secondary);
+  box-shadow: var(--shadow-s);
   color: var(--text-normal);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
-  box-shadow: var(--shadow-s);
+  white-space: nowrap;
   cursor: pointer;
 }
-.claudsidian-jump.has-new {
+.claudsidian-chat button.claudsidian-jump.has-new {
   border-color: var(--interactive-accent);
+}
+
+/* working line: three dots under the last item while the turn runs */
+.claudsidian-working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  min-height: 24px;
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+}
+.claudsidian-working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.claudsidian-working-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  animation: claudsidian-dots 1.2s ease-in-out infinite;
+}
+.claudsidian-working-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.claudsidian-working-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.claudsidian-working-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* user */
@@ -444,6 +590,7 @@
 }
 .claudsidian-user-bubble {
   max-width: 85%;
+  min-width: 0;
   padding: 8px 12px;
   border-radius: var(--radius-m);
   background: var(--background-secondary);
@@ -451,6 +598,9 @@
 }
 .claudsidian-user.is-synthetic .claudsidian-user-bubble {
   color: var(--text-muted);
+}
+.claudsidian-user.is-pending .claudsidian-user-bubble {
+  opacity: 0.6;
 }
 .claudsidian-user-text {
   white-space: pre-wrap;
@@ -468,15 +618,27 @@
   color: var(--text-muted);
   font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
 }
-.claudsidian-badge.is-button {
-  border: 0;
+.claudsidian-chat button.claudsidian-badge.is-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
   padding: 2px 0;
+  border: 0;
+  border-radius: var(--radius-s);
   background: transparent;
   box-shadow: none;
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+  white-space: nowrap;
   cursor: pointer;
 }
-.claudsidian-badge.is-button:hover {
+.claudsidian-chat button.claudsidian-badge.is-button:hover {
   color: var(--text-normal);
+}
+.claudsidian-user-pending {
+  color: var(--text-faint);
+  font-style: italic;
 }
 .claudsidian-user-context {
   margin: 6px 0 0;
@@ -489,11 +651,41 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.claudsidian-user-context-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+}
+.claudsidian-user-context-line {
+  display: contents;
+}
+.claudsidian-user-context-list dt {
+  color: var(--text-faint);
+}
+.claudsidian-user-context-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* assistant */
 .claudsidian-assistant {
   position: relative;
   max-width: 72ch;
+  min-width: 0;
+}
+/* wide tables and long tokens scroll inside the message, never the transcript */
+.claudsidian-markdown {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
 }
 .claudsidian-markdown > :first-child {
   margin-top: 0;
@@ -501,8 +693,19 @@
 .claudsidian-markdown > :last-child {
   margin-bottom: 0;
 }
+.claudsidian-markdown table {
+  max-width: 100%;
+}
+.claudsidian-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.claudsidian-markdown img {
+  max-width: 100%;
+  height: auto;
+}
 /* remote images in session output render as tap-to-load placeholders (markdown-sanitize.ts) */
-.claudsidian-md-image {
+.claudsidian-chat button.claudsidian-md-image {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -515,17 +718,15 @@
   box-shadow: none;
   color: var(--text-muted);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  white-space: normal;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-.claudsidian-md-image:hover {
+.claudsidian-chat button.claudsidian-md-image:hover {
   color: var(--text-normal);
 }
-.claudsidian-md-image.is-blocked {
+.claudsidian-chat button.claudsidian-md-image.is-blocked {
   cursor: default;
-}
-.claudsidian-chat.is-mobile .claudsidian-md-image {
-  min-height: 44px;
 }
 .claudsidian-md-link-dropped {
   color: var(--text-muted);
@@ -554,10 +755,11 @@
 }
 
 /* thinking */
-.claudsidian-thinking-toggle {
+.claudsidian-chat button.claudsidian-thinking-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 24px;
   padding: 2px 6px 2px 2px;
   border: 0;
   border-radius: var(--radius-s);
@@ -565,9 +767,10 @@
   box-shadow: none;
   color: var(--text-faint);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  white-space: nowrap;
   cursor: pointer;
 }
-.claudsidian-thinking-toggle:hover {
+.claudsidian-chat button.claudsidian-thinking-toggle:hover {
   color: var(--text-muted);
 }
 .claudsidian-thinking.is-partial .claudsidian-thinking-toggle {
@@ -596,6 +799,42 @@
 .claudsidian-system.is-output .claudsidian-code {
   color: var(--text-muted);
 }
+/* a user turn the host or a peer injected: one muted line, the body behind a tap */
+.claudsidian-system.is-injected {
+  text-align: left;
+}
+.claudsidian-chat button.claudsidian-system-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 8px 2px 4px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  white-space: nowrap;
+  cursor: pointer;
+}
+.claudsidian-chat button.claudsidian-system-toggle:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.claudsidian-system-body {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 40vh;
+  overflow: auto;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .claudsidian-error {
   display: flex;
   align-items: flex-start;
@@ -607,30 +846,30 @@
 .claudsidian-error .claudsidian-icon {
   margin-top: 2px;
 }
+/* a normal turn renders nothing; with costs on, one muted right-aligned line; errors keep their headline */
 .claudsidian-result {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   color: var(--text-faint);
   font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+  text-align: right;
 }
-.claudsidian-result-rule {
-  flex: 1 1 24px;
-  height: 1px;
-  background: var(--background-modifier-border);
+.claudsidian-result.is-error {
+  align-items: flex-start;
+  text-align: left;
 }
 .claudsidian-result-text {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  white-space: nowrap;
 }
 .claudsidian-result.is-error .claudsidian-result-text {
   color: var(--color-red);
 }
 .claudsidian-result-errors {
-  flex-basis: 100%;
   margin: 0;
   padding-left: 18px;
   color: var(--color-red);
@@ -645,121 +884,76 @@
   color: var(--color-orange);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
 }
-.claudsidian-pinned {
-  flex: 0 1 auto;
-  max-height: 55%;
-  overflow-y: auto;
-  padding: 10px 12px;
-  border-top: 1px solid var(--background-modifier-border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* context chips */
-.claudsidian-chips {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-  padding: 8px 12px 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.claudsidian-chips::-webkit-scrollbar {
-  display: none;
-}
-.claudsidian-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  max-width: 220px;
-  min-height: 28px;
-  padding: 3px 10px 3px 8px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  background: var(--background-secondary);
-  box-shadow: none;
-  color: var(--text-normal);
-  font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
-  cursor: pointer;
-}
-.claudsidian-chip-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.claudsidian-chip .claudsidian-icon {
-  color: var(--text-muted);
-}
-.claudsidian-chip.is-off {
-  color: var(--text-faint);
-  background: transparent;
-  text-decoration: line-through;
-}
-.claudsidian-chip:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* quick replies */
-.claudsidian-quick {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
-  padding: 0 12px calc(10px + env(safe-area-inset-bottom, 0px));
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.claudsidian-quick::-webkit-scrollbar {
-  display: none;
-}
-.claudsidian-quick-btn {
-  flex: 1 0 auto;
-  min-height: 48px;
-  padding: 8px 18px;
-  border-radius: var(--radius-m);
-  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
-  white-space: nowrap;
-  cursor: pointer;
-}
+/* The pinned area, context chips and quick replies are styled in composer.css (their component's file). */
 
 /* ---- mobile and cooking sizes ------------------------------------------ */
 
-.claudsidian-chat.is-mobile .claudsidian-btn,
-.claudsidian-chat.is-mobile .claudsidian-chip,
+.claudsidian-chat.is-mobile button.claudsidian-btn,
+.claudsidian-chat.is-mobile button.claudsidian-meta-chip,
+.claudsidian-chat.is-mobile button.claudsidian-status,
+.claudsidian-chat.is-mobile button.claudsidian-older,
+.claudsidian-chat.is-mobile button.claudsidian-thinking-toggle,
+.claudsidian-chat.is-mobile button.claudsidian-system-toggle,
+.claudsidian-chat.is-mobile button.claudsidian-badge.is-button,
+.claudsidian-chat.is-mobile button.claudsidian-header-title,
+.claudsidian-chat.is-mobile button.claudsidian-jump {
+  min-height: 44px;
+}
 .claudsidian-chat.is-mobile .claudsidian-meta-chip,
-.claudsidian-chat.is-mobile .claudsidian-older,
-.claudsidian-chat.is-mobile .claudsidian-thinking-toggle,
-.claudsidian-chat.is-mobile .claudsidian-badge.is-button {
-  min-height: 44px;
+.claudsidian-chat.is-mobile .claudsidian-status {
+  min-height: 36px;
 }
-.claudsidian-chat.is-mobile .claudsidian-btn.is-icon {
+.claudsidian-chat.is-mobile button.claudsidian-btn.is-icon {
   min-width: 44px;
-}
-.claudsidian-chat.is-mobile .claudsidian-jump {
-  min-height: 44px;
 }
 .claudsidian-chat.is-mobile .claudsidian-header {
   padding: 4px 4px 8px;
 }
-.claudsidian-chat.is-cooking .claudsidian-btn,
-.claudsidian-chat.is-cooking .claudsidian-chip,
-.claudsidian-chat.is-cooking .claudsidian-meta-chip,
-.claudsidian-chat.is-cooking .claudsidian-older,
-.claudsidian-chat.is-cooking .claudsidian-thinking-toggle,
-.claudsidian-chat.is-cooking .claudsidian-badge.is-button,
-.claudsidian-chat.is-cooking .claudsidian-sheet-action {
+/* on mobile the chip row scrolls sideways with a fade at the right edge instead of wrapping */
+.claudsidian-chat.is-mobile .claudsidian-header-row.is-meta {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-right: 28px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+.claudsidian-chat.is-mobile .claudsidian-header-row.is-meta::-webkit-scrollbar {
+  display: none;
+}
+.claudsidian-chat.is-cooking button.claudsidian-btn,
+.claudsidian-chat.is-cooking button.claudsidian-meta-chip,
+.claudsidian-chat.is-cooking button.claudsidian-status,
+.claudsidian-chat.is-cooking button.claudsidian-older,
+.claudsidian-chat.is-cooking button.claudsidian-thinking-toggle,
+.claudsidian-chat.is-cooking button.claudsidian-system-toggle,
+.claudsidian-chat.is-cooking button.claudsidian-badge.is-button,
+.claudsidian-chat.is-cooking button.claudsidian-header-title,
+.claudsidian-chat.is-cooking button.claudsidian-jump,
+.claudsidian-chat.is-cooking button.claudsidian-sheet-action {
   min-height: 48px;
 }
-.claudsidian-chat.is-cooking .claudsidian-btn.is-icon {
+.claudsidian-chat.is-cooking button.claudsidian-btn.is-icon {
   min-width: 48px;
 }
+.claudsidian-chat.is-cooking .claudsidian-meta-chip,
+.claudsidian-chat.is-cooking .claudsidian-status {
+  min-height: 40px;
+}
+/* the scaled header stays in flow above the transcript; extra top padding keeps the first line clear of its edge */
+.claudsidian-chat.is-cooking .claudsidian-header {
+  padding-bottom: 10px;
+}
 .claudsidian-chat.is-cooking .claudsidian-transcript {
-  padding: 12px 14px 20px;
+  padding: 16px 14px 20px;
+  scroll-padding-top: 16px;
 }
 .claudsidian-chat.is-cooking .claudsidian-item + .claudsidian-item {
   margin-top: 16px;
+}
+.claudsidian-chat.is-cooking .claudsidian-working {
+  min-height: 32px;
 }
 
 /* ---- motion ------------------------------------------------------------- */
@@ -785,11 +979,27 @@
     visibility: hidden;
   }
 }
+@keyframes claudsidian-dots {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .claudsidian-spinner,
   .claudsidian-status-dot,
-  .claudsidian-caret {
+  .claudsidian-caret,
+  .claudsidian-working-dots span {
     animation: none;
+  }
+  .claudsidian-working-dots span {
+    opacity: 0.6;
   }
   .claudsidian-switch,
   .claudsidian-switch::after,

@@ -35,7 +35,10 @@ function lastSegment(p: string): string {
   return parts[parts.length - 1] ?? '';
 }
 
-/** Environments known to serve the vault: by bridge_info.directory first, then by a label naming the vault folder. */
+/**
+ * Environments known to serve the vault: by their directory first (bridge_info.directory, or the directory the
+ * store learned and persisted from an init event), then by a label naming the vault folder.
+ */
 function vaultEnvironmentIds(environments: readonly EnvironmentHint[], vaultPathOnMac: string): Set<string> {
   const ids = new Set<string>();
   const folder = lastSegment(vaultPathOnMac);
@@ -49,14 +52,23 @@ function vaultEnvironmentIds(environments: readonly EnvironmentHint[], vaultPath
   return ids;
 }
 
+/** 0 for a row waiting on the user, 1 for the rest; quiet (offline, machine-named) rows never rank 0. */
 function rank(s: SessionSummary): number {
   return statusOf(s) === 'needs_you' ? 0 : 1;
 }
 
+/** The store's stable order key (frozen at the last full re-sort), else last activity. */
+function orderAt(s: SessionSummary): number {
+  return s.sortAt ?? s.lastEventAt ?? 0;
+}
+
+/** Needs-you first, machine-named offline sessions last, the rest by the store's order (most recent first). */
 function triageOrder(a: SessionSummary, b: SessionSummary): number {
   const r = rank(a) - rank(b);
   if (r !== 0) return r;
-  return (b.lastEventAt ?? 0) - (a.lastEventAt ?? 0);
+  const q = (a.quiet ? 1 : 0) - (b.quiet ? 1 : 0);
+  if (q !== 0) return q;
+  return orderAt(b) - orderAt(a);
 }
 
 /**

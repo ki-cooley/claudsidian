@@ -74,7 +74,7 @@ describe('ChatScreen', () => {
     expect(sent?.opts?.contextText).toBeUndefined();
   });
 
-  it('context chips toggle parts of the block off for this screen', async () => {
+  it('context chips toggle parts of the block off for this screen (no open-notes chip; open notes follow settings)', async () => {
     const { root, store, send } = setup();
     await tick();
     const noteChip = q<HTMLButtonElement>(root, '.claudsidian-chip[data-key="note"]');
@@ -82,13 +82,16 @@ describe('ChatScreen', () => {
     noteChip.click();
     await tick();
     expect(q(root, '.claudsidian-chip[data-key="note"]').getAttribute('aria-pressed')).toBe('false');
-    q<HTMLButtonElement>(root, '.claudsidian-chip[data-key="open"]').click();
-    await tick();
+    expect(maybe(root, '.claudsidian-chip[data-key="open"]')).toBeNull();
+    expect(qa(root, '.claudsidian-chip').map((c) => text(c))).toEqual(['menu.md (off for this screen)', 'cursor 42 (off for this screen)', 'selection 40-44 (sent)']);
     await send('no note please');
     const block = store.lastSend()?.opts?.contextText ?? '';
     expect(block).not.toContain('active note:');
-    expect(block).not.toContain('open notes:');
+    expect(block).toContain('open notes:');
     expect(block).toContain('selection (lines 40-44)');
+    // the chips sit in the dock with the composer so the @ popup can anchor above both
+    expect(q(root, '.claudsidian-dock .claudsidian-chips')).toBeTruthy();
+    expect(q(root, '.claudsidian-dock .claudsidian-composer')).toBeTruthy();
   });
 
   it('header shows the title, Needs you when the turn needs input, and Working while working', async () => {
@@ -114,8 +117,9 @@ describe('ChatScreen', () => {
   it('shows the model and permission mode chips and the store banner', async () => {
     const { root, store } = setup();
     await tick();
-    expect(text(root)).toContain('claude-opus-5-5');
-    expect(text(q(root, '.claudsidian-header'))).toContain('auto');
+    // the header labels the model and mode (raw id or the friendly form, whichever the header renders)
+    expect(text(q(root, '.claudsidian-header'))).toMatch(/claude-opus-5-5|Opus 5\.5/);
+    expect(text(q(root, '.claudsidian-header'))).toMatch(/auto/i);
     store.banner.value = { kind: 'offline', text: 'No connection. Retrying.' };
     await tick();
     expect(text(q(root, '.claudsidian-banner'))).toContain('No connection. Retrying.');
@@ -138,13 +142,17 @@ describe('ChatScreen', () => {
     expect(store.callsTo('interrupt')).toEqual([['cse_1']]);
   });
 
-  it('quick replies show only in cooking mode and send without context', async () => {
+  it('quick replies show only in cooking mode and send without context; "stop" interrupts', async () => {
     const plain = setup();
     await tick();
     expect(maybe(plain.root, '.claudsidian-quick')).toBeNull();
     const cooking = setup({ settings: { cookingMode: true, quickReplies: ['yes', 'stop'] } });
     await tick();
     expect(q(cooking.root, '.claudsidian-chat').classList.contains('is-cooking')).toBe(true);
+    buttonByText(q(cooking.root, '.claudsidian-quick'), 'stop').click();
+    await tick();
+    expect(cooking.store.callsTo('interrupt')).toEqual([['cse_1']]);
+    expect(cooking.store.lastSend()).toBeUndefined();
     buttonByText(q(cooking.root, '.claudsidian-quick'), 'yes').click();
     await tick();
     expect(cooking.store.lastSend()).toMatchObject({ text: 'yes' });
@@ -179,7 +187,7 @@ describe('ChatScreen', () => {
     await tick();
     buttonByText(q(root, '.claudsidian-sheet'), 'Model').click();
     await tick();
-    buttonByText(q(root, '.claudsidian-sheet'), 'claude-sonnet-5-5').click();
+    buttonByText(q(root, '.claudsidian-sheet'), 'Sonnet 5.5').click();
     await tick();
     expect(store.callsTo('setModel')).toEqual([['cse_1', 'claude-sonnet-5-5']]);
 
@@ -187,7 +195,7 @@ describe('ChatScreen', () => {
     await tick();
     buttonByText(q(root, '.claudsidian-sheet'), 'Permission mode').click();
     await tick();
-    buttonByText(q(root, '.claudsidian-sheet'), 'plan').click();
+    buttonByText(q(root, '.claudsidian-sheet'), 'Plan').click();
     await tick();
     expect(store.callsTo('setPermissionMode')).toEqual([['cse_1', 'plan']]);
 

@@ -14,7 +14,7 @@ const timers = {
 
 function client(transport: ReturnType<typeof createMemoryTransport>, extra: Partial<CcrClientOptions> = {}) {
   return new CcrClient({
-    baseUrl: 'https://api.test',
+    baseUrl: () => 'https://api.test',
     transport: transport.transport,
     getAccessToken: async () => 'tok',
     orgUuid: () => 'org-1',
@@ -447,5 +447,22 @@ describe('CcrClient', () => {
     const s = await client(t).getSession('cse_1');
     expect(s.id).toBe('cse_1');
     expect(s.title).toBe('wrapped');
+  });
+});
+
+describe('CcrClient base URL', () => {
+  it('reads the base URL on every request, so a settings change applies without a new client', async () => {
+    const t = createMemoryTransport([
+      { method: 'GET', path: /\/v1\/code\/sessions$/, reply: () => jsonResponse(200, { data: [] }) },
+    ]);
+    let base = 'https://api.test';
+    const c = client(t, { baseUrl: () => base });
+    await c.listSessions();
+    base = 'http://localhost:3999/';
+    await c.listSessions();
+    expect(t.calls.map((x) => x.url)).toEqual([
+      'https://api.test/v1/code/sessions?limit=100',
+      'http://localhost:3999/v1/code/sessions?limit=100',
+    ]);
   });
 });

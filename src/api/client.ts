@@ -29,7 +29,8 @@ const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_AFTER_MS = 5000;
 
 export interface CcrClientOptions {
-  baseUrl: string; // no trailing slash
+  /** API origin, read on every request so a settings change applies without a reload; a trailing slash is dropped. */
+  baseUrl: string | (() => string);
   transport: HttpTransport;
   getAccessToken: () => Promise<string>; // throws ApiError(401) when signed out
   onUnauthorized?: () => Promise<boolean>; // refresh hook; true = retry once
@@ -84,7 +85,6 @@ export class CcrClient implements CcrApi {
   private readonly opts: CcrClientOptions;
   private readonly timers: TimerApi;
   private readonly maxRetries: number;
-  private readonly baseUrl: string;
   /** Feature detection: the bare list call may reject the beta header; remembered for the client's lifetime. */
   private betaOnList = true;
 
@@ -92,7 +92,6 @@ export class CcrClient implements CcrApi {
     this.opts = opts;
     this.timers = opts.timers ?? realTimers;
     this.maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
   }
 
   // -------------------------------------------------------------------------
@@ -236,8 +235,13 @@ export class CcrClient implements CcrApi {
    * (default 5 s), retry once; 5xx or network (status 0) -> up to maxRetries with 1, 2, 4 s sleeps;
    * anything else throws ApiError.
    */
+  private baseUrlOf(): string {
+    const v = this.opts.baseUrl;
+    return (typeof v === 'function' ? v() : v).replace(/\/+$/, '');
+  }
+
   private async request(method: HttpRequest['method'], path: string, opts: RequestOptions = {}): Promise<HttpResponse> {
-    const url = `${this.baseUrl}${path}${buildQuery(opts.query)}`;
+    const url = `${this.baseUrlOf()}${path}${buildQuery(opts.query)}`;
     const body = opts.body === undefined ? undefined : JSON.stringify(opts.body);
     const okStatuses = opts.okStatuses ?? [];
     let authRetried = false;

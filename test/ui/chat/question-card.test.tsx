@@ -107,3 +107,38 @@ describe('QuestionCard', () => {
     expect(text(q(root, '.claudsidian-question'))).toContain('Dashi, Tare');
   });
 });
+
+describe('QuestionCard busy state', () => {
+  it('disables the options and spins Send answers after a tap until the handler settles', async () => {
+    let resolve: () => void = () => {};
+    const onSubmit = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+    const item = items.question(QUESTIONS);
+    const m = mount(QuestionCard, { item, cooking: false, onSubmit });
+    mounted.push(m as Mounted<unknown>);
+    option(m.root, 'Fino').click();
+    option(m.root, 'Dashi').click();
+    await tick();
+    buttonByText(m.root, 'Send answers').click();
+    buttonByText(m.root, 'Send answers').click();
+    await tick();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(buttonByText(m.root, 'Send answers').disabled).toBe(true);
+    expect(buttonByText(m.root, 'Send answers').querySelector('.claudsidian-spinner')).not.toBeNull();
+    expect(option(m.root, 'Fino').disabled).toBe(true);
+    resolve();
+    await tick();
+    expect(buttonByText(m.root, 'Send answers').disabled).toBe(false);
+    expect(option(m.root, 'Fino').disabled).toBe(false);
+  });
+
+  it('names the card and each option group through aria-labelledby, never aria-label', () => {
+    const { root } = setup();
+    expect(qa(root, '[aria-label]')).toHaveLength(0);
+    const card = q(root, '.claudsidian-question');
+    const kicker = card.getAttribute('aria-labelledby');
+    expect(kicker).toMatch(/-kicker$/);
+    expect(text(document.getElementById(kicker!))).toBe('Claude asks');
+    const groups = qa(root, '.claudsidian-question-options');
+    expect(groups.map((g) => text(document.getElementById(g.getAttribute('aria-labelledby')!)))).toEqual(QUESTIONS.map((qq) => qq.question));
+  });
+});

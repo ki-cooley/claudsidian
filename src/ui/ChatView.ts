@@ -1,6 +1,8 @@
 /**
  * ChatView: the Obsidian ItemView hosting the Preact UI. Owns the facade, mirrors its visibility into the
- * store, applies the mobile and cooking-mode classes, restores the last session, and tears down on close.
+ * store, applies the mobile, phone, tablet and cooking-mode classes, measures the phone chrome that floats
+ * over the view (header above, navbar below) into CSS variables, restores the last session, and tears
+ * down on close.
  */
 import { ItemView, Platform, type WorkspaceLeaf } from 'obsidian';
 import { h, render } from 'preact';
@@ -12,8 +14,38 @@ import { RenameModal } from './modals/RenameModal';
 
 export const VIEW_TYPE_CHAT = 'claudsidian-chat';
 
+/** Set on the view on phones: how far Obsidian's floating header reaches into the view, and the navbar from below. */
+export const PHONE_TOP_VAR = '--claudsidian-phone-top';
+export const PHONE_BOTTOM_VAR = '--claudsidian-phone-bottom';
+
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+interface Box {
+  top: number;
+  bottom: number;
+  height: number;
+}
+
+/**
+ * How many px of the view's top sit under a floating header, and of its bottom under a navbar.
+ * An element that is not laid out (no height) does not count; an overlap larger than half the view
+ * is a measurement taken mid-transition and is ignored.
+ */
+export function phoneInsets(view: Box, header: Box | null, navbar: Box | null): { top: number; bottom: number } {
+  const limit = view.height / 2;
+  let top = 0;
+  if (header && header.height > 0) {
+    const overlap = Math.round(header.bottom - view.top);
+    if (overlap > 0 && overlap <= limit) top = overlap;
+  }
+  let bottom = 0;
+  if (navbar && navbar.height > 0) {
+    const overlap = Math.round(view.bottom - navbar.top);
+    if (overlap > 0 && overlap <= limit) bottom = overlap;
+  }
+  return { top, bottom };
 }
 
 export class ChatView extends ItemView {
@@ -21,6 +53,7 @@ export class ChatView extends ItemView {
   readonly facade: ObsidianFacade;
   private readonly disposers: (() => void)[] = [];
   private visible = false;
+  private insetFrame: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ClaudsidianPlugin) {
     super(leaf);
@@ -47,6 +80,7 @@ export class ChatView extends ItemView {
     contentEl.addClass('claudsidian-view');
     contentEl.toggleClass('is-mobile', Platform.isMobile);
     contentEl.toggleClass('is-phone', Platform.isPhone);
+    contentEl.toggleClass('is-tablet', Platform.isMobile && !Platform.isPhone);
 
     this.registerDomEvent(document, 'visibilitychange', () => this.updateVisibility());
     if (!Platform.isMobile) {
@@ -54,8 +88,18 @@ export class ChatView extends ItemView {
       this.registerDomEvent(window, 'blur', () => this.updateVisibility());
       this.registerDomEvent(window, 'focus', () => this.updateVisibility());
     }
-    this.registerEvent(this.app.workspace.on('layout-change', () => this.updateVisibility()));
-    this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.updateVisibility()));
+    this.registerEvent(this.app.workspace.on('layout-change', () => this.onLayout()));
+    this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.onLayout()));
+    this.registerEvent(this.app.workspace.on('resize', () => this.scheduleInsets()));
+    if (Platform.isPhone) {
+      this.registerDomEvent(window, 'resize', () => this.scheduleInsets());
+      const viewport = window.visualViewport;
+      if (viewport) {
+        const onViewport = (): void => this.scheduleInsets();
+        viewport.addEventListener('resize', onViewport);
+        this.register(() => viewport.removeEventListener('resize', onViewport));
+      }
+    }
     // subscribe() runs now and after every save, outside signal tracking, so the render never re-arms it.
     this.disposers.push(
       this.plugin.settingsChanged.subscribe(() => {
@@ -64,11 +108,15 @@ export class ChatView extends ItemView {
       }),
     );
     this.updateVisibility();
+    this.applyInsets();
+    this.scheduleInsets();
     await this.restoreLastSession();
   }
 
   async onClose(): Promise<void> {
     for (const dispose of this.disposers.splice(0)) dispose();
+    if (this.insetFrame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this.insetFrame);
+    this.insetFrame = null;
     render(null, this.contentEl);
     this.contentEl.empty();
     this.visible = false;
@@ -90,6 +138,46 @@ export class ChatView extends ItemView {
     const leaf = this.leaf as { getRoot?: () => { collapsed?: boolean } | undefined };
     const root = typeof leaf.getRoot === 'function' ? leaf.getRoot() : undefined;
     return root?.collapsed !== true;
+  }
+
+  /**
+   * Measure Obsidian's phone chrome against the view and publish the overlaps as CSS variables. On a
+   * tablet or desktop nothing floats over the view, so the variables stay unset and mobile.css applies
+   * its single padding.
+   */
+  applyInsets(): void {
+    if (!Platform.isPhone) return;
+    const content = this.contentEl;
+    const view = content.getBoundingClientRect();
+    if (view.height <= 0) return;
+    const header = this.containerEl.querySelector<HTMLElement>('.view-header');
+    const navbar = typeof document !== 'undefined' ? document.querySelector<HTMLElement>('.mobile-navbar') : null;
+    const box = (el: HTMLElement | null): Box | null => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, height: r.height };
+    };
+    const insets = phoneInsets({ top: view.top, bottom: view.bottom, height: view.height }, box(header), box(navbar));
+    content.style.setProperty(PHONE_TOP_VAR, `${insets.top}px`);
+    content.style.setProperty(PHONE_BOTTOM_VAR, `${insets.bottom}px`);
+  }
+
+  private scheduleInsets(): void {
+    if (!Platform.isPhone) return;
+    if (typeof requestAnimationFrame !== 'function') {
+      this.applyInsets();
+      return;
+    }
+    if (this.insetFrame !== null) return;
+    this.insetFrame = requestAnimationFrame(() => {
+      this.insetFrame = null;
+      this.applyInsets();
+    });
+  }
+
+  private onLayout(): void {
+    this.updateVisibility();
+    this.scheduleInsets();
   }
 
   private renderRoot(): void {

@@ -6,8 +6,8 @@ import type { ControlResponseEvent, UserEvent,
   StreamJsonEvent,
   WireEventRow,
 } from '../../src/api/types';
-import { SessionStore } from '../../src/core/session-store';
-import type { PermissionItem, QuestionItem } from '../../src/core/types';
+import { SessionStore, type LearnedDirs } from '../../src/core/session-store';
+import type { PermissionItem, QuestionItem, UserItem } from '../../src/core/types';
 import { DEFAULT_SETTINGS, type ClaudsidianSettings } from '../../src/settings';
 import { createFakeClock, type FakeClock } from '../helpers/fake-clock';
 import {
@@ -36,8 +36,14 @@ function makeStore(): SessionStore {
   return new SessionStore({ client, settings: () => settings, clientId: 'client-1', timers: clock.timers });
 }
 
+/** History and poll reads of a session; the store's background init-cwd probes (limit 40, see probeCalls) are left out. */
 function listEventCalls(id: string): string[] {
-  return client.calls.filter((c) => c.startsWith(`listEvents ${id}`));
+  return client.calls.filter((c) => c.startsWith(`listEvents ${id}`) && !c.includes('"limit":40'));
+}
+
+/** The init-cwd probes the store runs after a list refresh for bridge environments with no known directory. */
+function probeCalls(): string[] {
+  return client.calls.filter((c) => c.startsWith('listEvents ') && c.includes('"limit":40'));
 }
 
 /** The rows the store keeps for loadOlder rebuilds (private bookkeeping, read for the compaction tests). */
@@ -432,7 +438,7 @@ describe('SessionStore open and poll', () => {
     expect(store.transcript('cse_b').value.items.filter((i) => i.kind === 'assistant_text')).toHaveLength(2);
   });
 
-  it('applies a burst of 120 rows between polls in after_id mode without losing any', async () => {
+  it('applies a burst of 120 rows between polls in after_id mode without losing any, and marks them read once the throttle window closes', async () => {
     await store.refreshSessions();
     client.ignoreFromSequenceNum = true;
     client.pushAll('cse_b', [userText('go'), assistantText('m0'), resultEvent()]);
@@ -447,6 +453,9 @@ describe('SessionStore open and poll', () => {
     expect(texts[0]).toBe('m0');
     expect(texts[121]).toBe('m121');
     expect(state.lastSeq).toBe(124);
+    // mark_read is spaced two seconds apart while rows stream; the trailing post carries the newest seq
+    expect(client.marked.at(-1)).toEqual({ id: 'cse_b', seq: 4 });
+    await clock.tick(2000);
     expect(client.marked.at(-1)).toEqual({ id: 'cse_b', seq: 124 });
   });
 
@@ -808,5 +817,216 @@ describe('SessionStore sending', () => {
     client.pushAll('cse_b', [assistantText('x'), resultEvent()]);
     await clock.tick(IDLE);
     expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+describe('SessionStore learned directories', () => {
+  function storeWithPersist(): LearnedDirs[] {
+    const saved: LearnedDirs[] = [];
+    store = new SessionStore({
+      client,
+      settings: () => settings,
+      clientId: 'client-1',
+      timers: clock.timers,
+      persistLearned: (p) => {
+        saved.push(p);
+      },
+    });
+    return saved;
+  }
+
+  it('learns a session cwd and its environment directory from the init event and persists both', async () => {
+    const saved = storeWithPersist();
+    client.push('cse_b', initEvent(VAULT));
+    await store.refreshSessions();
+    await clock.flush();
+    expect(saved).toEqual([]); // the probe went to cse_a (newest in env_mac), which has no rows
+    await store.open('cse_b');
+    await clock.flush();
+    expect(store.session('cse_b')!.cwd).toBe(VAULT);
+    expect(saved.at(-1)).toEqual({ environmentDirs: { env_mac: VAULT }, sessionCwds: { cse_b: VAULT } });
+    expect(store.environments().find((e) => e.id === 'env_mac')).toMatchObject({ cwd: VAULT, label: 'yes-chef (Mac)' });
+  });
+
+  it('learns environment directories from the environments endpoint', async () => {
+    const saved = storeWithPersist();
+    client.environments = [
+      { environment_id: 'env_mac', name: 'Mac:yes-chef:0001', kind: 'bridge', bridge_info: { directory: VAULT, online: true } },
+    ];
+    await store.refreshEnvironments();
+    await clock.flush();
+    expect(saved.at(-1)?.environmentDirs).toEqual({ env_mac: VAULT });
+  });
+
+  it('seeds cwds and environment directories from settings on a cold start and does not probe known environments', async () => {
+    settings.sessionCwds = { cse_b: VAULT };
+    settings.environmentDirs = { env_mac: VAULT };
+    store = makeStore();
+    await store.refreshSessions();
+    await clock.flush();
+    expect(store.session('cse_b')!.cwd).toBe(VAULT);
+    expect(store.session('cse_a')!.cwd).toBeUndefined();
+    expect(store.environments().find((e) => e.id === 'env_mac')).toMatchObject({ cwd: VAULT, label: 'yes-chef (Mac)' });
+    expect(probeCalls()).toEqual([]);
+  });
+
+  it('probes the newest session of an unknown bridge environment for its init cwd after a refresh', async () => {
+    const saved = storeWithPersist();
+    client.push('cse_a', initEvent(VAULT));
+    await store.refreshSessions();
+    await clock.flush();
+    expect(probeCalls()).toEqual(['listEvents cse_a {"limit":40,"sortOrder":"asc"}']);
+    expect(store.session('cse_a')!.cwd).toBe(VAULT);
+    expect(store.environments().find((e) => e.id === 'env_mac')!.cwd).toBe(VAULT);
+    expect(saved.at(-1)).toEqual({ environmentDirs: { env_mac: VAULT }, sessionCwds: { cse_a: VAULT } });
+  });
+
+  it('probes at most three environments per refresh, newest first, and the same one not again within ten minutes', async () => {
+    client.sessions = [];
+    for (let i = 1; i <= 5; i++) {
+      client.sessions.push(wireSession({ id: `cse_e${i}`, environment_id: `env_${i}`, last_event_at: `2026-10-0${i}T00:00:00Z` }));
+    }
+    store = makeStore();
+    const probed = () => probeCalls().map((c) => c.split(' ')[1]);
+    await store.refreshSessions();
+    await clock.flush();
+    expect(probed()).toEqual(['cse_e5', 'cse_e4', 'cse_e3']);
+    await store.refreshSessions();
+    await clock.flush();
+    expect(probed()).toEqual(['cse_e5', 'cse_e4', 'cse_e3', 'cse_e2', 'cse_e1']);
+    await store.refreshSessions();
+    await clock.flush();
+    expect(probed()).toHaveLength(5); // every environment is cooling down
+    await clock.tick(600_000);
+    await store.refreshSessions();
+    await clock.flush();
+    expect(probed()).toHaveLength(8);
+  });
+});
+
+describe('SessionStore stable list order', () => {
+  const ids = () => store.sessions.value.map((s) => s.id);
+
+  it('keeps the previous relative order when only activity times change, and resorts on demand', async () => {
+    await store.refreshSessions();
+    expect(ids()).toEqual(['cse_c', 'cse_a', 'cse_b', 'cse_d']);
+    client.sessions.find((s) => s.id === 'cse_b')!.last_event_at = '2026-10-11T12:00:00Z';
+    await store.refreshSessions();
+    expect(ids()).toEqual(['cse_c', 'cse_a', 'cse_b', 'cse_d']);
+    await store.refreshSessions({ resort: true });
+    expect(ids()).toEqual(['cse_b', 'cse_c', 'cse_a', 'cse_d']);
+  });
+
+  it('inserts a session new to the list above every existing row, whatever its activity time', async () => {
+    await store.refreshSessions();
+    client.sessions.push(wireSession({ id: 'cse_new', title: 'Fresh', last_event_at: '2026-10-01T00:00:00Z' }));
+    await store.refreshSessions();
+    expect(ids()).toEqual(['cse_new', 'cse_c', 'cse_a', 'cse_b', 'cse_d']);
+    await store.refreshSessions({ resort: true });
+    expect(ids()).toEqual(['cse_c', 'cse_a', 'cse_b', 'cse_d', 'cse_new']);
+  });
+
+  it('re-places a row by its own activity time when its rank changes', async () => {
+    await store.refreshSessions();
+    const b = client.sessions.find((s) => s.id === 'cse_b')!;
+    b.last_event_at = '2026-10-11T12:00:00Z';
+    b.worker_status = 'requires_action';
+    await store.refreshSessions();
+    expect(store.session('cse_b')!.sortAt).toBe(Date.parse('2026-10-11T12:00:00Z'));
+    expect(ids()).toEqual(['cse_b', 'cse_c', 'cse_a', 'cse_d']);
+  });
+
+  it('does not republish the sessions signal when nothing rendered changed, and keeps untouched rows by identity', async () => {
+    await store.refreshSessions();
+    const before = store.sessions.value;
+    let writes = 0;
+    const stop = store.sessions.subscribe(() => {
+      writes += 1;
+    });
+    await store.refreshSessions();
+    expect(store.sessions.value).toBe(before);
+    expect(writes).toBe(1);
+    client.sessions.find((s) => s.id === 'cse_b')!.title = 'Older, renamed';
+    await store.refreshSessions();
+    expect(writes).toBe(2);
+    expect(store.session('cse_b')!.title).toBe('Older, renamed');
+    expect(store.sessions.value.find((s) => s.id === 'cse_a')).toBe(before.find((s) => s.id === 'cse_a'));
+    stop();
+  });
+
+  it('sessionsLoading is true for the first load only, never for a later poll', async () => {
+    const seen: boolean[] = [];
+    const stop = store.sessionsLoading.subscribe((v) => seen.push(v));
+    await store.refreshSessions();
+    expect(seen).toEqual([false, true, false]);
+    await store.refreshSessions();
+    await store.refreshSessions({ resort: true });
+    expect(seen).toEqual([false, true, false]);
+    stop();
+  });
+});
+
+describe('SessionStore mark_read throttle', () => {
+  it('posts at most once per two seconds while rows stream and at once when the turn ends', async () => {
+    await store.refreshSessions();
+    await store.open('cse_b');
+    client.push('cse_b', assistantText('m1'));
+    await clock.tick(IDLE);
+    expect(client.marked.map((m) => m.seq)).toEqual([1]);
+    for (let i = 2; i <= 11; i++) {
+      client.push('cse_b', assistantText(`m${i}`));
+      await clock.tick(ACTIVE);
+    }
+    // ten 700 ms ticks: trailing posts at +2 s, +4 s and +6 s only, each with the newest seq at that moment
+    expect(client.marked.map((m) => m.seq)).toEqual([1, 3, 6, 9]);
+    client.push('cse_b', resultEvent());
+    await clock.tick(ACTIVE);
+    expect(client.marked.map((m) => m.seq)).toEqual([1, 3, 6, 9, 12]);
+    await clock.tick(5000);
+    expect(client.marked).toHaveLength(5);
+  });
+
+  it('sends the trailing mark_read when the session is closed before the window closes', async () => {
+    await store.refreshSessions();
+    await store.open('cse_b');
+    client.push('cse_b', assistantText('m1'));
+    await clock.tick(IDLE);
+    client.push('cse_b', assistantText('m2'));
+    await clock.tick(ACTIVE);
+    expect(client.marked.map((m) => m.seq)).toEqual([1]);
+    store.close();
+    await clock.flush();
+    expect(client.marked.map((m) => m.seq)).toEqual([1, 2]);
+    await clock.tick(5000);
+    expect(client.marked).toHaveLength(2);
+  });
+});
+
+describe('SessionStore pending user messages and banners', () => {
+  it('marks the optimistic user item pending until the server echo replaces it', async () => {
+    await store.refreshSessions();
+    await store.open('cse_b');
+    await store.send('cse_b', 'hello');
+    const sent = store.transcript('cse_b').value.items.find((i) => i.kind === 'user') as UserItem;
+    expect(sent.pending).toBe(true);
+    const payload = client.sentPayloads('cse_b')[0] as UserEvent;
+    client.push('cse_b', payload);
+    await clock.tick(ACTIVE);
+    const users = store.transcript('cse_b').value.items.filter((i) => i.kind === 'user') as UserItem[];
+    expect(users).toHaveLength(1);
+    expect(users[0]!.id).toBe(payload.uuid);
+    expect(users[0]!.pending).toBeFalsy();
+  });
+
+  it('close drops the error banner of the session it came from, and dismissBanner clears any banner', async () => {
+    await store.refreshSessions();
+    client.failNext = new ApiError({ status: 404, message: 'Session not found (HTTP 404)' });
+    await store.open('cse_b');
+    expect(store.banner.value?.kind).toBe('error');
+    store.close();
+    expect(store.banner.value).toBeNull();
+    store.banner.value = { kind: 'info', text: 'hello' };
+    store.dismissBanner();
+    expect(store.banner.value).toBeNull();
   });
 });

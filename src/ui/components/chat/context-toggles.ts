@@ -43,3 +43,8 @@ export function contextTextFor(ctx: CapturedContext, toggles: ContextToggles, op
 export function hasContext(ctx: CapturedContext | null): ctx is CapturedContext {
   return !!ctx && (!!ctx.activeNote || !!ctx.selection || ctx.openNotes.length > 0 || ctx.mentions.length > 0);
 }
+
+/** The chips row exists only for an open note: without one there is nothing worth a toggle. */
+export function showsChips(ctx: CapturedContext | null): ctx is CapturedContext {
+  return !!ctx && !!ctx.activeNote;
+}

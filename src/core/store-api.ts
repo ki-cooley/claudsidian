@@ -11,6 +11,10 @@ export interface Environment {
   kind: string; // bridge | cloud | unknown
   /** "yes-chef (Mac)" style label derived from the cwd of sessions in it */
   label: string;
+  /**
+   * The environment's working directory: bridge_info.directory from the environments endpoint, else the
+   * directory learned from one of its sessions' init events (persisted, so it is known on a cold start).
+   */
   cwd?: string;
   sessionCount: number;
   /** false when the machine's remote-control server is offline (from the environments endpoint) */
@@ -38,10 +42,20 @@ export interface SendOptions {
   contextText?: string;
 }
 
+export interface RefreshOptions {
+  /**
+   * Order every row by last activity again. Without it a refresh keeps the previous relative order of rows
+   * whose rank did not change, so a background poll never shuffles the list under the reader. The sessions
+   * screen passes it on mount and on a manual refresh.
+   */
+  resort?: boolean;
+}
+
 export type StoreEvent = 'turn_end' | 'needs_input' | 'error';
 
 export interface SessionStoreApi {
   readonly sessions: ReadonlySignal<SessionSummary[]>;
+  /** true only while the first list load is in flight (the list is empty); background polls never set it */
   readonly sessionsLoading: ReadonlySignal<boolean>;
   readonly sessionsError: ReadonlySignal<string | null>;
   readonly selectedId: ReadonlySignal<string | null>;
@@ -53,7 +67,8 @@ export interface SessionStoreApi {
   session(sessionId: string): SessionSummary | undefined;
   environments(): Environment[];
 
-  refreshSessions(): Promise<void>;
+  /** Refresh the list; `sessions` is republished only when a rendered field or the order changed. */
+  refreshSessions(opts?: RefreshOptions): Promise<void>;
   /** Fetch the environments endpoint so environments() can label machines and show offline ones. Optional for fakes. */
   refreshEnvironments?(): Promise<void>;
   startListPolling(): void;
@@ -61,10 +76,12 @@ export interface SessionStoreApi {
 
   /** Select a session: load recent history, start polling, announce presence, mark read. */
   open(sessionId: string): Promise<void>;
-  /** Deselect: stop polling, clear presence. */
+  /** Deselect: stop polling, clear presence, drop an error banner that belonged to the session. */
   close(): void;
   /** Older history before the first loaded event. Resolves false when there is nothing more. */
   loadOlder(sessionId: string): Promise<boolean>;
+  /** Clear the current banner (the banner's own close control). Optional for fakes. */
+  dismissBanner?(): void;
 
   send(sessionId: string, text: string, opts?: SendOptions): Promise<void>;
   sendRaw(sessionId: string, payload: StreamJsonEvent): Promise<void>;

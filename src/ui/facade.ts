@@ -27,6 +27,12 @@ export interface PluginFacade {
   captureContext(mentions: string[]): CapturedContext;
   /** All markdown file paths in the vault, for the @ suggester. */
   vaultFiles(): string[];
+  /**
+   * Recently opened note paths, newest first, at most `limit`, for the @ suggester's empty query.
+   * Optional so older facade implementations (the harness shim, test fakes) keep working; the UI
+   * treats a missing method as no recent files.
+   */
+  getRecentFiles?(limit: number): string[];
   openFile(path: string): Promise<void>;
   insertAtCursor(text: string): Promise<boolean>;
   replaceSelection(text: string): Promise<boolean>;

@@ -1,29 +1,48 @@
 /*
- * The composer: textarea row with its tools and send/stop, attachment thumbnails, and the
- * suggestion popup for @notes and /commands floating above it.
+ * The dock at the bottom of the chat screen: context chips, the composer (textarea row with its
+ * tools and the Send/Stop slot, attachment thumbnails, the @ and / popup floating above the dock),
+ * cooking-mode quick replies, and the pinned request region above the dock. Loaded after chat.css,
+ * so a same-specificity rule here wins over the chat defaults for these classes.
  */
 
-.claudsidian-composer {
+/* visually hidden, still read by screen readers (labels for groups and the composer field) */
+.claudsidian-view .claudsidian-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- dock ---------------------------------------------------------------- */
+
+.claudsidian-dock {
   position: relative;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--background-modifier-border);
   background: var(--background-primary);
 }
-.claudsidian-chat.is-cooking .claudsidian-composer + .claudsidian-quick {
-  padding-top: 0;
-}
-.claudsidian-chat.is-cooking .claudsidian-composer {
-  padding-bottom: 8px;
-}
 
-.claudsidian-composer-row {
+.claudsidian-composer {
+  position: static;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--background-primary);
+}
+.claudsidian-chat .claudsidian-composer-row {
   display: flex;
   align-items: flex-end;
   gap: 6px;
+  min-width: 0;
 }
 .claudsidian-composer-tools,
 .claudsidian-composer-actions {
@@ -33,47 +52,85 @@
   flex: 0 0 auto;
 }
 
-.claudsidian-composer-input {
-  flex: 1 1 auto;
+/* the @ and image tools: small ghost icons to the left of the field */
+.claudsidian-chat .claudsidian-composer-tools .claudsidian-btn.is-icon {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  margin-bottom: 4px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+.claudsidian-chat .claudsidian-composer-tools .claudsidian-btn.is-icon:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* the field takes whatever the tools and the slot leave (over 60% of a 300 px pane) */
+.claudsidian-chat .claudsidian-composer-input {
+  flex: 1 1 0;
+  width: 0;
   min-width: 0;
   min-height: 36px;
   max-height: 40vh;
   padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
+  background: var(--background-primary);
+  color: var(--text-normal);
   resize: none;
   overflow-y: auto;
   font-family: inherit;
   font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
   line-height: 1.4;
 }
-.claudsidian-chat.is-mobile .claudsidian-composer-input {
-  min-height: 44px;
+.claudsidian-chat .claudsidian-composer-input::placeholder {
+  color: var(--text-faint);
+  white-space: nowrap;
 }
-.claudsidian-chat.is-cooking .claudsidian-composer-input {
-  min-height: calc(2 * 1.4em + 18px);
-  padding: 9px 12px;
-}
-
-.claudsidian-chat .claudsidian-composer-send.claudsidian-btn {
-  min-width: 36px;
-  min-height: 36px;
-}
-.claudsidian-chat .claudsidian-composer-stop.claudsidian-btn {
-  min-width: 36px;
-  min-height: 36px;
-}
-.claudsidian-chat.is-mobile .claudsidian-composer-send.claudsidian-btn,
-.claudsidian-chat.is-mobile .claudsidian-composer-stop.claudsidian-btn {
-  min-width: 44px;
-  min-height: 44px;
-}
-.claudsidian-chat.is-cooking .claudsidian-composer-send.claudsidian-btn,
-.claudsidian-chat.is-cooking .claudsidian-composer-stop.claudsidian-btn {
-  min-width: 56px;
-  min-height: 48px;
+.claudsidian-chat .claudsidian-composer-input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: none;
 }
 
-/* attachments */
+/* one slot: Send while idle, Stop while the session works. The `button` type selector puts these at (0,3,1),
+   level with chat.css's .is-icon, .is-ghost and .is-primary rules, so source order (this file loads later)
+   decides and the slot keeps its own width, padding and colours. */
+.claudsidian-chat button.claudsidian-composer-send.claudsidian-btn,
+.claudsidian-chat button.claudsidian-composer-stop.claudsidian-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: var(--radius-m);
+  justify-content: center;
+}
+.claudsidian-chat button.claudsidian-composer-send.claudsidian-btn {
+  border: 0;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: none;
+}
+.claudsidian-chat button.claudsidian-composer-send.claudsidian-btn:hover:not(:disabled) {
+  background: var(--interactive-accent-hover);
+}
+/* Stop: an outlined square, the danger colour on the icon only (also under the pointer) */
+.claudsidian-chat button.claudsidian-composer-stop.claudsidian-btn {
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-error, var(--color-red));
+  box-shadow: none;
+}
+.claudsidian-chat button.claudsidian-composer-stop.claudsidian-btn:hover:not(:disabled) {
+  border-color: var(--text-error, var(--color-red));
+  background: var(--background-modifier-hover);
+  color: var(--text-error, var(--color-red));
+}
+
+/* ---- attachments --------------------------------------------------------- */
+
 .claudsidian-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -101,12 +158,16 @@
   min-width: 24px;
   min-height: 24px;
   padding: 0;
+  border: 0;
   border-radius: 50%;
   background: var(--background-primary);
+  box-shadow: var(--shadow-s);
   color: var(--text-normal);
 }
 
-/* suggestion popup */
+/* ---- suggestion popup ---------------------------------------------------- */
+
+/* anchored to the dock, so it sits above the chips row instead of covering it */
 .claudsidian-suggest {
   position: absolute;
   left: 12px;
@@ -125,9 +186,11 @@
   background: var(--background-primary);
   box-shadow: var(--shadow-s);
 }
-.claudsidian-suggest-item {
-  display: block;
+.claudsidian-chat .claudsidian-suggest-item {
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-width: 0;
   min-height: 36px;
   padding: 8px 10px;
   border: 0;
@@ -136,21 +199,215 @@
   box-shadow: none;
   color: var(--text-normal);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+  line-height: 1.3;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
-.claudsidian-suggest-item:hover,
-.claudsidian-suggest-item.is-selected {
+.claudsidian-chat .claudsidian-suggest-item:hover,
+.claudsidian-chat .claudsidian-suggest-item.is-selected {
   background: var(--background-modifier-hover);
+}
+/* the folder: muted, and it loses its start first (direction: rtl puts the ellipsis on the left) */
+.claudsidian-suggest-dir {
+  flex: 0 4 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--text-muted);
+}
+.claudsidian-suggest-dir bdi {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.claudsidian-suggest-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
 }
 .claudsidian-suggest-empty {
   padding: 8px 10px;
   color: var(--text-muted);
   font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
 }
+
+/* ---- context chips ------------------------------------------------------- */
+
+.claudsidian-chat .claudsidian-chips {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+  overflow: visible;
+}
+.claudsidian-chat button.claudsidian-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: calc(var(--font-ui-smaller) * var(--claudsidian-scale, 1));
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.claudsidian-chat .claudsidian-chip .claudsidian-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claudsidian-chat .claudsidian-chip .claudsidian-icon {
+  color: var(--text-muted);
+}
+.claudsidian-chat button.claudsidian-chip.is-on,
+.claudsidian-chat button.claudsidian-chip[aria-pressed='true'] {
+  background: var(--background-secondary);
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+}
+.claudsidian-chat button.claudsidian-chip.is-off,
+.claudsidian-chat button.claudsidian-chip[aria-pressed='false'] {
+  background: transparent;
+  color: var(--text-faint);
+}
+.claudsidian-chat button.claudsidian-chip.is-off .claudsidian-chip-label,
+.claudsidian-chat button.claudsidian-chip[aria-pressed='false'] .claudsidian-chip-label {
+  text-decoration: line-through;
+}
+.claudsidian-chat button.claudsidian-chip:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+.claudsidian-chat button.claudsidian-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.claudsidian-chat button.claudsidian-chip.is-summary {
+  background: transparent;
+}
+
+/* ---- quick replies (cooking mode) ---------------------------------------- */
+
+.claudsidian-chat .claudsidian-quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 0 12px 10px;
+  overflow: visible;
+}
+.claudsidian-chat button.claudsidian-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: calc(var(--font-ui-medium) * var(--claudsidian-scale, 1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.claudsidian-chat button.claudsidian-quick-btn:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+.claudsidian-chat button.claudsidian-quick-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.claudsidian-chat button.claudsidian-quick-btn.is-stop {
+  background: transparent;
+  color: var(--text-error, var(--color-red));
+}
+
+/* ---- pinned requests ----------------------------------------------------- */
+
+/* keeps its own height (up to 45vh) and scrolls inside; the transcript gives way, never the options */
+.claudsidian-chat .claudsidian-pinned {
+  position: relative;
+  flex: 0 0 auto;
+  max-height: 45vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px;
+  border-top: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- mobile sizes ---------------------------------------------------------- */
+
+.claudsidian-chat.is-mobile .claudsidian-composer-tools .claudsidian-btn.is-icon {
+  min-width: 44px;
+  min-height: 44px;
+  margin-bottom: 0;
+}
+.claudsidian-chat.is-mobile .claudsidian-composer-input {
+  min-height: 44px;
+}
+.claudsidian-chat.is-mobile button.claudsidian-composer-send.claudsidian-btn,
+.claudsidian-chat.is-mobile button.claudsidian-composer-stop.claudsidian-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
 .claudsidian-chat.is-mobile .claudsidian-suggest-item {
   min-height: 44px;
+}
+.claudsidian-chat.is-mobile button.claudsidian-chip {
+  min-height: 44px;
+}
+
+/* ---- cooking sizes --------------------------------------------------------- */
+
+/* the 32 px shrink is for a narrow desktop pane in cooking mode, where it keeps the field at half the row */
+.claudsidian-chat.is-cooking .claudsidian-composer-tools .claudsidian-btn.is-icon {
+  min-width: 32px;
+  min-height: 32px;
+  margin-bottom: 12px;
+}
+/* a touch device in cooking mode (the iPad in the kitchen) keeps the 44 px targets; this rule is (0,6,0),
+   above both the mobile and the cooking rule, and the 6 px margin centres a 44 px icon on the 56 px field */
+.claudsidian-chat.is-mobile.is-cooking .claudsidian-composer-tools .claudsidian-btn.is-icon {
+  min-width: 44px;
+  min-height: 44px;
+  margin-bottom: 6px;
+}
+.claudsidian-chat.is-cooking .claudsidian-composer-input {
+  min-height: 56px;
+  padding: 12px 12px;
+}
+.claudsidian-chat.is-cooking button.claudsidian-composer-send.claudsidian-btn,
+.claudsidian-chat.is-cooking button.claudsidian-composer-stop.claudsidian-btn {
+  min-width: 56px;
+  min-height: 56px;
+}
+.claudsidian-chat.is-cooking button.claudsidian-quick-btn {
+  min-height: 56px;
+}
+.claudsidian-chat.is-cooking button.claudsidian-chip {
+  min-height: 48px;
 }

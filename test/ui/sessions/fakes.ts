@@ -4,7 +4,7 @@
 import { signal, type ReadonlySignal, type Signal } from '@preact/signals';
 import type { AuthApi } from '../../../src/api/auth-api';
 import type { AuthState } from '../../../src/api/auth-types';
-import type { PermissionResult, StreamJsonEvent, WireSession } from '../../../src/api/types';
+import type { ControlRequestEvent, PermissionResult, StreamJsonEvent, WireSession } from '../../../src/api/types';
 import type {
   Banner,
   CreateSessionOptions,
@@ -13,7 +13,13 @@ import type {
   SessionStoreApi,
   StoreEvent,
 } from '../../../src/core/store-api';
-import { createTranscript, type CapturedContext, type SessionSummary, type TranscriptState } from '../../../src/core/types';
+import {
+  createTranscript,
+  type CapturedContext,
+  type PendingControl,
+  type SessionSummary,
+  type TranscriptState,
+} from '../../../src/core/types';
 import { DEFAULT_SETTINGS, type ClaudsidianSettings } from '../../../src/settings';
 import type { PluginFacade } from '../../../src/ui/facade';
 
@@ -32,6 +38,16 @@ export function makeSession(over: Partial<SessionSummary> & { id: string }): Ses
   };
 }
 
+/** A pending control the way the reducer records it: a can_use_tool request for `toolName` with `input`. */
+export function makePending(kind: PendingControl['kind'], toolName: string, input: Record<string, unknown>, requestId = 'req_1'): PendingControl {
+  const raw: ControlRequestEvent = {
+    type: 'control_request',
+    request_id: requestId,
+    request: { subtype: 'can_use_tool', tool_name: toolName, input },
+  } as ControlRequestEvent;
+  return { requestId, kind, raw };
+}
+
 export class FakeStore implements SessionStoreApi {
   readonly sessions: Signal<SessionSummary[]> = signal([]);
   readonly sessionsLoading: Signal<boolean> = signal(false);
@@ -43,7 +59,10 @@ export class FakeStore implements SessionStoreApi {
   envs: Environment[] = [];
   /** When set, refreshEnvironments() records a call and replaces envs with its result (simulating the fetch). */
   envFetch: (() => Environment[]) | null = null;
+  /** When set, refreshSessions() resolves only once the test resolves this (a slow fetch). */
+  refreshGate: Promise<void> | null = null;
   createResult: SessionSummary | Error = makeSession({ id: 'cse_new' });
+  archiveResult: Error | null = null;
   private transcripts = new Map<string, Signal<TranscriptState>>();
 
   private record(name: string, ...args: unknown[]): void {
@@ -60,14 +79,18 @@ export class FakeStore implements SessionStoreApi {
     }
     return s;
   }
+  setTranscript(sessionId: string, state: TranscriptState): void {
+    (this.transcript(sessionId) as Signal<TranscriptState>).value = state;
+  }
   session(sessionId: string): SessionSummary | undefined {
     return this.sessions.value.find((s) => s.id === sessionId);
   }
   environments(): Environment[] {
     return this.envs;
   }
-  async refreshSessions(): Promise<void> {
-    this.record('refreshSessions');
+  async refreshSessions(opts?: { resort?: boolean }): Promise<void> {
+    this.record('refreshSessions', opts);
+    if (this.refreshGate) await this.refreshGate;
   }
   async refreshEnvironments(): Promise<void> {
     this.record('refreshEnvironments');
@@ -122,6 +145,8 @@ export class FakeStore implements SessionStoreApi {
   }
   async archive(sessionId: string): Promise<void> {
     this.record('archive', sessionId);
+    if (this.archiveResult) throw this.archiveResult;
+    this.sessions.value = this.sessions.value.map((s) => (s.id === sessionId ? { ...s, archived: true } : s));
   }
   async createSession(opts: CreateSessionOptions): Promise<SessionSummary> {
     this.record('createSession', opts);

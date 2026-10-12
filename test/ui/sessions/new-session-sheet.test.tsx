@@ -1,8 +1,16 @@
-// New session sheet: environment preselection, the create call, error display, the no-server state.
+// New session sheet: environment labels and preselection, the model select, the create call, error display,
+// the no-server state.
 import { afterEach, describe, expect, it } from 'vitest';
-import { NewSessionSheet } from '../../../src/ui/components/sessions/NewSessionSheet';
+import {
+  NewSessionSheet,
+  environmentOptionLabel,
+  environmentOptions,
+  pickDefaultEnvironment,
+  tidyPath,
+} from '../../../src/ui/components/sessions/NewSessionSheet';
 import { SignedOutCard } from '../../../src/ui/components/sessions/SignedOutCard';
 import type { Environment } from '../../../src/core/store-api';
+import { DEFAULT_SETTINGS } from '../../../src/settings';
 import { FakeFacade, FakeStore, makeSession } from './fakes';
 import { byText, click, flush, mount, setValue } from './render';
 
@@ -32,15 +40,67 @@ function setup(envs = ENVS, tweak?: (store: FakeStore, facade: FakeFacade) => vo
   );
   const root = (mounted as unknown as { root: HTMLElement }).root;
   const select = () => root.querySelector<HTMLSelectElement>('.claudsidian-new-session-env');
-  return { store, facade, root, created, closedCount: () => closed, select };
+  const modelSelect = () => root.querySelector<HTMLSelectElement>('.claudsidian-new-session-model');
+  return { store, facade, root, created, closedCount: () => closed, select, modelSelect };
 }
 
+describe('environment labels', () => {
+  it('use the directory name, mark the vault, and fall back to the machine name without a directory', () => {
+    expect(environmentOptionLabel(ENVS[2]!, VAULT)).toBe('yes-chef (this vault)');
+    expect(environmentOptionLabel({ ...ENVS[2]!, cwd: VAULT + '/menus' }, VAULT)).toBe('yes-chef (this vault)');
+    expect(environmentOptionLabel(ENVS[1]!, VAULT)).toBe('workspace');
+    expect(environmentOptionLabel({ id: 'e', kind: 'bridge', label: 'KisWorkComputer', sessionCount: 0 }, VAULT)).toBe('KisWorkComputer');
+    expect(environmentOptionLabel({ id: 'e', kind: 'bridge', label: 'KisWorkComputer (offline)', sessionCount: 0 }, VAULT)).toBe('KisWorkComputer (offline)');
+    expect(environmentOptionLabel({ ...ENVS[1]!, online: false }, VAULT)).toBe('workspace (offline)');
+    expect(environmentOptionLabel(ENVS[1]!, '')).toBe('workspace');
+    expect(environmentOptionLabel(ENVS[0]!, VAULT)).toBe('repo (cloud)');
+  });
+
+  it('tell two environments with the same directory name apart by the machine', () => {
+    const twins: Environment[] = [
+      { id: 'a', kind: 'bridge', label: 'workspace on Laptop', cwd: '/Users/a/workspace', sessionCount: 1 },
+      { id: 'b', kind: 'bridge', label: 'workspace on Desk', cwd: '/Users/b/workspace', sessionCount: 1 },
+      ENVS[2]!,
+    ];
+    expect(environmentOptions(twins, VAULT).map((o) => o.label)).toEqual(['workspace - workspace on Laptop', 'workspace - workspace on Desk', 'yes-chef (this vault)']);
+  });
+
+  it('tidyPath shortens the home directory', () => {
+    expect(tidyPath('/Users/kicooley-winters/workspace/x')).toBe('~/workspace/x');
+    expect(tidyPath('/home/user/repo')).toBe('/home/user/repo');
+  });
+});
+
+describe('pickDefaultEnvironment', () => {
+  it('prefers the id from settings, then the exact vault directory, then one inside the vault, then the first bridge', () => {
+    const settings = { ...DEFAULT_SETTINGS, vaultPathOnMac: VAULT };
+    expect(pickDefaultEnvironment(ENVS, settings)).toBe('env_vault');
+    expect(pickDefaultEnvironment(ENVS, { ...settings, defaultEnvironmentId: 'env_ws' })).toBe('env_ws');
+    const inside: Environment[] = [ENVS[0]!, ENVS[1]!, { id: 'env_sub', kind: 'bridge', label: 'menus (Mac)', cwd: VAULT + '/menus', sessionCount: 1 }];
+    expect(pickDefaultEnvironment(inside, settings)).toBe('env_sub');
+    expect(pickDefaultEnvironment([ENVS[0]!, ENVS[1]!], settings)).toBe('env_ws');
+    expect(pickDefaultEnvironment([ENVS[0]!], settings)).toBe('env_cloud');
+    expect(pickDefaultEnvironment([], settings)).toBe('');
+  });
+});
+
 describe('NewSessionSheet', () => {
-  it('lists bridge environments first and preselects the vault environment', () => {
-    const { select } = setup();
-    const opts = Array.from(select()!.options).map((o) => o.value);
-    expect(opts).toEqual(['env_ws', 'env_vault', 'env_cloud']);
+  it('lists bridge environments first with directory labels and preselects the vault environment', () => {
+    const { select, root } = setup();
+    const opts = Array.from(select()!.options).map((o) => [o.value, o.textContent]);
+    expect(opts).toEqual([
+      ['env_ws', 'workspace'],
+      ['env_vault', 'yes-chef (this vault)'],
+      ['env_cloud', 'repo (cloud)'],
+    ]);
     expect(select()!.value).toBe('env_vault');
+    expect(root.querySelector('.claudsidian-new-session-cwd')?.textContent).toBe('~/workspace/projects/yes-chef');
+  });
+
+  it('shows the chosen environment directory under the select', () => {
+    const { select, root } = setup();
+    setValue(select(), 'env_ws');
+    expect(root.querySelector('.claudsidian-new-session-cwd')?.textContent).toBe('~/workspace');
   });
 
   it('prefers settings.defaultEnvironmentId when it exists', () => {
@@ -57,21 +117,40 @@ describe('NewSessionSheet', () => {
     expect(select()!.value).toBe('env_ws');
   });
 
+  it('the model control is a select that reads Server default, offers the known models, and keeps a configured id', () => {
+    const { modelSelect } = setup(ENVS, (_s, f) => {
+      f.current.defaultModel = '';
+    });
+    const values = Array.from(modelSelect()!.options).map((o) => o.value);
+    expect(values[0]).toBe('');
+    expect(modelSelect()!.options[0]?.textContent).toBe('Server default');
+    expect(values).toContain('claude-opus-5-5');
+    expect(values.at(-1)).toBe('__custom');
+    expect(modelSelect()!.value).toBe('');
+    expect(modelSelect()!.hasAttribute('disabled')).toBe(false);
+    mounted?.unmount();
+    const configured = setup(ENVS, (_s, f) => {
+      f.current.defaultModel = 'claude-sonnet-4-5';
+    });
+    expect(configured.modelSelect()!.value).toBe('claude-sonnet-4-5');
+  });
+
   it('creates with the typed values and reports the new id', async () => {
-    const { root, store, created, select } = setup(ENVS, (s, f) => {
+    const { root, store, created, select, modelSelect } = setup(ENVS, (s, f) => {
       f.current.defaultModel = 'claude-sonnet-4-5';
       f.current.defaultPermissionMode = 'auto';
       s.createResult = makeSession({ id: 'cse_created' });
     });
-    const model = root.querySelector<HTMLInputElement>('.claudsidian-new-session-model');
-    expect(model?.placeholder).toBe('server default');
-    expect(model?.value).toBe('claude-sonnet-4-5');
+    expect(modelSelect()?.value).toBe('claude-sonnet-4-5');
     expect(root.querySelector<HTMLSelectElement>('.claudsidian-new-session-mode')?.value).toBe('auto');
 
     setValue(select(), 'env_ws');
     setValue(root.querySelector('.claudsidian-new-session-title'), 'Plan the week');
     setValue(root.querySelector('.claudsidian-new-session-first'), 'Read tasks/tech.md and summarize.');
-    setValue(model, 'claude-opus-4-1');
+    setValue(modelSelect(), '__custom');
+    const custom = root.querySelector<HTMLInputElement>('.claudsidian-new-session-model-custom');
+    expect(custom?.value).toBe('claude-sonnet-4-5');
+    setValue(custom, 'claude-opus-4-1');
     setValue(root.querySelector('.claudsidian-new-session-mode'), 'plan');
     click(byText(root, 'button', 'Create'));
     await flush();
@@ -86,8 +165,18 @@ describe('NewSessionSheet', () => {
     expect(created).toEqual(['cse_created']);
   });
 
+  it('picking a listed model from the select sends that id', async () => {
+    const { root, store, modelSelect } = setup();
+    setValue(modelSelect(), 'claude-opus-5-5');
+    expect(root.querySelector('.claudsidian-new-session-model-custom')).toBeNull();
+    click(byText(root, 'button', 'Create'));
+    await flush();
+    expect((store.calls.find((c) => c.name === 'createSession')?.args[0] as { model?: string }).model).toBe('claude-opus-5-5');
+  });
+
   it('omits blank optional fields', async () => {
     const { root, store } = setup();
+    expect(byText(root, 'button', 'Create')?.hasAttribute('disabled')).toBe(false);
     click(byText(root, 'button', 'Create'));
     await flush();
     const opts = store.calls.find((c) => c.name === 'createSession')?.args[0] as Record<string, unknown>;
@@ -143,12 +232,14 @@ describe('NewSessionSheet', () => {
     expect(root.querySelector<HTMLSelectElement>('.claudsidian-new-session-env')?.value).toBe('env_vault');
   });
 
-  it('closes from the Cancel button and the backdrop', () => {
+  it('closes from the Cancel button, the X in the head and the backdrop', () => {
     const { root, closedCount } = setup();
     click(byText(root, 'button', 'Cancel'));
     expect(closedCount()).toBe(1);
-    click(root.querySelector('.claudsidian-ss-sheet-backdrop'));
+    click(root.querySelector('.claudsidian-ss-sheet-close'));
     expect(closedCount()).toBe(2);
+    click(root.querySelector('.claudsidian-ss-sheet-backdrop'));
+    expect(closedCount()).toBe(3);
   });
 });
 

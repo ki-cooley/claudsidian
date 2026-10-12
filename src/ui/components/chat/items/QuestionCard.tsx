@@ -1,17 +1,21 @@
 /**
  * An AskUserQuestion request: each question with its options as toggle buttons (one or many) and
- * an Other field whose text is the answer verbatim. Send answers unlocks when every question has one.
+ * an Other field whose text is the answer verbatim. Send answers unlocks when every question has
+ * one; a tap disables the card and spins the button until the store confirms (or ten seconds).
+ * Every option renders at its full height; nothing in the card is clipped.
  */
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import type { QuestionItem } from '../../../../core/types';
 import { Button } from '../../common/Button';
 import { Icon } from '../../common/Icon';
+import { Spinner } from '../../common/Spinner';
+import { useBusy } from './busy';
 
 export interface QuestionCardProps {
   item: QuestionItem;
   cooking: boolean;
-  onSubmit: (answers: Record<string, string | string[]>, response?: string) => void;
+  onSubmit: (answers: Record<string, string | string[]>, response?: string) => void | Promise<unknown>;
 }
 
 interface Draft {
@@ -31,6 +35,7 @@ export function answerFor(draft: Draft | undefined, multi: boolean): string | un
 
 export function QuestionCard(p: QuestionCardProps): JSX.Element {
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
+  const busy = useBusy();
   const { item } = p;
 
   if (item.resolved) {
@@ -58,6 +63,7 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
     if (a === undefined) complete = false;
     else answers[q.question] = a;
   });
+  const waiting = busy.key !== null;
 
   const update = (i: number, fn: (d: Draft) => Draft): void => {
     setDrafts((prev) => ({ ...prev, [i]: fn(prev[i] ?? { picked: [], other: '' }) }));
@@ -70,18 +76,23 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
   };
 
   return (
-    <div class={`claudsidian-question ${p.cooking ? 'is-cooking' : ''}`} role="group" aria-label="Question from Claude">
+    <div class={`claudsidian-question ${p.cooking ? 'is-cooking' : ''} ${waiting ? 'is-busy' : ''}`} role="group" aria-labelledby={`${item.id}-kicker`}>
       <div class="claudsidian-perm-head">
         <Icon name="message-circle-question" size="small" />
-        <span class="claudsidian-perm-kicker">Claude asks</span>
+        <span class="claudsidian-perm-kicker" id={`${item.id}-kicker`}>
+          Claude asks
+        </span>
       </div>
       {item.questions.map((q, i) => {
         const draft = drafts[i];
+        const textId = `${item.id}-q${i}`;
         return (
           <div class="claudsidian-question-block" key={i}>
             {q.header ? <div class="claudsidian-question-header">{q.header}</div> : null}
-            <div class="claudsidian-question-text">{q.question}</div>
-            <div class="claudsidian-question-options" role="group" aria-label={q.question}>
+            <div class="claudsidian-question-text" id={textId}>
+              {q.question}
+            </div>
+            <div class="claudsidian-question-options" role="group" aria-labelledby={textId}>
               {q.options.map((o) => {
                 const on = draft?.picked.includes(o.label) ?? false;
                 return (
@@ -90,6 +101,7 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
                     key={o.label}
                     class={`claudsidian-option ${on ? 'is-on' : ''}`}
                     aria-pressed={on ? 'true' : 'false'}
+                    disabled={waiting}
                     onClick={() => toggle(i, o.label, q.multiSelect)}
                   >
                     <span class="claudsidian-option-label">{o.label}</span>
@@ -104,6 +116,7 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
                 type="text"
                 placeholder={q.multiSelect ? 'Add your own' : 'Type your own answer'}
                 value={draft?.other ?? ''}
+                disabled={waiting}
                 onInput={(ev) => {
                   const value = (ev.currentTarget as HTMLInputElement).value;
                   update(i, (d) => ({ ...d, other: value }));
@@ -114,7 +127,10 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
         );
       })}
       <div class="claudsidian-perm-actions">
-        <Button label="Send answers" kind="primary" disabled={!complete} onClick={() => p.onSubmit(answers)} />
+        <Button kind="primary" disabled={!complete || waiting} onClick={() => busy.run('submit', () => p.onSubmit(answers))}>
+          {busy.key === 'submit' ? <Spinner size="small" label="Sending" /> : null}
+          <span class="claudsidian-btn-label">Send answers</span>
+        </Button>
       </div>
     </div>
   );

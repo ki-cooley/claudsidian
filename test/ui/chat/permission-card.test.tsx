@@ -96,3 +96,35 @@ describe('PermissionCard', () => {
     expect(q(root, '.claudsidian-permission').classList.contains('is-cooking')).toBe(true);
   });
 });
+
+describe('PermissionCard busy state', () => {
+  it('disables every button and spins the tapped one until the handler settles', async () => {
+    let resolve: () => void = () => {};
+    const onAllow = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+    const item = items.permission('Bash', { command: 'npm test' });
+    const m = mount(PermissionCard, { item, cooking: false, onAllow, onDeny: vi.fn() });
+    mounted.push(m as Mounted<unknown>);
+    const allow = buttonByText(m.root, 'Allow');
+    allow.click();
+    allow.click();
+    await tick();
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    expect(q(m.root, '.claudsidian-permission').classList.contains('is-busy')).toBe(true);
+    expect(buttonByText(m.root, 'Allow').disabled).toBe(true);
+    expect(buttonByText(m.root, 'Deny').disabled).toBe(true);
+    expect(buttonByText(m.root, 'Allow').querySelector('.claudsidian-spinner')).not.toBeNull();
+    resolve();
+    await tick();
+    expect(buttonByText(m.root, 'Allow').disabled).toBe(false);
+    expect(maybe(m.root, '.claudsidian-spinner')).toBeNull();
+  });
+
+  it('stays busy for a void handler until the card resolves or the timeout passes', async () => {
+    const { root, onAllow } = setup();
+    buttonByText(root, 'Allow').click();
+    buttonByText(root, 'Allow').click();
+    await tick();
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    expect(buttonByText(root, 'Allow').disabled).toBe(true);
+  });
+});

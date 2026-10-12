@@ -1,14 +1,15 @@
 /**
- * The list that floats over the composer for @ files and / commands. The composer owns the
+ * The list that floats above the composer for @ files and / commands. The composer owns the
  * keyboard (arrows, Enter, Escape) and passes the highlighted index; the popup renders and
- * handles taps. Mouse-down is swallowed so the textarea keeps focus.
+ * handles taps. Mouse-down is swallowed so the textarea keeps focus. The listbox is named through
+ * a visually hidden element (aria-labelledby), never aria-label, which Obsidian would show as a tooltip.
  */
-import type { JSX } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import type { ComponentChildren, JSX } from 'preact';
+import { useEffect, useId, useRef } from 'preact/hooks';
 
 export interface SuggestPopupProps<T> {
   items: T[];
-  render: (t: T) => string;
+  render: (t: T) => ComponentChildren;
   onPick: (t: T) => void;
   onClose: () => void;
   anchor?: HTMLElement;
@@ -21,10 +22,11 @@ export interface SuggestPopupProps<T> {
 
 export function SuggestPopup<T>(p: SuggestPopupProps<T>): JSX.Element {
   const listRef = useRef<HTMLDivElement>(null);
+  const labelId = useId();
   const selected = p.selected ?? 0;
 
   useEffect(() => {
-    const el = listRef.current?.children.item(selected) as HTMLElement | null | undefined;
+    const el = listRef.current?.querySelectorAll<HTMLElement>('[role="option"]').item(selected);
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
   }, [selected, p.items]);
 
@@ -40,7 +42,10 @@ export function SuggestPopup<T>(p: SuggestPopupProps<T>): JSX.Element {
   }, [p.onClose, p.anchor]);
 
   return (
-    <div class="claudsidian-suggest" role="listbox" aria-label={p.label ?? 'Suggestions'} ref={listRef}>
+    <div class="claudsidian-suggest" role="listbox" aria-labelledby={labelId} ref={listRef}>
+      <span id={labelId} class="claudsidian-sr-only">
+        {p.label ?? 'Suggestions'}
+      </span>
       {p.items.length === 0 ? (
         <div class="claudsidian-suggest-empty">{p.empty ?? 'No matches'}</div>
       ) : (

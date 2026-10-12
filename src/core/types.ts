@@ -6,11 +6,22 @@ import type { ControlRequestEvent, PermissionUpdate, WireSession } from '../api/
 
 export type TurnState = 'idle' | 'sending' | 'working' | 'needs_input' | 'offline' | 'error';
 
+/** What a blocked session waits on, as far as the wire says (external_metadata.pending_action). */
+export interface PendingSummary {
+  /** question for AskUserQuestion, permission for any other can_use_tool request, other for the rest */
+  kind: 'permission' | 'question' | 'other';
+  toolName?: string;
+  /** the question text, or the tool description, when the payload carries one */
+  text?: string;
+  requestId?: string;
+}
+
 export interface SessionSummary {
   id: string;
   title: string;
   archived: boolean;
   workerStatus: string; // idle | running | requires_action | unknown
+  statusBucket?: string; // working | completed | review_ready | failed | blocked | ...
   connectionStatus: string; // connected | connecting | disconnected | unknown
   environmentId: string;
   environmentKind: string; // bridge | cloud | unknown
@@ -18,12 +29,29 @@ export interface SessionSummary {
   permissionMode?: string;
   createdAt?: number; // epoch ms
   lastEventAt?: number; // epoch ms
+  /**
+   * Epoch ms the list orders by: lastEventAt frozen at the last full re-sort (screen mount, manual refresh),
+   * so a background poll does not shuffle rows under the reader. Absent on summaries built outside the store,
+   * which then order by lastEventAt.
+   */
+  sortAt?: number;
   unread: boolean;
-  /** working directory from the session's init event, filled lazily by the store */
+  /** working directory from the session's init event, filled lazily by the store and persisted across loads */
   cwd?: string;
   summary?: { category?: string; detail?: string; needsAction?: string; recentAction?: string };
+  /** what the session is blocked on; the needs-you line prefers `pending.text` and falls back to summary.needsAction */
+  pending?: PendingSummary;
+  /** offline with a machine-generated title ("kisworkcomputer-zany-finch"): sorted last in its group, never "needs you" */
+  quiet?: boolean;
   tags: string[];
   raw: WireSession;
+}
+
+/** Titles claude remote-control invents: three or more lowercase word or number runs joined by hyphens, no spaces. */
+export const MACHINE_TITLE_RE = /^[a-z0-9]+(-[a-z0-9]+){2,}$/;
+
+export function isQuietSession(title: string, connectionStatus: string): boolean {
+  return connectionStatus !== 'connected' && MACHINE_TITLE_RE.test(title);
 }
 
 export function toEpochMs(iso: string | undefined): number | undefined {
@@ -32,14 +60,49 @@ export function toEpochMs(iso: string | undefined): number | undefined {
   return Number.isFinite(t) ? t : undefined;
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function optStr(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() !== '' ? v : undefined;
+}
+
+/**
+ * external_metadata.pending_action, read defensively: the reference only says the details live there, and the
+ * mock server sends {type, tool_name, request_id}. The question text is taken from the AskUserQuestion input
+ * shape ({input: {questions: [{question}]}}) or a top-level question/description when present; unverified
+ * against the live API, so readers keep summary.needsAction as the fallback.
+ */
+export function pendingOf(w: WireSession): PendingSummary | undefined {
+  const pa: unknown = w.external_metadata?.pending_action;
+  if (!isRecord(pa)) return undefined;
+  const toolName = optStr(pa.tool_name) ?? optStr(pa.toolName);
+  const input = isRecord(pa.input) ? pa.input : undefined;
+  const questions: unknown = input?.questions ?? pa.questions;
+  const first: unknown = Array.isArray(questions) ? questions[0] : undefined;
+  const text = (isRecord(first) ? optStr(first.question) : undefined) ?? optStr(pa.question) ?? optStr(pa.description);
+  const kind: PendingSummary['kind'] =
+    toolName === 'AskUserQuestion' ? 'question' : toolName || pa.type === 'can_use_tool' ? 'permission' : 'other';
+  const out: PendingSummary = { kind };
+  if (toolName) out.toolName = toolName;
+  if (text) out.text = text;
+  const requestId = optStr(pa.request_id) ?? optStr(pa.requestId);
+  if (requestId) out.requestId = requestId;
+  return out;
+}
+
 export function summarizeSession(w: WireSession, cwd?: string): SessionSummary {
   const pts = w.post_turn_summary ?? w.external_metadata?.post_turn_summary;
+  const title = (w.title ?? '').trim() || 'Untitled session';
+  const connectionStatus = w.connection_status ?? 'unknown';
   return {
     id: w.id,
-    title: (w.title ?? '').trim() || 'Untitled session',
+    title,
     archived: w.status === 'archived',
     workerStatus: w.worker_status ?? 'unknown',
-    connectionStatus: w.connection_status ?? 'unknown',
+    statusBucket: w.status_bucket,
+    connectionStatus,
     environmentId: w.environment_id ?? '',
     environmentKind: w.environment_kind ?? 'unknown',
     model: w.session_context?.model ?? w.config?.model,
@@ -56,9 +119,49 @@ export function summarizeSession(w: WireSession, cwd?: string): SessionSummary {
           recentAction: pts.recent_action,
         }
       : undefined,
+    pending: pendingOf(w),
+    quiet: isQuietSession(title, connectionStatus),
     tags: w.tags ?? [],
     raw: w,
   };
+}
+
+function sameSummaryText(a: SessionSummary['summary'], b: SessionSummary['summary']): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.category === b.category && a.detail === b.detail && a.needsAction === b.needsAction && a.recentAction === b.recentAction;
+}
+
+function samePending(a: PendingSummary | undefined, b: PendingSummary | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.kind === b.kind && a.toolName === b.toolName && a.text === b.text && a.requestId === b.requestId;
+}
+
+/** True when every field the session list renders or orders by is equal; `raw` is not compared. */
+export function sameSummary(a: SessionSummary, b: SessionSummary): boolean {
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.archived === b.archived &&
+    a.workerStatus === b.workerStatus &&
+    a.statusBucket === b.statusBucket &&
+    a.connectionStatus === b.connectionStatus &&
+    a.environmentId === b.environmentId &&
+    a.environmentKind === b.environmentKind &&
+    a.model === b.model &&
+    a.permissionMode === b.permissionMode &&
+    a.createdAt === b.createdAt &&
+    a.lastEventAt === b.lastEventAt &&
+    a.sortAt === b.sortAt &&
+    a.unread === b.unread &&
+    a.cwd === b.cwd &&
+    a.quiet === b.quiet &&
+    sameSummaryText(a.summary, b.summary) &&
+    samePending(a.pending, b.pending) &&
+    a.tags.length === b.tags.length &&
+    a.tags.every((t, i) => t === b.tags[i])
+  );
 }
 
 /** What the plugin captured from Obsidian at send time. */
@@ -91,6 +194,8 @@ export interface UserItem {
   imageCount: number;
   /** true for user events the host synthesised (tool results are NOT items, they attach to tools) */
   synthetic: boolean;
+  /** sent from this client and not yet echoed by the server; rendered muted with a "Sending" label */
+  pending?: boolean;
   ts?: number;
 }
 

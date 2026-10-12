@@ -16,15 +16,20 @@ export interface AuthDeps {
   transport: HttpTransport;
   load: () => AuthState | null;
   save: (s: AuthState | null) => Promise<void>;
-  tokenUrl: string;
-  authorizeUrl: string;
-  profileUrl: string;
+  /** Read at each use (a function from the plugin's live settings), so a URL change applies without a reload. */
+  tokenUrl: string | (() => string);
+  authorizeUrl: string | (() => string);
+  profileUrl: string | (() => string);
   clientId?: string;
   timers?: TimerApi;
 }
 
 /** Refresh when less than this remains on the access token. */
 const REFRESH_MARGIN_MS = 300_000;
+
+function urlOf(v: string | (() => string)): string {
+  return typeof v === 'function' ? v() : v;
+}
 
 interface TokenResponse {
   access_token?: string;
@@ -69,7 +74,7 @@ export class AuthManager implements AuthApi {
     const state = randomUrlSafe();
     this.pending = { verifier, state };
     const url = buildAuthorizeUrl({
-      authorizeUrl: this.deps.authorizeUrl,
+      authorizeUrl: urlOf(this.deps.authorizeUrl),
       clientId: this.clientId,
       challenge: await challengeS256(verifier),
       state,
@@ -165,7 +170,7 @@ export class AuthManager implements AuthApi {
   private postToken(body: Record<string, string>): Promise<HttpResponse> {
     return this.deps.transport({
       method: 'POST',
-      url: this.deps.tokenUrl,
+      url: urlOf(this.deps.tokenUrl),
       headers: { 'Content-Type': 'application/json', 'anthropic-beta': OAUTH_BETA, 'User-Agent': OAUTH_USER_AGENT },
       body,
     });
@@ -200,7 +205,7 @@ export class AuthManager implements AuthApi {
     try {
       const res = await this.deps.transport({
         method: 'GET',
-        url: this.deps.profileUrl,
+        url: urlOf(this.deps.profileUrl),
         headers: { Authorization: `Bearer ${accessToken}`, 'anthropic-beta': OAUTH_BETA },
       });
       if (res.status < 200 || res.status >= 300) {

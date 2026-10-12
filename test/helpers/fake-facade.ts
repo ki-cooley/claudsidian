@@ -82,6 +82,8 @@ export interface FakeFacadeOptions {
   settings?: Partial<ClaudsidianSettings>;
   context?: CapturedContext;
   files?: string[];
+  /** recently opened paths, newest first (what getRecentFiles returns) */
+  recentFiles?: string[];
   auth?: FakeAuth;
 }
 
@@ -93,6 +95,7 @@ export class FakeFacade implements PluginFacade {
   settingsValue: ClaudsidianSettings;
   context: CapturedContext;
   files: string[];
+  recentFiles: string[];
   pickImagesResult: File[] = [];
   signInResult = true;
   insertResult = true;
@@ -113,6 +116,7 @@ export class FakeFacade implements PluginFacade {
     this.settingsValue = { ...structuredClone(DEFAULT_SETTINGS), ...opts.settings };
     this.context = opts.context ?? structuredClone(DEFAULT_CONTEXT);
     this.files = opts.files ?? [...DEFAULT_FILES];
+    this.recentFiles = opts.recentFiles ?? [];
     this.auth = opts.auth ?? fakeAuth();
   }
 
@@ -148,6 +152,11 @@ export class FakeFacade implements PluginFacade {
   vaultFiles(): string[] {
     this.record('vaultFiles');
     return [...this.files];
+  }
+
+  getRecentFiles(limit: number): string[] {
+    this.record('getRecentFiles', limit);
+    return this.recentFiles.slice(0, limit);
   }
 
   async openFile(path: string): Promise<void> {

@@ -44,7 +44,17 @@ export interface ClaudsidianSettings {
   lastSessionId: string;
   /** per-install uuid sent with presence; generated on first load */
   clientId: string;
+  /**
+   * environment id -> working directory, learned from init events and the environments endpoint. Lets
+   * "This vault" form on a cold start, before any session has been opened.
+   */
+  environmentDirs: Record<string, string>;
+  /** session id -> init cwd, oldest first; the store keeps the newest MAX_SESSION_CWDS entries */
+  sessionCwds: Record<string, string>;
 }
+
+/** How many session cwds data.json keeps (the newest); older sessions fall back to their environment's directory. */
+export const MAX_SESSION_CWDS = 200;
 
 export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   version: 2,
@@ -77,17 +87,24 @@ export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   auth: null,
   lastSessionId: '',
   clientId: '',
+  environmentDirs: {},
+  sessionCwds: {},
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/**
- * Build settings from whatever is in data.json. v1 (Smart Composer fork) data has `version: 13`
- * and `providers`; none of it carries over, so anything without `version: 2` starts from defaults.
- * Unknown keys are dropped; missing keys get defaults; nested objects are merged one level deep.
- */
+/** The string -> non-empty string entries of v, in their stored order; anything else is dropped. */
+function stringMap(v: unknown, max = Infinity): Record<string, string> {
+  if (!isObject(v)) return {};
+  const entries = Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== '');
+  return Object.fromEntries(entries.slice(-max));
+}
+
+/** Keys holding learned directory maps: validated entry by entry instead of merged with the (empty) default. */
+const STRING_MAP_KEYS = new Set<keyof ClaudsidianSettings>(['environmentDirs', 'sessionCwds']);
+
 /**
  * platform.claude.com and console.anthropic.com front the OAuth token endpoint with an edge that
  * rejects any non-SDK User-Agent with 429, and Obsidian mobile cannot override the User-Agent, so
@@ -99,6 +116,11 @@ const LEGACY_TOKEN_URLS = new Set([
   'https://console.anthropic.com/v1/oauth/token',
 ]);
 
+/**
+ * Build settings from whatever is in data.json. v1 (Smart Composer fork) data has `version: 13`
+ * and `providers`; none of it carries over, so anything without `version: 2` starts from defaults.
+ * Unknown keys are dropped; missing keys get defaults; nested objects are merged one level deep.
+ */
 export function migrateSettings(raw: unknown): ClaudsidianSettings {
   if (!isObject(raw) || raw.version !== 2) return structuredClone(DEFAULT_SETTINGS);
   const out: ClaudsidianSettings = structuredClone(DEFAULT_SETTINGS);
@@ -106,7 +128,9 @@ export function migrateSettings(raw: unknown): ClaudsidianSettings {
     const v = raw[key];
     if (v === undefined) continue;
     const d = DEFAULT_SETTINGS[key];
-    if (isObject(d) && isObject(v)) {
+    if (STRING_MAP_KEYS.has(key)) {
+      (out as unknown as Record<string, unknown>)[key] = stringMap(v, key === 'sessionCwds' ? MAX_SESSION_CWDS : Infinity);
+    } else if (isObject(d) && isObject(v)) {
       (out as unknown as Record<string, unknown>)[key] = { ...(d as Record<string, unknown>), ...v };
     } else if (Array.isArray(d)) {
       if (Array.isArray(v)) (out as unknown as Record<string, unknown>)[key] = v.filter((x) => typeof x === 'string');
