@@ -230,8 +230,9 @@ export class WorkspaceLeaf extends Events {
   getDisplayText(): string {
     return this.view?.getDisplayText() ?? '';
   }
-  getRoot(): WorkspaceLeaf {
-    return this;
+  /** Every harness leaf lives in the sidebar pane, so its root is the right split (as for a real sidebar leaf). */
+  getRoot(): unknown {
+    return this.app.workspace.rightSplit;
   }
   getContainer(): WorkspaceLeaf {
     return this;

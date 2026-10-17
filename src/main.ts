@@ -171,12 +171,17 @@ export default class ClaudsidianPlugin extends Plugin {
     if (urlChanged && this.store) void this.store.refreshSessions();
   }
 
-  /** Open (or reveal) the chat view: right sidebar on desktop, a full-screen leaf on mobile. */
+  /** Open (or reveal) the chat view: the right sidebar on desktop and iPad, a full-screen tab on a phone. */
   async activateView(sessionId?: string): Promise<WorkspaceLeaf | null> {
     const { workspace } = this.app;
     let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0] ?? null;
+    // Before 2.0.4 a tablet opened the view as a tab; the layout keeps that tab, so move it to the sidebar once.
+    if (leaf && Platform.isTablet && leaf.getRoot() !== workspace.rightSplit) {
+      leaf.detach();
+      leaf = null;
+    }
     if (!leaf) {
-      leaf = Platform.isMobile ? workspace.getLeaf(true) : (workspace.getRightLeaf(false) ?? workspace.getLeaf(true));
+      leaf = Platform.isPhone ? workspace.getLeaf(true) : (workspace.getRightLeaf(false) ?? workspace.getLeaf(true));
       await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
     }
     await workspace.revealLeaf(leaf);
