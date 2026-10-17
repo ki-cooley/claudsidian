@@ -1004,3 +1004,31 @@ describe('tool-summary', () => {
     expect(editDiff({})).toBeNull();
   });
 });
+
+describe('messages sent mid-turn', () => {
+  it('stay queued until the next top-level tool result, like Claude Code taking them in between tool calls', () => {
+    const first = reduce([
+      row(1, init()),
+      row(2, user('read the prep notes')),
+      row(3, assistant('m1', [toolUse('t1', 'Read', { file_path: VAULT + '/a.md' })])),
+      row(4, user('also count the dress-runs')),
+    ]);
+    const typed = only(first, 'user');
+    expect(typed.map((u) => u.queued ?? false)).toEqual([false, true]);
+    expect(first.turn).toBe('working');
+    const taken = reduce([row(5, toolResult('t1', 'ok'))], first);
+    expect(only(taken, 'user').map((u) => u.queued ?? false)).toEqual([false, false]);
+  });
+
+  it('a turn that ends first hands the message to the next turn, whose init clears it', () => {
+    const state = reduce([row(1, init()), row(2, user('one')), row(3, assistant('m1', [text('working')])), row(4, user('two')), row(5, result())]);
+    expect(only(state, 'user').at(-1)?.queued).toBe(true);
+    const next = reduce([row(6, init())], state);
+    expect(only(next, 'user').at(-1)?.queued).toBeUndefined();
+  });
+
+  it('a message sent while idle starts a turn and is never queued', () => {
+    const state = reduce([row(1, init()), row(2, user('one')), row(3, assistant('m1', [text('hi')])), row(4, result()), row(5, user('two'))]);
+    expect(only(state, 'user').map((u) => u.queued ?? false)).toEqual([false, false]);
+  });
+});

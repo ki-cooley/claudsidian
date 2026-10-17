@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionSummary, TranscriptItem } from '../../../src/core/types';
 import type { ClaudsidianSettings } from '../../../src/settings';
-import { ChatScreen, KEYBOARD_VAR, keyboardInset, type ChatScreenProps } from '../../../src/ui/components/chat/ChatScreen';
+import { ChatScreen, KEYBOARD_VAR, VISIBLE_HEIGHT_VAR, keyboardInset, type ChatScreenProps } from '../../../src/ui/components/chat/ChatScreen';
 import { SCROLL_TO_PENDING_EVENT } from '../../../src/ui/components/chat/ChatHeader';
 import { resetDrafts } from '../../../src/ui/components/chat/drafts';
 import { orderReplies } from '../../../src/ui/components/chat/QuickReplies';
@@ -58,7 +58,7 @@ function fakeViewport(height: number, offsetTop = 0): EventTarget & { height: nu
 }
 
 describe('keyboard inset', () => {
-  it('is the part of the layout viewport the visual viewport no longer covers, never negative', () => {
+  it('is the part of the screen below the visible viewport, never negative (zero when the app already shrank)', () => {
     expect(keyboardInset(800, { height: 500, offsetTop: 0 })).toBe(300);
     expect(keyboardInset(800, { height: 500, offsetTop: 100 })).toBe(200);
     expect(keyboardInset(800, { height: 800, offsetTop: 0 })).toBe(0);
@@ -73,10 +73,20 @@ describe('keyboard inset', () => {
       const { root, unmount } = setup({ isMobile: true });
       await tick();
       const screen = q<HTMLElement>(root, '.claudsidian-chat');
+      let bottom = window.innerHeight;
+      screen.getBoundingClientRect = () => ({ bottom }) as DOMRect;
+      viewport.dispatchEvent(new Event('resize'));
       expect(screen.style.getPropertyValue(KEYBOARD_VAR)).toBe('0px');
+      // the keyboard covers the bottom of a screen that did not shrink: lift the dock by the overlap
       viewport.height = window.innerHeight - 320;
       viewport.dispatchEvent(new Event('resize'));
       expect(screen.style.getPropertyValue(KEYBOARD_VAR)).toBe('320px');
+      expect(screen.style.getPropertyValue(VISIBLE_HEIGHT_VAR)).toBe(`${window.innerHeight - 320}px`);
+      // the app already shrank for the keyboard (iPad): nothing is hidden, so no second lift
+      bottom = window.innerHeight - 320;
+      viewport.dispatchEvent(new Event('resize'));
+      expect(screen.style.getPropertyValue(KEYBOARD_VAR)).toBe('0px');
+      bottom = window.innerHeight;
       viewport.height = window.innerHeight;
       viewport.dispatchEvent(new Event('resize'));
       expect(screen.style.getPropertyValue(KEYBOARD_VAR)).toBe('0px');

@@ -32,19 +32,22 @@ export interface ChatScreenProps {
   onArchive: () => void;
 }
 
-/** CSS variable on the screen: how much of the layout viewport the on-screen keyboard covers. */
+/** CSS variable on the screen: how much of the screen the on-screen keyboard covers. */
 export const KEYBOARD_VAR = '--claudsidian-kb';
+/** CSS variable on the screen: the visible height (the visual viewport), which caps the composer's growth. */
+export const VISIBLE_HEIGHT_VAR = '--claudsidian-vvh';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
 /**
- * The keyboard's height in px: the part of the layout viewport the visual viewport no longer
- * covers. Zero when the webview itself shrank for the keyboard (then nothing is hidden).
+ * How much of the screen the keyboard hides, in px: the part of the screen below the visual viewport's bottom
+ * edge. Zero when Obsidian already shrank the app for the keyboard (on iPad it does), so the dock is never
+ * lifted twice; padding by the whole keyboard height there squeezed the transcript to nothing.
  */
-export function keyboardInset(innerHeight: number, viewport: { height: number; offsetTop: number }): number {
-  return Math.max(0, Math.round(innerHeight - viewport.height - viewport.offsetTop));
+export function keyboardInset(screenBottom: number, viewport: { height: number; offsetTop: number }): number {
+  return Math.max(0, Math.round(screenBottom - viewport.height - viewport.offsetTop));
 }
 
 export function ChatScreen(p: ChatScreenProps): JSX.Element {
@@ -94,7 +97,9 @@ export function ChatScreen(p: ChatScreenProps): JSX.Element {
     const viewport = typeof window !== 'undefined' ? window.visualViewport : null;
     if (!facade.isMobile || !el || !viewport) return;
     const update = (): void => {
-      el.style.setProperty(KEYBOARD_VAR, `${keyboardInset(window.innerHeight, viewport)}px`);
+      // The padding sits inside the screen, so it never moves the bottom edge this measures.
+      el.style.setProperty(KEYBOARD_VAR, `${keyboardInset(el.getBoundingClientRect().bottom, viewport)}px`);
+      el.style.setProperty(VISIBLE_HEIGHT_VAR, `${Math.round(viewport.height)}px`);
     };
     viewport.addEventListener('resize', update);
     viewport.addEventListener('scroll', update);
@@ -103,6 +108,7 @@ export function ChatScreen(p: ChatScreenProps): JSX.Element {
       viewport.removeEventListener('resize', update);
       viewport.removeEventListener('scroll', update);
       el.style.removeProperty(KEYBOARD_VAR);
+      el.style.removeProperty(VISIBLE_HEIGHT_VAR);
     };
   }, [facade.isMobile]);
 

@@ -673,3 +673,11 @@
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
+
+/* "Show N other sessions" / "Show this vault only" under the list */
+.claudsidian-sessions button.claudsidian-sessions-scope {
+  display: flex;
+  margin: 8px auto 16px;
+  color: var(--text-muted);
+  font-size: calc(var(--font-ui-small) * var(--claudsidian-scale, 1));
+}

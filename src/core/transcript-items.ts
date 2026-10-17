@@ -202,3 +202,17 @@ export function toolResultText(content: unknown): string {
     })
     .join('\n');
 }
+
+/**
+ * Claude Code takes a message sent mid-turn in at the next top-level tool result, or at the next turn's init when
+ * the turn ends first; the stream has no event of its own for that. Both points clear every queued user item.
+ */
+export function clearQueued(items: TranscriptItem[]): TranscriptItem[] {
+  if (!items.some((i) => i.kind === 'user' && i.queued)) return items;
+  return items.map((i) => {
+    if (i.kind !== 'user' || !i.queued) return i;
+    const taken = { ...i };
+    delete taken.queued;
+    return taken;
+  });
+}

@@ -72,20 +72,33 @@ function triageOrder(a: SessionSummary, b: SessionSummary): number {
 }
 
 /**
- * environments is an optional hint from store.environments(): a session with an unknown cwd (bridge sessions can
- * report cwd '') lands in "This vault" when its environment's directory is under the vault, or when a sibling
- * session in the same environment has a cwd under the vault.
+ * Which sessions belong to "This vault": a cwd under the vault; for a session with an unknown cwd (bridge sessions
+ * report cwd '') an environment whose directory is under the vault, or a sibling session in the same environment
+ * with a cwd under the vault; or a session the person filed there (pinned).
  */
+export function vaultMembership(
+  sessions: readonly SessionSummary[],
+  vaultPathOnMac: string,
+  environments: readonly EnvironmentHint[] = [],
+  pinned: ReadonlySet<string> = new Set(),
+): (s: SessionSummary) => boolean {
+  const vaultEnvIds = vaultEnvironmentIds(environments, vaultPathOnMac);
+  for (const s of sessions) {
+    if (s.cwd && s.environmentId && isUnderPath(s.cwd, vaultPathOnMac)) vaultEnvIds.add(s.environmentId);
+  }
+  return (s) =>
+    pinned.has(s.id) || (s.cwd ? isUnderPath(s.cwd, vaultPathOnMac) : s.environmentId !== '' && vaultEnvIds.has(s.environmentId));
+}
+
+/** environments and pinned feed vaultMembership; see there. */
 export function groupSessions(
   sessions: SessionSummary[],
   vaultPathOnMac: string,
   showArchived: boolean,
   environments: readonly EnvironmentHint[] = [],
+  pinned: ReadonlySet<string> = new Set(),
 ): SessionGroupData[] {
-  const vaultEnvIds = vaultEnvironmentIds(environments, vaultPathOnMac);
-  for (const s of sessions) {
-    if (s.cwd && s.environmentId && isUnderPath(s.cwd, vaultPathOnMac)) vaultEnvIds.add(s.environmentId);
-  }
+  const inVaultOf = vaultMembership(sessions, vaultPathOnMac, environments, pinned);
 
   const vault: SessionSummary[] = [];
   const local: SessionSummary[] = [];
@@ -96,8 +109,7 @@ export function groupSessions(
       if (showArchived) archived.push(s);
       continue;
     }
-    const inVault = s.cwd ? isUnderPath(s.cwd, vaultPathOnMac) : s.environmentId !== '' && vaultEnvIds.has(s.environmentId);
-    if (inVault) vault.push(s);
+    if (inVaultOf(s)) vault.push(s);
     else if (s.environmentKind === 'bridge') local.push(s);
     else cloud.push(s);
   }

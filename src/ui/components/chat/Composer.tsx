@@ -41,7 +41,8 @@ export interface ComposerProps {
 }
 
 export const MAX_IMAGES = 4;
-const MAX_HEIGHT_VH = 0.4;
+/** The field grows with its text up to this share of the visible height, so the conversation stays in view. */
+const MAX_HEIGHT_SHARE = 0.3;
 /** Recent files asked of the facade when the @ popup opens. */
 export const RECENT_FILES_LIMIT = 12;
 /** Dispatched (bubbling) on the plugin root after a message went out; the transcript scrolls to the bottom. */
@@ -71,7 +72,8 @@ function autoGrow(el: HTMLTextAreaElement | null): void {
     el.style.height = '';
     return;
   }
-  const max = Math.round(window.innerHeight * MAX_HEIGHT_VH);
+  const visible = window.visualViewport?.height ?? window.innerHeight;
+  const max = Math.round(visible * MAX_HEIGHT_SHARE);
   el.style.height = `${Math.min(natural, max)}px`;
 }
 

@@ -154,6 +154,13 @@ export default class ClaudsidianPlugin extends Plugin {
     // The chat leaf stays in the layout (plugin guidelines): Obsidian restores the view when the plugin returns.
   }
 
+  /** data.json changed outside this app (Obsidian Sync from the iPad or phone, a file write): take it in. */
+  async onExternalSettingsChange(): Promise<void> {
+    await this.loadSettings();
+    setDebugLogging(this.settings.debugLog);
+    this.settingsChanged.value += 1;
+  }
+
   async loadSettings(): Promise<void> {
     this.settings = migrateSettings(await this.loadData());
   }
@@ -171,17 +178,17 @@ export default class ClaudsidianPlugin extends Plugin {
     if (urlChanged && this.store) void this.store.refreshSessions();
   }
 
-  /** Open (or reveal) the chat view: the right sidebar on desktop and iPad, a full-screen tab on a phone. */
+  /** Open (or reveal) the chat view in the right sidebar (the drawer on iPad and phone). */
   async activateView(sessionId?: string): Promise<WorkspaceLeaf | null> {
     const { workspace } = this.app;
     let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0] ?? null;
-    // Before 2.0.4 a tablet opened the view as a tab; the layout keeps that tab, so move it to the sidebar once.
-    if (leaf && Platform.isTablet && leaf.getRoot() !== workspace.rightSplit) {
+    // Before 2.0.5 mobile opened the view as a tab; the layout keeps that tab, so move it to the sidebar once.
+    if (leaf && Platform.isMobile && leaf.getRoot() !== workspace.rightSplit) {
       leaf.detach();
       leaf = null;
     }
     if (!leaf) {
-      leaf = Platform.isPhone ? workspace.getLeaf(true) : (workspace.getRightLeaf(false) ?? workspace.getLeaf(true));
+      leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf(true);
       await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
     }
     await workspace.revealLeaf(leaf);

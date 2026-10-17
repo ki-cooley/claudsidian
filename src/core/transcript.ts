@@ -32,6 +32,7 @@ import type {
 import { toEpochMs } from './types';
 import {
   appendInScope,
+  clearQueued,
   finalizePartials,
   findItemIn,
   hasItem,
@@ -166,7 +167,7 @@ function reduceInit(state: TranscriptState, ev: SystemOtherEvent, ctx: EventCont
       : state.items;
   return {
     ...state,
-    items,
+    items: clearQueued(items),
     init,
     model: init.model || state.model,
     permissionMode: init.permissionMode ?? state.permissionMode,
@@ -353,7 +354,8 @@ export function markSent(
     ...state,
     items: [...state.items, item],
     inFlightUserUuids: uuid ? [...state.inFlightUserUuids, uuid] : state.inFlightUserUuids,
-    turn: state.pending.length > 0 ? 'needs_input' : 'sending',
+    // Mid-turn the turn keeps working: the message queues behind it (the echo marks it queued).
+    turn: state.pending.length > 0 ? 'needs_input' : state.turn === 'working' ? 'working' : 'sending',
   };
 }
 

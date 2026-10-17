@@ -17,6 +17,7 @@ import type {
 } from './types';
 import {
   appendInScope,
+  clearQueued,
   countImages,
   field,
   findItemIn,
@@ -51,7 +52,10 @@ export function reduceUser(state: TranscriptState, ev: UserEvent, ctx: EventCont
   if (typeof content !== 'string' && !Array.isArray(content)) return state;
 
   if (Array.isArray(content) && content.some((b) => field(b, 'type') === 'tool_result')) {
-    return attachToolResults(state, content);
+    const next = attachToolResults(state, content);
+    if (ctx.parentToolUseId) return next;
+    const items = clearQueued(next.items);
+    return items === next.items ? next : { ...next, items };
   }
 
   const text = typeof content === 'string' ? content : textOfBlocks(content);
@@ -76,6 +80,8 @@ export function reduceUser(state: TranscriptState, ev: UserEvent, ctx: EventCont
 
   const id = ev.uuid ?? `user-${ctx.seq}`;
   const item: UserItem = { kind: 'user', id, text, imageCount, synthetic: meta, ts: ctx.ts };
+  // Sent while a turn runs: Claude reads it at the next tool result or turn start (clearQueued), not now.
+  if (!meta && !ctx.parentToolUseId && (state.turn === 'working' || state.turn === 'needs_input')) item.queued = true;
   const inFlight =
     ev.uuid && state.inFlightUserUuids.includes(ev.uuid)
       ? state.inFlightUserUuids.filter((u) => u !== ev.uuid)

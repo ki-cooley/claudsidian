@@ -1,4 +1,5 @@
-// 02: the sessions list shows the three groups with the vault group first and the blocked session marked "Needs you".
+// 02: the sessions list shows This vault only by default; "Show N other sessions" brings in the other groups with the
+// vault group first and the blocked session marked "Needs you".
 import { SESSIONS, SIDEBAR, assert, waitForSessions } from './helpers.mjs';
 
 export const meta = { title: 'Sessions list groups and status' };
@@ -8,6 +9,11 @@ export async function run(d, ctx) {
     const n = await waitForSessions(d, 5);
     assert(n === 5, `expected 5 sessions (3 pages of the mock list), got ${n}`);
     await d.waitFor(`${SIDEBAR} >> text=${SESSIONS.vault.title}`);
+  });
+  await ctx.step('vault only by default, the others behind "Show 2 other sessions"', async () => {
+    await d.waitFor(`${SIDEBAR} >> text=Show 2 other sessions`, ctx.timeoutMs, 'the show-others button');
+    assert(!(await d.exists(`${SIDEBAR} >> text=${SESSIONS.ws.title}`)), 'workspace session visible in the vault-only list');
+    await d.click(`${SIDEBAR} >> text=Show 2 other sessions`);
   });
   await ctx.step('three groups in order: This vault, Other local, Cloud', async () => {
     // The vault group needs the environments' cwd (bridge_info.directory from GET /v1/environments); the store

@@ -131,6 +131,7 @@ describe('SessionsScreen', () => {
     store.sessions.value = sessions;
     const facade = new FakeFacade();
     facade.current.vaultPathOnMac = VAULT;
+    facade.current.listScope = 'all'; // grouping tests see every group; the vault-only default has its own block
     tweak?.(store, facade);
     const calls = { open: [] as string[], rename: [] as string[], archive: [] as string[] };
     mounted = mount(
@@ -487,5 +488,58 @@ describe('SessionsScreen', () => {
     store.sessionsError.value = 'Could not load sessions';
     await flush();
     expect(root.querySelector('.claudsidian-ss-banner')?.textContent).toContain('Could not load sessions');
+  });
+});
+
+describe('SessionsScreen vault scope (the default)', () => {
+  function setupVault(pins: string[] = [], scope: 'vault' | 'all' = 'vault') {
+    const store = new FakeStore();
+    store.sessions.value = seed();
+    const facade = new FakeFacade();
+    facade.current.vaultPathOnMac = VAULT;
+    facade.current.vaultSessionIds = pins;
+    facade.current.listScope = scope;
+    mounted = mount(<SessionsScreen store={store} facade={facade} onOpen={() => {}} onRename={() => {}} />);
+    const root = (mounted as unknown as { root: HTMLElement }).root;
+    return { store, facade, root };
+  }
+  const rowIds = (root: ParentNode) => Array.from(root.querySelectorAll('.claudsidian-session-row')).map((r) => r.getAttribute('data-session-id'));
+
+  it('shows only This vault and offers the others behind a footer button that saves the scope', async () => {
+    const { root, facade } = setupVault();
+    expect(facade.current.listScope).toBe('vault');
+    expect(rowIds(root)).toEqual(['cse_vault']);
+    const more = byText(root, 'button', 'Show 2 other sessions');
+    click(more);
+    await flush();
+    expect(facade.current.listScope).toBe('all');
+  });
+
+  it('shows a pinned session from elsewhere under This vault and takes it back out from the row sheet', async () => {
+    const { root, facade } = setupVault(['cse_ws']);
+    expect(rowIds(root)).toEqual(['cse_vault', 'cse_ws']);
+    click(root.querySelector('.claudsidian-session-row[data-session-id="cse_ws"] .claudsidian-session-more')!);
+    await flush();
+    click(byText(root, 'button', 'Remove from this vault'));
+    await flush();
+    expect(facade.current.vaultSessionIds).toEqual([]);
+  });
+
+  it('files a session under This vault from the row sheet when every session is shown', async () => {
+    const { root, facade } = setupVault([], 'all');
+    click(root.querySelector('.claudsidian-session-row[data-session-id="cse_cloud"] .claudsidian-session-more')!);
+    await flush();
+    click(byText(root, 'button', 'Show in this vault'));
+    await flush();
+    expect(facade.current.vaultSessionIds).toEqual(['cse_cloud']);
+  });
+
+  it('searches every session while a filter is typed', async () => {
+    const { root } = setupVault();
+    click(root.querySelector('.claudsidian-sessions-search')!);
+    await flush();
+    setValue(root.querySelector('.claudsidian-sessions-filter')!, 'refactor');
+    await flush();
+    expect(rowIds(root)).toEqual(['cse_cloud']);
   });
 });

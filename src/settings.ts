@@ -51,6 +51,10 @@ export interface ClaudsidianSettings {
   environmentDirs: Record<string, string>;
   /** session id -> init cwd, oldest first; the store keeps the newest MAX_SESSION_CWDS entries */
   sessionCwds: Record<string, string>;
+  /** the sessions list shows "This vault" only (default) or every session */
+  listScope: 'vault' | 'all';
+  /** sessions run elsewhere that the person filed under "This vault" from the row menu */
+  vaultSessionIds: string[];
 }
 
 /** How many session cwds data.json keeps (the newest); older sessions fall back to their environment's directory. */
@@ -89,6 +93,8 @@ export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   clientId: '',
   environmentDirs: {},
   sessionCwds: {},
+  listScope: 'vault',
+  vaultSessionIds: [],
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -141,5 +147,6 @@ export function migrateSettings(raw: unknown): ClaudsidianSettings {
     }
   }
   if (LEGACY_TOKEN_URLS.has(out.oauthTokenUrl)) out.oauthTokenUrl = DEFAULT_SETTINGS.oauthTokenUrl;
+  if (out.listScope !== 'vault' && out.listScope !== 'all') out.listScope = DEFAULT_SETTINGS.listScope;
   return out;
 }

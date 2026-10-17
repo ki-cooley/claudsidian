@@ -122,7 +122,7 @@ export function UserMessage(p: UserMessageProps): JSX.Element {
 
   const { body, context } = splitContext(p.item.text);
   const images = p.item.imageCount;
-  const queued = p.queued === true || (p.item.queued === true && isPendingItem(p.item));
+  const queued = p.queued === true || p.item.queued === true;
   const pending = queued || p.pending === true || isPendingItem(p.item);
   const summary = context ? describeContext(context) : [];
   return (

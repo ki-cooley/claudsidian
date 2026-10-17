@@ -1,4 +1,8 @@
-/** The sessions list screen: toolbar, banner, grouped rows, the row action sheet and the new session sheet. */
+/**
+ * The sessions list screen: toolbar, banner, grouped rows, the row action sheet and the new session sheet. By
+ * default it shows "This vault" only (the cooking sessions); a footer button shows every session, and a row's
+ * sheet files a session run elsewhere under "This vault" (or takes it back out). A filter searches everything.
+ */
 import { useSignal, type Signal } from '@preact/signals';
 import type { JSX } from 'preact';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'preact/hooks';
@@ -8,7 +12,7 @@ import type { PluginFacade } from '../../facade';
 import { EmptyState } from './EmptyState';
 import { NewSessionSheet } from './NewSessionSheet';
 import { SessionGroup } from './SessionGroup';
-import { groupSessions } from './grouping';
+import { groupSessions, vaultMembership } from './grouping';
 import { Banner, Button, Sheet, Spinner, cls } from './primitives';
 import { needsYouText, statusOf, summaryLine } from './status';
 
@@ -115,16 +119,31 @@ export function SessionsScreen(p: SessionsScreenProps): JSX.Element {
   const envKey = environments.map((e) => e.id + ':' + (e.cwd ?? '') + ':' + e.label).join('|');
   const filtering = query.trim() !== '';
   const filtered = useMemo(() => (filtering ? sessions.filter((s) => matchesFilter(s, query)) : sessions), [sessions, query, filtering]);
-  const groups = useMemo(
-    () => groupSessions(filtered, settings.vaultPathOnMac, showArchived, environments),
-    [filtered, settings.vaultPathOnMac, showArchived, envKey],
+  const pinnedIds = settings.vaultSessionIds;
+  const pinned = useMemo(() => new Set(pinnedIds), [pinnedIds.join('|')]);
+  const inVault = useMemo(
+    () => vaultMembership(sessions, settings.vaultPathOnMac, environments, pinned),
+    [sessions, settings.vaultPathOnMac, envKey, pinned],
   );
+  const vaultOnly = settings.listScope !== 'all' && !filtering;
+  const scoped = useMemo(() => (vaultOnly ? filtered.filter(inVault) : filtered), [filtered, vaultOnly, inVault]);
+  const hiddenCount = vaultOnly ? sessions.filter((s) => !s.archived && !inVault(s)).length : 0;
+  const groups = useMemo(
+    () => groupSessions(scoped, settings.vaultPathOnMac, showArchived, environments, pinned),
+    [scoped, settings.vaultPathOnMac, showArchived, envKey, pinned],
+  );
+  const setScope = (listScope: 'vault' | 'all') => void p.facade.saveSettings({ listScope });
+  const setPinned = (id: string, on: boolean) => {
+    const next = pinnedIds.filter((x) => x !== id);
+    if (on) next.push(id);
+    void p.facade.saveSettings({ vaultSessionIds: next });
+  };
 
   // The needs-you line of a blocked row comes from its transcript's pending control when this plugin has seen
   // it (the question text, the tool and file); reading the signal here re-renders the list when it changes.
   // Not memoised on purpose: the transcript signals are not in any dependency list, and the work is a few rows.
   const needsTexts = new Map<string, string>();
-  for (const s of filtered) {
+  for (const s of scoped) {
     if (s.archived || statusOf(s) !== 'needs_you') continue;
     needsTexts.set(s.id, needsYouText(s, store.transcript(s.id).value.pending));
   }
@@ -204,6 +223,8 @@ export function SessionsScreen(p: SessionsScreenProps): JSX.Element {
             <Spinner label="Loading sessions" />
           ) : filtering ? (
             <p class="claudsidian-sessions-nomatch">No sessions match "{query.trim()}".</p>
+          ) : vaultOnly && hiddenCount > 0 ? (
+            <p class="claudsidian-sessions-nomatch">No sessions in this vault yet.</p>
           ) : (
             <EmptyState
               variant={sessions.length > 0 ? 'all-archived' : 'none'}
@@ -216,6 +237,11 @@ export function SessionsScreen(p: SessionsScreenProps): JSX.Element {
             <SessionGroup key={g.title} title={g.title} sessions={g.sessions} now={now} needsTexts={needsTexts} onOpen={onOpen} onMore={onMore} />
           ))
         )}
+        {hiddenCount > 0 ? (
+          <Button class="claudsidian-sessions-scope" ghost label={hiddenCount === 1 ? 'Show 1 other session' : `Show ${hiddenCount} other sessions`} onClick={() => setScope('all')} />
+        ) : !filtering && settings.listScope === 'all' ? (
+          <Button class="claudsidian-sessions-scope" ghost label="Show this vault only" onClick={() => setScope('vault')} />
+        ) : null}
       </div>
 
       {moreSession && (
@@ -240,6 +266,29 @@ export function SessionsScreen(p: SessionsScreenProps): JSX.Element {
               p.facade.openExternal(claudeCodeUrl(moreSession.id));
             }}
           />
+          {pinned.has(moreSession.id) ? (
+            <Button
+              class="claudsidian-session-action"
+              ghost
+              icon="folder-minus"
+              label="Remove from this vault"
+              onClick={() => {
+                closeMore();
+                setPinned(moreSession.id, false);
+              }}
+            />
+          ) : !inVault(moreSession) ? (
+            <Button
+              class="claudsidian-session-action"
+              ghost
+              icon="folder-plus"
+              label="Show in this vault"
+              onClick={() => {
+                closeMore();
+                setPinned(moreSession.id, true);
+              }}
+            />
+          ) : null}
           {!moreSession.archived && (
             <Button class="claudsidian-session-action is-archive" ghost icon="archive" label="Archive" onClick={() => archive(moreSession)} />
           )}
