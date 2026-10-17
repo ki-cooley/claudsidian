@@ -196,6 +196,8 @@ export interface UserItem {
   synthetic: boolean;
   /** sent from this client and not yet echoed by the server; rendered muted with a "Sending" label */
   pending?: boolean;
+  /** the server accepted the send but has not echoed it (queued behind the running turn or a question): "Queued" */
+  queued?: boolean;
   ts?: number;
 }
 

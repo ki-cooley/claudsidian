@@ -144,6 +144,15 @@ export class FakeClient implements CcrApi {
     return this.environments.map((e) => ({ ...e }));
   }
 
+  /** Environments only GET by id finds (not in the list), plus everything the list returns. */
+  extraEnvironments: WireEnvironment[] = [];
+
+  async getEnvironment(id: string): Promise<WireEnvironment | null> {
+    await this.record(`getEnvironment ${id}`);
+    const e = [...this.environments, ...this.extraEnvironments].find((x) => x.environment_id === id);
+    return e ? { ...e } : null;
+  }
+
   async listEvents(id: string, opts: ListEventsOptions = {}): Promise<WireEventRow[]> {
     await this.record(`listEvents ${id} ${JSON.stringify(opts)}`);
     const { limit = 200, sortOrder = 'asc', fromSequenceNum, afterId } = opts;
@@ -152,7 +161,8 @@ export class FakeClient implements CcrApi {
       // the web client's cursor: rows after the one whose payload.uuid matches (none when it is unknown)
       const idx = rows.findIndex((r) => r.payload.uuid === afterId);
       const start = idx >= 0 ? idx + 1 : rows.length;
-      return rows.slice(start, start + limit).map((r) => ({ ...r }));
+      // the real endpoint answers with bare payloads, no sequence_num (verified 2026-10-16); the client wraps them
+      return rows.slice(start, start + limit).map((r) => ({ sequence_num: '', payload: { ...r.payload } }));
     }
     if (fromSequenceNum !== undefined && !this.ignoreFromSequenceNum) {
       const from = Math.max(0, fromSequenceNum - this.overlap);

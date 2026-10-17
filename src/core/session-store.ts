@@ -118,6 +118,11 @@ function seqOf(row: WireEventRow): number {
   return Number.isFinite(n) ? n : -1;
 }
 
+function hasSeq(row: WireEventRow): boolean {
+  const v = row.sequence_num as unknown;
+  return (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+}
+
 function bySeqAsc(a: WireEventRow, b: WireEventRow): number {
   return seqOf(a) - seqOf(b);
 }
@@ -238,6 +243,7 @@ function settlePending(state: TranscriptState): TranscriptState {
     if (!items) items = state.items.slice();
     const settled = { ...item };
     delete settled.pending;
+    delete settled.queued;
     items[i] = settled;
   });
   return items ? { ...state, items } : state;
@@ -443,7 +449,22 @@ export class SessionStore implements SessionStoreApi {
     await Promise.all(targets.map((s) => this.probeCwd(s)));
   }
 
+  /**
+   * The environment's own record names its directory; bridge init events carry an empty cwd, so the event
+   * probe only helps for other kinds (and environments the lookup no longer finds).
+   */
   private async probeCwd(s: SessionSummary): Promise<void> {
+    try {
+      const env = await this.deps.client.getEnvironment(s.environmentId);
+      if (this.disposed) return;
+      const dir = env?.bridge_info?.directory;
+      if (dir) {
+        if (this.learnEnvDir(s.environmentId, dir)) this.persistLearned();
+        return;
+      }
+    } catch (err) {
+      log.debug('environment lookup failed', { message: messageOf(err) });
+    }
     try {
       const rows = await this.deps.client.listEvents(s.id, { limit: ENV_PROBE_ROWS, sortOrder: 'asc' });
       if (this.disposed) return;
@@ -696,10 +717,15 @@ export class SessionStore implements SessionStoreApi {
     return track.rows.length > 0 && first <= track.firstSeq && track.firstSeq < lastSeq;
   }
 
-  /** Rows after the last applied uuid, chaining pages at once while they come back full. Nothing is dropped. */
+  /**
+   * Rows after the last applied uuid, chaining pages at once while they come back full. Nothing is dropped.
+   * The after_id endpoint returns no sequence numbers; rows after the cursor are all newer than anything
+   * applied, so they are numbered on from the highest applied seq and the reducer and `fresh` treat them as new.
+   */
   private async pollAfterId(sessionId: string, track: SessionTrack): Promise<WireEventRow[]> {
     let rows: WireEventRow[] = [];
     let afterId = track.lastUuid;
+    let seq = this.transcriptSignal(sessionId).value.lastSeq;
     for (let page = 0; page < AFTER_ID_MAX_PAGES; page++) {
       // Without a cursor (no applied row carried a uuid) the oldest rows come back and the reducer dedupes them.
       const batch = await this.deps.client.listEvents(
@@ -707,7 +733,7 @@ export class SessionStore implements SessionStoreApi {
         afterId ? { afterId, limit: AFTER_ID_LIMIT } : { sortOrder: 'asc', limit: AFTER_ID_LIMIT },
       );
       if (this.polledId !== sessionId) return rows;
-      rows = rows.concat(batch);
+      rows = rows.concat(afterId ? batch.map((r) => (hasSeq(r) ? r : { ...r, sequence_num: ++seq })) : batch);
       const cursor = lastUuidOf(batch);
       if (cursor) track.lastUuid = cursor; // advance even when the rows dedupe, or the same page returns forever
       if (batch.length < AFTER_ID_LIMIT || !cursor || cursor === afterId) break;
@@ -954,7 +980,20 @@ export class SessionStore implements SessionStoreApi {
       this.failSend(sessionId, err);
       throw err;
     }
+    this.markQueued(sig, sentId);
     this.afterSend(sessionId);
+  }
+
+  /** The POST was accepted; a send still waiting for its echo is queued, not sending. */
+  private markQueued(sig: Signal<TranscriptState>, id: string | undefined): void {
+    if (!id) return;
+    const current = sig.value;
+    const i = current.items.findIndex((item) => item.id === id);
+    const item = current.items[i];
+    if (!item || item.kind !== 'user' || !item.pending || item.queued) return;
+    const items = current.items.slice();
+    items[i] = { ...item, queued: true };
+    sig.value = { ...current, items };
   }
 
   async sendRaw(sessionId: string, payload: StreamJsonEvent): Promise<void> {

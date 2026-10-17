@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionCard } from '../../../src/ui/components/chat/items/QuestionCard';
 import { items } from '../../helpers/fake-store';
-import { buttonByText, mount, q, qa, text, tick, type, type Mounted } from './harness';
+import { buttonByText, hasButton, key, mount, q, qa, text, tick, type, type Mounted } from './harness';
 
 /** Option buttons carry their description too, so match on the label element. */
 function option(root: ParentNode, label: string): HTMLButtonElement {
@@ -140,5 +140,38 @@ describe('QuestionCard busy state', () => {
     expect(text(document.getElementById(kicker!))).toBe('Claude asks');
     const groups = qa(root, '.claudsidian-question-options');
     expect(groups.map((g) => text(document.getElementById(g.getAttribute('aria-labelledby')!)))).toEqual(QUESTIONS.map((qq) => qq.question));
+  });
+});
+
+describe('QuestionCard with one single-select question', () => {
+  const ONE = [QUESTIONS[0]!];
+
+  it('answers on the first tap, with no Send answers button', async () => {
+    const item = items.question(ONE);
+    const onSubmit = vi.fn();
+    const m = mount(QuestionCard, { item, cooking: false, onSubmit });
+    mounted.push(m as Mounted<unknown>);
+    expect(hasButton(m.root, 'Send answers')).toBe(false);
+    expect(hasButton(m.root, 'Send')).toBe(false);
+    option(m.root, 'Fino').click();
+    option(m.root, 'Riesling').click();
+    await tick();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith({ 'Which direction for the dashi pairing?': 'Fino' });
+    expect(option(m.root, 'Fino').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('sends Other text on Enter or its Send button', async () => {
+    const item = items.question(ONE);
+    const onSubmit = vi.fn();
+    const m = mount(QuestionCard, { item, cooking: false, onSubmit });
+    mounted.push(m as Mounted<unknown>);
+    const input = q<HTMLInputElement>(m.root, '.claudsidian-question-other input');
+    type(input, 'Sake');
+    await tick();
+    expect(hasButton(m.root, 'Send')).toBe(true);
+    key(input, 'Enter');
+    await tick();
+    expect(onSubmit).toHaveBeenCalledWith({ 'Which direction for the dashi pairing?': 'Sake' });
   });
 });

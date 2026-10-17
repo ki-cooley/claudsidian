@@ -1,8 +1,9 @@
 /**
  * A message from the person: a right-aligned bubble. The "[Obsidian context]" tail an echoed
  * message carries folds behind a "With context" toggle that lists what was sent (note, selection
- * range, cursor line, open notes, mentions). A message still on its way (optimistic, no echo yet)
- * renders muted with a "Sending..." label. User turns the host or a peer session injected
+ * range, cursor line, open notes, mentions). A message not echoed yet renders muted: "Sending..."
+ * while the request is in flight, "Queued" once the server accepted it; a message below an
+ * unanswered permission or question card also reads "Queued" until the card is answered. User turns the host or a peer session injected
  * (cross-session messages, safety-classifier stops, interruptions) are not the person's words:
  * they render as a collapsed muted system line that expands on tap.
  */
@@ -94,6 +95,8 @@ export interface UserMessageProps {
   item: UserItem;
   /** sent from here and not echoed by the host yet */
   pending?: boolean;
+  /** delivered, but waiting behind an unanswered permission or question card */
+  queued?: boolean;
 }
 
 /** The store marks optimistic items `pending` until the host echoes them. */
@@ -119,7 +122,8 @@ export function UserMessage(p: UserMessageProps): JSX.Element {
 
   const { body, context } = splitContext(p.item.text);
   const images = p.item.imageCount;
-  const pending = p.pending === true || isPendingItem(p.item);
+  const queued = p.queued === true || (p.item.queued === true && isPendingItem(p.item));
+  const pending = queued || p.pending === true || isPendingItem(p.item);
   const summary = context ? describeContext(context) : [];
   return (
     <div class={['claudsidian-user', p.item.synthetic ? 'is-synthetic' : '', pending ? 'is-pending' : ''].filter(Boolean).join(' ')}>
@@ -142,7 +146,7 @@ export function UserMessage(p: UserMessageProps): JSX.Element {
             {pending ? (
               <span class="claudsidian-badge claudsidian-user-pending">
                 <Icon name="clock" size="small" />
-                Sending...
+                {queued ? 'Queued' : 'Sending...'}
               </span>
             ) : null}
           </div>

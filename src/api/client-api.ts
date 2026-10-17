@@ -24,4 +24,6 @@ export interface CcrApi {
   createSession(req: CreateSessionRequest): Promise<WireSession>;
   /** Environments (machines and cloud) the account can create sessions in. Empty when the endpoint is unavailable. */
   listEnvironments(): Promise<WireEnvironment[]>;
+  /** One environment by id; null when it is gone (an older registration of a host) or unreadable. */
+  getEnvironment(id: string): Promise<WireEnvironment | null>;
 }

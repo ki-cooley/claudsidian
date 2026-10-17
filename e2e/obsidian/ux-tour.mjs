@@ -1,9 +1,11 @@
 // UX tour: drives the second Obsidian instance (CDP 9333) through the plugin's real states against the
 // live API and captures screenshots plus DOM metrics for review. Writes e2e/out/ux/round<N>/<profile>/*.png
-// and index.json. Needs the scratch vault seeded with a token (scripts/oauth-login.mjs + seed) and the
-// LaunchAgent host running. Usage:
-//   node e2e/obsidian/ux-tour.mjs --round 1 [--profiles desktop300,desktop420,ipad-portrait,ipad-landscape,iphone]
-//                                 [--no-send] [--session "yes-chef"] [--long "Make gen-prep seed mechanically from dish and component files"]
+// and index.json. Needs the scratch vault seeded with a token (scripts/oauth-login.mjs + seed), the LaunchAgent
+// host running, and the one test session (node e2e/obsidian/ux-setup.mjs --create). Every chat step runs in that
+// session with read-only prompts about the copied vault notes; no other session is opened. Logs are counts only.
+// Usage:
+//   node e2e/obsidian/ux-tour.mjs --round 3 [--profiles desktop300,desktop420,ipad-portrait,ipad-landscape,iphone]
+//                                 [--no-send] [--session "claudsidian ux test"]
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -12,9 +14,8 @@ const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.star
 const round = String(args.round ?? '1');
 const profiles = String(args.profiles ?? 'desktop300,desktop420,ipad-portrait,ipad-landscape,iphone').split(',');
 const send = !('no-send' in args);
-const vaultSession = args.session ?? 'yes-chef';
-const longSession = args.long ?? 'Make gen-prep seed mechanically from dish and component files';
-const contextNote = args.note ?? 'menus/latitude 10/tasks.md';
+const vaultSession = args.session ?? 'claudsidian ux test';
+const contextNote = args.note ?? 'menus/latitude 10/prep-rd-2026-10-18.md';
 const outRoot = path.resolve(`e2e/out/ux/round${round}`);
 mkdirSync(outRoot, { recursive: true });
 const log = (...a) => console.log('[tour]', ...a);
@@ -73,7 +74,8 @@ async function metrics() {
       return b2.width > 0 && (b2.width < 32 || b2.height < 32);
     }).length;
     const textLength = root.innerText.length;
-    return { present: true, rows: rows.length, clippedRows: clipped, overflowX, viewWidth: Math.round(r.width), viewHeight: Math.round(r.height), smallTargets, textLength };
+    const chipRows = new Set([...root.querySelectorAll('.claudsidian-chips .claudsidian-chip')].map((c) => Math.round(c.getBoundingClientRect().top))).size;
+    return { present: true, chipRows, rows: rows.length, clippedRows: clipped, overflowX, viewWidth: Math.round(r.width), viewHeight: Math.round(r.height), smallTargets, textLength };
   });
 }
 
@@ -132,6 +134,7 @@ async function toList() {
 }
 
 async function openSessionByTitle(title) {
+  if (title !== vaultSession) throw new Error('the tour only opens the test session');
   const ok = await ev((t) => {
     const rows = [...document.querySelectorAll('.claudsidian-session-row')];
     const row = rows.find((r) => (r.querySelector('.claudsidian-session-title')?.textContent ?? '').trim() === t);
@@ -205,6 +208,12 @@ async function step(name, fn) {
 
 // ---------------------------------------------------------------------------------------------------
 await plugin();
+// Thinking blocks stay out of every screenshot.
+await ev(async () => {
+  const p = window.app.plugins.plugins['claudsidian'];
+  if (p.settings.showThinking) await p.saveSettings({ showThinking: false });
+});
+if (await ev(() => window.app.plugins.plugins['claudsidian'].settings.showThinking)) throw new Error('Show thinking is still on');
 // Make sure the view exists once before profiles so emulateMobile has something to re-layout.
 await openView();
 
@@ -234,12 +243,13 @@ for (const name of profiles) {
   });
 
   await step('row-menu', async () => {
-    const opened = await ev(() => {
-      const b = document.querySelector('.claudsidian-session-row .claudsidian-session-more');
+    const opened = await ev((t) => {
+      const row = [...document.querySelectorAll('.claudsidian-session-row')].find((r) => (r.querySelector('.claudsidian-session-title')?.textContent ?? '').trim() === t);
+      const b = row?.querySelector('.claudsidian-session-more');
       if (!b) return false;
       b.click();
       return true;
-    });
+    }, vaultSession);
     if (opened) {
       await sleep(600);
       await shot('row-menu', { full: true });
@@ -266,10 +276,10 @@ for (const name of profiles) {
     }
   });
 
-  await step('long-session', async () => {
+  await step('chat-scroll', async () => {
     await toList();
-    await openSessionByTitle(longSession);
-    await shot('long-bottom', { full: true });
+    await openSessionByTitle(vaultSession);
+    await shot('chat-bottom', { full: true });
     const mr = await mutationRate(4000);
     index.push({ profile: profileName, name: 'chat-idle-metrics', metrics: mr });
     log('chat idle', JSON.stringify(mr));
@@ -278,7 +288,7 @@ for (const name of profiles) {
       if (el) el.scrollTop = 0;
     });
     await sleep(600);
-    await shot('long-top');
+    await shot('chat-top');
     const older = await ev(() => {
       const b = document.querySelector('.claudsidian-older');
       if (!b) return false;
@@ -287,7 +297,7 @@ for (const name of profiles) {
     });
     if (older) {
       await sleep(2500);
-      await shot('long-after-earlier');
+      await shot('chat-after-earlier');
     }
     const expanded = await ev(() => {
       const t = document.querySelector('.claudsidian-tool .claudsidian-tool-row, .claudsidian-tool-summary, .claudsidian-tool');
@@ -297,14 +307,14 @@ for (const name of profiles) {
     });
     if (expanded) {
       await sleep(600);
-      await shot('long-tool-expanded');
+      await shot('chat-tool-expanded');
     }
     await ev(() => {
       const el = document.querySelector('.claudsidian-transcript-wrap') ?? document.querySelector('.claudsidian-transcript');
       if (el) el.scrollTop = el.scrollHeight / 2;
     });
     await sleep(500);
-    await shot('long-middle');
+    await shot('chat-middle');
   });
 
   await step('context-note', async () => {
@@ -326,7 +336,7 @@ for (const name of profiles) {
     await openSessionByTitle(vaultSession);
     await shot('chat-with-context', { full: true });
     await page.locator('.claudsidian-composer-input').first().click();
-    await page.locator('.claudsidian-composer-input').first().fill('whats left on this for tomorrow, just the stuff i cant push');
+    await page.locator('.claudsidian-composer-input').first().fill('which of these items are R&D tests and which are production? one line each');
     await sleep(600);
     await shot('composer-typed');
     await page.locator('.claudsidian-composer-input').first().fill('');
@@ -340,7 +350,7 @@ for (const name of profiles) {
   if (send && !isMobile && name === 'desktop300') {
     await step('send-and-stream', async () => {
       const input = page.locator('.claudsidian-composer-input').first();
-      await input.fill('whats left on this for tomorrow, just the stuff i cant push');
+      await input.fill('which of the selected items are R&D tests and which are production? one line each, read only');
       await input.press('Enter');
       const start = Date.now();
       let n = 0;
@@ -367,13 +377,24 @@ for (const name of profiles) {
       const input = page.locator('.claudsidian-composer-input').first();
       await input.fill('use the AskUserQuestion tool to ask me whether the dessert goes in a bowl or on a plate (two options), then just say ok after i answer');
       await input.press('Enter');
-      await waitFor(() => !!document.querySelector('.claudsidian-question'), 'question card', 240000);
+      // only an open card counts: earlier rounds leave resolved ones in the same session
+      await waitFor(() => !!document.querySelector('.claudsidian-question:not(.is-resolved) .claudsidian-option'), 'question card', 240000);
       await sleep(800);
       await shot('question-card', { full: true });
-      await ev(() => document.querySelector('.claudsidian-question .claudsidian-option')?.click());
+      await input.fill('after that, how many prep-rd notes are in menus/latitude 10? just the number');
+      await input.press('Enter');
       await sleep(2500);
+      const queued = await ev(() => [...document.querySelectorAll('.claudsidian-user-pending')].map((e) => e.textContent.trim()));
+      index.push({ profile: profileName, name: 'queued-labels', metrics: { count: queued.length, queued: queued.filter((t) => t === 'Queued').length, sending: queued.filter((t) => t.startsWith('Sending')).length } });
+      await shot('queued-behind-question');
+      await ev(() => document.querySelector('.claudsidian-question:not(.is-resolved) .claudsidian-option')?.click());
+      await sleep(2500);
+      const answered = await ev(() => ({ cardOpen: !!document.querySelector('.claudsidian-question:not(.is-resolved)'), resolved: document.querySelectorAll('.claudsidian-question.is-resolved').length }));
+      index.push({ profile: profileName, name: 'question-one-tap', metrics: answered });
+      log('one tap:', JSON.stringify(answered));
       await shot('question-answered');
-      await sleep(8000);
+      await waitFor(() => { const h = document.querySelector('.claudsidian-header .claudsidian-status, .claudsidian-status'); return h && !h.classList.contains('is-busy') && !document.querySelector('.claudsidian-user-pending'); }, 'idle after queued message', 120000).catch(() => {});
+      await sleep(1500);
       await shot('question-after-ok');
     });
   }
@@ -382,12 +403,12 @@ for (const name of profiles) {
     await step('queued-send', async () => {
       // Owner note: a message sent while the session works must show immediately as pending.
       const input = page.locator('.claudsidian-composer-input').first();
-      await input.fill('count slowly from 1 to 40, one number per line, and pause a second between each');
+      await input.fill('read every prep-rd note in menus/latitude 10 and give each a one-paragraph summary, read only');
       await input.press('Enter');
       await sleep(3500);
-      await input.fill('and the day after?');
+      await input.fill('and the service prep note too');
       await input.press('Enter');
-      await sleep(1200);
+      await sleep(2500);
       await shot('queued-message');
       const stopped = await ev(() => {
         const b = document.querySelector('.claudsidian-composer-stop');
@@ -404,7 +425,7 @@ for (const name of profiles) {
 
     await step('catch-up-after-reopen', async () => {
       const input = page.locator('.claudsidian-composer-input').first();
-      await input.fill('list the next three prep tasks on this list, one line each, nothing else');
+      await input.fill('list the next three items in the selection, one line each, nothing else, read only');
       await input.press('Enter');
       await sleep(1500);
       await ev(() => window.app.plugins.plugins['claudsidian'].store.close?.());
@@ -415,7 +436,7 @@ for (const name of profiles) {
         const el = document.querySelector('.claudsidian-transcript-wrap') ?? document.querySelector('.claudsidian-transcript');
         const atBottom = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 8 : null;
         const text = document.querySelector('.claudsidian-root')?.innerText ?? '';
-        return { atBottom, hasJump: !!document.querySelector('.claudsidian-jump'), tail: text.slice(-300) };
+        return { atBottom, hasJump: !!document.querySelector('.claudsidian-jump'), textLength: text.length };
       });
       log('catch-up:', JSON.stringify(info));
       index.push({ profile: profileName, name: 'catch-up-info', metrics: info });
@@ -423,39 +444,21 @@ for (const name of profiles) {
     });
   }
 
-  if (send && !isMobile && name === 'desktop300' && 'create' in args) {
-    await step('create-and-permission', async () => {
-      await toList();
-      await ev(() => document.querySelector('.claudsidian-sessions-new')?.click());
-      await sleep(1200);
-      await shot('create-sheet-open', { full: true });
-      const filled = await ev(() => {
-        const title = document.querySelector('.claudsidian-new-session-title input, .claudsidian-new-session-title textarea, .claudsidian-new-session input[type="text"]');
-        if (title) { title.value = 'claudsidian ux tour'; title.dispatchEvent(new Event('input', { bubbles: true })); }
-        const mode = document.querySelector('.claudsidian-new-session-mode select');
-        if (mode) { mode.value = 'default'; mode.dispatchEvent(new Event('change', { bubbles: true })); }
-        return { title: !!title, mode: !!mode, modeValue: mode?.value };
-      });
-      log('create form:', JSON.stringify(filled));
-      await sleep(400);
-      await shot('create-sheet-filled');
-      await ev(() => {
-        const btns = [...document.querySelectorAll('.claudsidian-new-session-actions button, .claudsidian-sheet-action')];
-        const create = btns.find((b) => /create|start/i.test(b.textContent ?? ''));
-        create?.click();
-      });
-      await waitFor(() => !!document.querySelector('.claudsidian-composer-input'), 'new session composer', 60000);
-      await sleep(2000);
-      await shot('new-session-opened', { full: true });
+  if (send && !isMobile && name === 'desktop300') {
+    await step('permission', async () => {
       const input = page.locator('.claudsidian-composer-input').first();
-      await input.fill("append the line 'ux tour was here' to inbox/claudsidian-ux-tour.md (create it if missing)");
+      await input.fill('use the Bash tool to run ls on menus and tell me how many entries there are; read only, change nothing');
       await input.press('Enter');
-      await waitFor(() => !!document.querySelector('.claudsidian-permission'), 'permission card', 180000);
+      const card = await waitFor(() => !!document.querySelector('.claudsidian-permission:not(.is-resolved)'), 'permission card', 120000).catch(() => false);
+      if (!card) {
+        index.push({ profile: profileName, name: 'permission (skipped)', note: 'no permission card: the session did not ask' });
+        return;
+      }
       await sleep(800);
       await shot('permission-card', { full: true });
       await ev(() => {
-        const btns = [...document.querySelectorAll('.claudsidian-permission button')];
-        (btns.find((b) => /allow|yes/i.test(b.textContent ?? '')) ?? btns[0])?.click();
+        const btns = [...document.querySelectorAll('.claudsidian-permission:not(.is-resolved) button')];
+        (btns.find((b) => /^allow$/i.test((b.textContent ?? '').trim())) ?? btns.find((b) => /allow/i.test(b.textContent ?? '')))?.click();
       });
       await sleep(2500);
       await shot('permission-allowed');

@@ -297,23 +297,13 @@ describe('composer tools (@ and image)', () => {
     }
   });
 
-  it('shrink to 32 px only on a desktop pane in cooking mode', () => {
-    const el = tool(mountDock({ cooking: true }));
-    expect(cascaded(rules, el, 'min-width')).toBe('32px');
-    expect(cascaded(rules, el, 'min-height')).toBe('32px');
-    expect(cascaded(rules, el, 'margin-bottom')).toBe('12px');
-  });
-
-  it('keep the 44 px target on a touch device in cooking mode (the iPad in the kitchen)', () => {
-    for (const modes of [
-      { mobile: true, cooking: true },
-      { mobile: true, phone: true, cooking: true },
-    ]) {
+  it('take 48 px kitchen targets in cooking mode, desktop pane or touch device', () => {
+    for (const modes of [{ cooking: true }, { mobile: true, cooking: true }, { mobile: true, phone: true, cooking: true }]) {
       const el = tool(mountDock(modes));
-      expect(cascaded(rules, el, 'min-width'), JSON.stringify(modes)).toBe('44px');
-      expect(cascaded(rules, el, 'min-height'), JSON.stringify(modes)).toBe('44px');
-      // centred on the 56 px field: (56 - 44) / 2
-      expect(cascaded(rules, el, 'margin-bottom'), JSON.stringify(modes)).toBe('6px');
+      expect(cascaded(rules, el, 'min-width'), JSON.stringify(modes)).toBe('48px');
+      expect(cascaded(rules, el, 'min-height'), JSON.stringify(modes)).toBe('48px');
+      // centred on the 56 px field: (56 - 48) / 2
+      expect(cascaded(rules, el, 'margin-bottom'), JSON.stringify(modes)).toBe('4px');
     }
   });
 });

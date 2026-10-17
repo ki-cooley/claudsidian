@@ -446,7 +446,8 @@ export async function startMockCcr({ port = 0, staticDir, latencyMs = 0 } = {}) 
       start = idx >= 0 ? idx + 1 : rows.length;
     }
     const page = rows.slice(start, start + limit);
-    return send(res, 200, { data: page.map((r) => ({ ...r, sequence_num: String(r.sequence_num) })), has_more: start + limit < rows.length });
+    // bare payloads, no sequence_num: what the real endpoint answers (verified 2026-10-16)
+    return send(res, 200, { data: page.map((r) => r.payload), has_more: start + limit < rows.length });
   }
 
   function listEvents(res, sessionId, query) {

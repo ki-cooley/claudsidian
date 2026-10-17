@@ -1,11 +1,13 @@
 /**
  * An AskUserQuestion request: each question with its options as toggle buttons (one or many) and
- * an Other field whose text is the answer verbatim. Send answers unlocks when every question has
- * one; a tap disables the card and spins the button until the store confirms (or ten seconds).
- * Every option renders at its full height; nothing in the card is clipped.
+ * an Other field whose text is the answer verbatim. A card with one single-select question answers
+ * on the first tap (one hand in the kitchen); its Other field sends on Enter or its Send button.
+ * Multi-select and multi-question cards keep "Send answers", which unlocks when every question has
+ * one. Sending disables the card and spins until the store confirms (or ten seconds). Every option
+ * renders at its full height; nothing in the card is clipped.
  */
 import type { JSX } from 'preact';
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import type { QuestionItem } from '../../../../core/types';
 import { Button } from '../../common/Button';
 import { Icon } from '../../common/Icon';
@@ -36,6 +38,8 @@ export function answerFor(draft: Draft | undefined, multi: boolean): string | un
 export function QuestionCard(p: QuestionCardProps): JSX.Element {
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const busy = useBusy();
+  // A second tap can land before the busy state paints; only the first one picks and sends.
+  const tapped = useRef(false);
   const { item } = p;
 
   if (item.resolved) {
@@ -64,6 +68,16 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
     else answers[q.question] = a;
   });
   const waiting = busy.key !== null;
+  const single = item.questions.length === 1 && item.questions[0]?.multiSelect === false;
+  const submit = (key: string, a: Record<string, string>): void => {
+    busy.run(key, async () => {
+      try {
+        await p.onSubmit(a);
+      } finally {
+        tapped.current = false;
+      }
+    });
+  };
 
   const update = (i: number, fn: (d: Draft) => Draft): void => {
     setDrafts((prev) => ({ ...prev, [i]: fn(prev[i] ?? { picked: [], other: '' }) }));
@@ -102,8 +116,15 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
                     class={`claudsidian-option ${on ? 'is-on' : ''}`}
                     aria-pressed={on ? 'true' : 'false'}
                     disabled={waiting}
-                    onClick={() => toggle(i, o.label, q.multiSelect)}
+                    onClick={() => {
+                      if (!single) return toggle(i, o.label, q.multiSelect);
+                      if (tapped.current || waiting) return;
+                      tapped.current = true;
+                      update(i, (d) => ({ ...d, picked: [o.label] }));
+                      submit(`option:${o.label}`, { [q.question]: o.label });
+                    }}
                   >
+                    {busy.key === `option:${o.label}` ? <Spinner size="small" label="Sending" /> : null}
                     <span class="claudsidian-option-label">{o.label}</span>
                     {o.description ? <span class="claudsidian-option-desc">{o.description}</span> : null}
                   </button>
@@ -121,17 +142,26 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
                   const value = (ev.currentTarget as HTMLInputElement).value;
                   update(i, (d) => ({ ...d, other: value }));
                 }}
+                onKeyDown={(ev) => {
+                  if (!single || ev.key !== 'Enter' || ev.isComposing) return;
+                  const other = (draft?.other ?? '').trim();
+                  if (!other || waiting) return;
+                  ev.preventDefault();
+                  submit('submit', { [q.question]: other });
+                }}
               />
             </label>
           </div>
         );
       })}
-      <div class="claudsidian-perm-actions">
-        <Button kind="primary" disabled={!complete || waiting} onClick={() => busy.run('submit', () => p.onSubmit(answers))}>
-          {busy.key === 'submit' ? <Spinner size="small" label="Sending" /> : null}
-          <span class="claudsidian-btn-label">Send answers</span>
-        </Button>
-      </div>
+      {single && !(drafts[0]?.other.trim() ?? '') ? null : (
+        <div class="claudsidian-perm-actions">
+          <Button kind="primary" disabled={!complete || waiting} onClick={() => submit('submit', single ? { [item.questions[0]?.question ?? '']: drafts[0]?.other.trim() ?? '' } : answers)}>
+            {busy.key === 'submit' ? <Spinner size="small" label="Sending" /> : null}
+            <span class="claudsidian-btn-label">{single ? 'Send' : 'Send answers'}</span>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

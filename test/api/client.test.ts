@@ -420,11 +420,41 @@ describe('CcrClient', () => {
     expect(r.results).toEqual([{ duplicate: false, event_id: 'u1', sequence_num: '7' }]);
   });
 
+  it('wraps the bare payloads the after_id endpoint returns into rows without a sequence number', async () => {
+    const t = createMemoryTransport([{ method: 'GET', path: /\/v1\/sessions\/cse_1\/events$/, reply: () => jsonResponse(200, { data: [{ type: 'system', subtype: 'init', uuid: 'u2', cwd: '/vault', created_at: '2026-10-16T00:00:00Z' }], has_more: false }) }]);
+    const rows = await client(t).listEvents('cse_1', { afterId: 'u1', limit: 500 });
+    expect(rows).toEqual([{ sequence_num: '', created_at: '2026-10-16T00:00:00Z', payload: { type: 'system', subtype: 'init', uuid: 'u2', cwd: '/vault', created_at: '2026-10-16T00:00:00Z' } }]);
+  });
+
   it('polls incrementally with after_id on the /v1/sessions path', async () => {
     const t = createMemoryTransport([{ method: 'GET', path: /\/v1\/sessions\/cse_1\/events$/, reply: () => jsonResponse(200, { data: [{ sequence_num: '9', payload: { type: 'result' } }], has_more: false }) }]);
     const rows = await client(t).listEvents('cse_1', { afterId: 'abc', limit: 500 });
     expect(t.calls[0]!.url).toContain('/v1/sessions/cse_1/events?limit=500&after_id=abc');
     expect(rows[0]!.payload.type).toBe('result');
+  });
+
+  it('reads the bearer-token environment shape (id, config.type, config.directory) and drops archived ones', async () => {
+    const env = (id: string, archived: string | null) => ({
+      id,
+      type: 'environment',
+      name: 'Mac:yes-chef:92ad',
+      state: 'active',
+      archived_at: archived,
+      config: { type: 'bridge', machine_name: 'Mac.local', directory: '/Users/ki/yes-chef', branch: 'main', git_repo_url: 'https://example.test/r.git' },
+      metadata: { machine_id: 'm1', worker_type: 'claude_code' },
+    });
+    const t = createMemoryTransport([
+      { method: 'GET', path: /\/v1\/environments$/, reply: () => jsonResponse(200, { data: [env('env_1', null), env('env_2', '2026-10-01T00:00:00Z')], has_more: false }) },
+      { method: 'GET', path: /\/v1\/environments\/env_1$/, reply: () => jsonResponse(200, env('env_1', null)) },
+      { method: 'GET', path: /\/v1\/environments\/env_gone$/, reply: () => jsonResponse(404, { type: 'error', error: { type: 'not_found_error', message: 'Environment env_gone not found.' } }) },
+    ]);
+    const c = client(t);
+    const list = await c.listEnvironments();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ environment_id: 'env_1', kind: 'bridge', name: 'Mac:yes-chef:92ad', bridge_info: { directory: '/Users/ki/yes-chef', machine_name: 'Mac.local' } });
+    expect((await c.getEnvironment('env_1'))?.bridge_info?.directory).toBe('/Users/ki/yes-chef');
+    expect(t.calls.at(-1)!.headers!['anthropic-beta']).toBe('environments-2025-11-01');
+    expect(await c.getEnvironment('env_gone')).toBeNull();
   });
 
   it('lists environments and falls back to an empty list when the endpoint is missing', async () => {

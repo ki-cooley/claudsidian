@@ -687,12 +687,15 @@ describe('SessionStore sending', () => {
     expect((users[0] as { text: string }).text).toBe('hello');
     expect(state.turn).toBe('sending');
     expect(state.inFlightUserUuids).toEqual([payload.uuid]);
+    // the POST was accepted and no echo yet: queued (behind the turn or a question), not sending
+    expect(users[0]).toMatchObject({ pending: true, queued: true });
 
     // the send kicked the poller into active mode; the echo arrives on the next poll
     client.push('cse_b', payload);
     await clock.tick(ACTIVE);
     state = store.transcript('cse_b').value;
     expect(state.items.filter((i) => i.kind === 'user')).toHaveLength(1);
+    expect(state.items.find((i) => i.kind === 'user')).not.toHaveProperty('queued');
     expect(state.inFlightUserUuids).toEqual([]);
     expect(state.lastSeq).toBe(1);
   });
@@ -848,6 +851,23 @@ describe('SessionStore learned directories', () => {
     expect(store.environments().find((e) => e.id === 'env_mac')).toMatchObject({ cwd: VAULT, label: 'yes-chef (Mac)' });
   });
 
+  it('learns the cwd from an init that arrives over after_id polling (bare rows, no sequence numbers)', async () => {
+    const saved = storeWithPersist();
+    client.ignoreFromSequenceNum = true;
+    client.pushAll('cse_b', [userText('go')]);
+    await store.refreshSessions();
+    await store.open('cse_b');
+    await clock.tick(IDLE); // the server answers from the beginning: switch to after_id
+    client.pushAll('cse_b', [initEvent(VAULT), assistantText('ok'), resultEvent()]);
+    await clock.tick(IDLE);
+    await clock.flush();
+    const state = store.transcript('cse_b').value;
+    expect(state.init?.cwd).toBe(VAULT);
+    expect(state.items.filter((i) => i.kind === 'assistant_text')).toHaveLength(1);
+    expect(state.turn).toBe('idle');
+    expect(saved.at(-1)).toEqual({ environmentDirs: { env_mac: VAULT }, sessionCwds: { cse_b: VAULT } });
+  });
+
   it('learns environment directories from the environments endpoint', async () => {
     const saved = storeWithPersist();
     client.environments = [
@@ -868,6 +888,17 @@ describe('SessionStore learned directories', () => {
     expect(store.session('cse_a')!.cwd).toBeUndefined();
     expect(store.environments().find((e) => e.id === 'env_mac')).toMatchObject({ cwd: VAULT, label: 'yes-chef (Mac)' });
     expect(probeCalls()).toEqual([]);
+  });
+
+  it('learns an unlisted bridge environment directory from its own record (bridge init cwds are empty)', async () => {
+    const saved = storeWithPersist();
+    client.push('cse_a', initEvent(''));
+    client.extraEnvironments = [{ environment_id: 'env_mac', kind: 'bridge', bridge_info: { directory: VAULT } }];
+    await store.refreshSessions();
+    await clock.flush();
+    expect(probeCalls()).toEqual([]);
+    expect(saved.at(-1)?.environmentDirs).toEqual({ env_mac: VAULT });
+    expect(store.environments().find((e) => e.id === 'env_mac')!.cwd).toBe(VAULT);
   });
 
   it('probes the newest session of an unknown bridge environment for its init cwd after a refresh', async () => {

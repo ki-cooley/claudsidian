@@ -149,6 +149,21 @@ describe('user rows', () => {
   });
 });
 
+describe('queued behind a card', () => {
+  it('labels messages below an unanswered question Queued until it is answered', async () => {
+    const asked = items.question([{ question: 'Bowl or plate?', options: [{ label: 'Bowl' }, { label: 'Plate' }], multiSelect: false }]);
+    const later = items.user('and the day after?', { id: 'uuid-2' });
+    const { root, props, rerender } = setup({ state: transcriptWith([items.user('hi'), asked, later], { turn: 'needs_input' }) });
+    await tick();
+    const rows = qa(root, '.claudsidian-item[data-kind="user"]');
+    expect(maybe(rows[0]!, '.claudsidian-user-pending')).toBeNull();
+    expect(text(q(rows[1]!, '.claudsidian-user-pending'))).toBe('Queued');
+    rerender({ ...props, state: transcriptWith([items.user('hi'), { ...asked, resolved: true }, later], { turn: 'working' }) });
+    await tick();
+    expect(maybe(root, '.claudsidian-user-pending')).toBeNull();
+  });
+});
+
 describe('result rows', () => {
   it('renders no footer after a normal turn and keeps the error one', async () => {
     const { root } = setup({ state: transcriptWith([items.user('hi'), items.assistant('hello'), items.result({ durationMs: 5800 })]) });

@@ -126,6 +126,8 @@ interface RowProps {
   pinPending: boolean;
   /** a user item sent from here and not echoed yet */
   pending: boolean;
+  /** a user item waiting behind an unanswered permission or question card above it */
+  queued: boolean;
   onAllow: (item: PermissionItem, remember: boolean) => void | Promise<unknown>;
   onDeny: (item: PermissionItem, message?: string) => void | Promise<unknown>;
   onAnswer: (item: QuestionItem, answers: Record<string, string | string[]>, response?: string) => void | Promise<unknown>;
@@ -147,7 +149,8 @@ function sameRow(a: RowProps, b: RowProps): boolean {
     a.roots === b.roots &&
     a.noteTitle === b.noteTitle &&
     a.pinPending === b.pinPending &&
-    a.pending === b.pending
+    a.pending === b.pending &&
+    a.queued === b.queued
   );
 }
 
@@ -159,7 +162,7 @@ function RowView(p: RowProps): JSX.Element | null {
     item.kind === 'assistant_text' && item.partial ? 'is-partial' : '',
     item.kind === 'result' && item.isError ? 'is-error' : '',
     item.kind === 'tool' && item.isError ? 'is-error' : '',
-    item.kind === 'user' && p.pending ? 'is-pending' : '',
+    item.kind === 'user' && (p.pending || p.queued) ? 'is-pending' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -174,7 +177,7 @@ function renderBody(p: RowProps): JSX.Element | null {
   const { item, facade } = p;
   switch (item.kind) {
     case 'user':
-      return <UserMessage item={item} pending={p.pending} />;
+      return <UserMessage item={item} pending={p.pending} queued={p.queued} />;
     case 'assistant_text':
       return <AssistantText item={item} facade={facade} noteTitle={p.noteTitle} />;
     case 'thinking':
@@ -235,6 +238,15 @@ export function Transcript(p: TranscriptProps): JSX.Element {
 
   const inFlight = state.inFlightUserUuids;
   const isPending = (item: TranscriptItem): boolean => item.kind === 'user' && (inFlight.includes(item.id) || isPendingItem(item));
+  // Messages typed while a card waits are delivered but not read until it is answered.
+  const blockedAt = useMemo(
+    () => state.items.findIndex((i) => (i.kind === 'permission' || i.kind === 'question') && !i.resolved),
+    [state.items],
+  );
+  const queuedIds = useMemo(() => {
+    if (blockedAt < 0) return null;
+    return new Set(state.items.slice(blockedAt + 1).flatMap((i) => (i.kind === 'user' && !i.synthetic ? [i.id] : [])));
+  }, [state.items, blockedAt]);
 
   const renderRow = (row: Row): JSX.Element => (
     <TranscriptRow
@@ -250,6 +262,7 @@ export function Transcript(p: TranscriptProps): JSX.Element {
       noteTitle={noteTitle}
       pinPending={pinPending}
       pending={isPending(row.item)}
+      queued={queuedIds?.has(row.item.id) ?? false}
       onAllow={onAllow}
       onDeny={onDeny}
       onAnswer={onAnswer}

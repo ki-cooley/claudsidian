@@ -159,9 +159,8 @@ export class CcrClient implements CcrApi {
           query: { limit, sort_order: sortOrder, from_sequence_num: fromSequenceNum, page },
         });
     const body = res.json<Partial<WireEventList> & { events?: WireEventRow[] }>();
-    if (Array.isArray(body?.data)) return body.data;
-    if (Array.isArray(body?.events)) return body.events;
-    return [];
+    const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body?.events) ? body.events : [];
+    return afterId ? rows.map(wrapBareEvent) : rows;
   }
 
   /**
@@ -191,8 +190,8 @@ export class CcrClient implements CcrApi {
       // The environments endpoint needs its own beta value, not CCR_BETA (docs/protocol.md).
       const res = await this.request('GET', '/v1/environments', { query: { limit: 100 }, betaValue: ENVIRONMENTS_BETA });
       const body = res.json<Partial<WireEnvironmentList>>();
-      const list = Array.isArray(body?.environments) ? body.environments : Array.isArray(body?.data) ? body.data : [];
-      return list.filter((e) => !!e && typeof e.environment_id === 'string');
+      const list: unknown[] = Array.isArray(body?.environments) ? body.environments : Array.isArray(body?.data) ? body.data : [];
+      return list.flatMap((e) => normalizeEnvironment(e) ?? []);
     } catch (err) {
       if (err instanceof ApiError && err.isAuth) throw err;
       log.warn('environments endpoint failed; using session-derived environments', {
@@ -200,6 +199,18 @@ export class CcrClient implements CcrApi {
         message: messageOf(err),
       });
       return [];
+    }
+  }
+
+  /** One environment by id (same beta and shapes as the list); null when it is gone or unreadable. */
+  async getEnvironment(id: string): Promise<WireEnvironment | null> {
+    try {
+      const res = await this.request('GET', `/v1/environments/${encodeURIComponent(id)}`, { betaValue: ENVIRONMENTS_BETA });
+      return normalizeEnvironment(res.json<unknown>());
+    } catch (err) {
+      if (err instanceof ApiError && err.isAuth) throw err;
+      log.debug('environment lookup failed', { status: err instanceof ApiError ? err.status : undefined });
+      return null;
     }
   }
 
@@ -321,4 +332,48 @@ function messageOf(err: unknown): string {
 
 function isBetaRejection(err: unknown): boolean {
   return err instanceof ApiError && err.status === 400 && /anthropic-beta/i.test(err.message);
+}
+
+/**
+ * The after_id endpoint answers with bare stream-json payloads, not `{sequence_num, payload}` rows (verified
+ * 2026-10-16), so its rows carry no sequence number; the store numbers them. Wrapped rows pass through.
+ */
+function wrapBareEvent(row: unknown): WireEventRow {
+  const r = row as Record<string, unknown> | null;
+  if (r && typeof r === 'object' && r.payload && typeof r.payload === 'object') return r as WireEventRow;
+  const created = r && typeof r.created_at === 'string' ? r.created_at : undefined;
+  return { sequence_num: '', payload: r as unknown as StreamJsonEvent, ...(created ? { created_at: created } : {}) };
+}
+
+/**
+ * An environment in either shape the API uses. The web endpoint returns `{environment_id, kind, bridge_info}`;
+ * the bearer-token `/v1/environments` returns `{id, type: "environment", config: {type: "bridge", machine_name,
+ * directory, branch, git_repo_url}, metadata: {machine_id}, archived_at}` (verified 2026-10-16). Archived and
+ * unrecognised entries are dropped.
+ */
+export function normalizeEnvironment(raw: unknown): WireEnvironment | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  if (typeof e.environment_id === 'string') return e as WireEnvironment;
+  if (typeof e.id !== 'string' || e.archived_at) return null;
+  const config = (e.config && typeof e.config === 'object' ? e.config : {}) as Record<string, unknown>;
+  const metadata = (e.metadata && typeof e.metadata === 'object' ? e.metadata : {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+  const kind = str(e.kind) ?? str(config.type);
+  const out: WireEnvironment = { environment_id: e.id };
+  if (kind) out.kind = kind;
+  if (str(e.name)) out.name = str(e.name);
+  if (str(e.description)) out.description = str(e.description);
+  if (str(e.state)) out.state = str(e.state);
+  if (str(e.created_at)) out.created_at = str(e.created_at);
+  if (kind === 'bridge') {
+    out.bridge_info = {
+      machine_name: str(config.machine_name),
+      machine_id: str(metadata.machine_id),
+      directory: str(config.directory),
+      branch: str(config.branch),
+      git_repo_url: str(config.git_repo_url) ?? null,
+    };
+  }
+  return out;
 }

@@ -51,6 +51,11 @@ describe('UserMessage', () => {
     expect(maybe(settled, '.claudsidian-user-pending')).toBeNull();
   });
 
+  it('says Queued once the server accepted the send and the echo has not landed', () => {
+    const item = { ...items.user('and the day after?'), pending: true, queued: true } as ReturnType<typeof items.user>;
+    expect(text(q(render({ item }), '.claudsidian-user-pending'))).toBe('Queued');
+  });
+
   it('reads the pending flag off the item when the store sets it', () => {
     const item = { ...items.user('hello'), pending: true } as ReturnType<typeof items.user>;
     expect(q(render({ item }), '.claudsidian-user').classList.contains('is-pending')).toBe(true);
