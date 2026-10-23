@@ -147,8 +147,17 @@ vi.mock('obsidian', async (importOriginal) => {
     addButton(cb: (b: ButtonComponent) => void): this {
       return this.add(new ButtonComponent(), cb);
     }
+    addComponent<C>(cb: (el: HTMLElement) => C): this {
+      this.controls.push(cb(this.controlEl));
+      return this;
+    }
   }
-  return { ...base, Setting, TextComponent, TextAreaComponent, ToggleComponent, DropdownComponent, SliderComponent, ButtonComponent };
+  class SecretComponent extends Control<string> {
+    constructor(_app: unknown, _el: HTMLElement) {
+      super();
+    }
+  }
+  return { ...base, Setting, SecretComponent, TextComponent, TextAreaComponent, ToggleComponent, DropdownComponent, SliderComponent, ButtonComponent };
 });
 
 import { App as MockApp, Notice as MockNotice, Plugin as MockPlugin } from 'obsidian';
@@ -191,7 +200,7 @@ function fakeAuth(state: AuthState | null): AuthApi & { signOut: ReturnType<type
   return api;
 }
 
-function setup(opts: { auth?: AuthState | null; settings?: Partial<ClaudsidianSettings> } = {}) {
+function setup(opts: { auth?: AuthState | null; settings?: Partial<ClaudsidianSettings>; keychain?: boolean } = {}) {
   let settings: ClaudsidianSettings = { ...structuredClone(DEFAULT_SETTINGS), ...opts.settings };
   const save = vi.fn(async (patch: Partial<ClaudsidianSettings>) => {
     settings = { ...settings, ...patch };
@@ -202,6 +211,7 @@ function setup(opts: { auth?: AuthState | null; settings?: Partial<ClaudsidianSe
     save,
     environments: () => [{ id: 'env_1', label: 'Mac mini' }],
     openSignIn: vi.fn(),
+    keychain: opts.keychain,
   };
   const app = new MockApp() as unknown as App;
   const plugin = new (MockPlugin as unknown as new () => Plugin)();
@@ -250,6 +260,24 @@ describe('ClaudsidianSettingTab', () => {
     expect(button?.textContent).toBe('Sign out');
     button?.click();
     expect(deps.auth.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('with a keychain, links the sign-in secret and says it does not sync', async () => {
+    const { settingsByName, save } = setup({ keychain: true });
+    const row = settingsByName('Sign-in secret');
+    expect(row.controls[0]?.value).toBe('claudsidian-auth');
+    expect(row.descEl.textContent).toContain('No sign-in on this device');
+    row.controls[0]?.fire('other-secret');
+    await Promise.resolve();
+    expect(save).toHaveBeenCalledWith({ authSecretId: 'other-secret' });
+    row.controls[0]?.fire(null);
+    await Promise.resolve();
+    expect(save).toHaveBeenLastCalledWith({ authSecretId: 'claudsidian-auth' });
+  });
+
+  it('without a keychain, says the sign-in is in data.json', () => {
+    const { settingsByName } = setup();
+    expect(settingsByName('Sign-in storage').descEl.textContent).toContain('data.json');
   });
 
   it('never renders the access token anywhere', () => {

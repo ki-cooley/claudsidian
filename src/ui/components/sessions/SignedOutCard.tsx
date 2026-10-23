@@ -19,7 +19,7 @@ export function SignedOutCard(p: { facade: PluginFacade }): JSX.Element {
       <h3 class="claudsidian-signed-out-title">Sign in to Claude</h3>
       <p class="claudsidian-signed-out-text">
         Claudsidian talks to your Claude Code sessions through Remote Control. Sign in with the claude.ai account that
-        runs them; the token stays in this vault's plugin data.
+        runs them. Each device signs in on its own; the sign-in stays on the device.
       </p>
       <Button primary label="Sign in" disabled={busy} onClick={() => void signIn()} />
     </div>

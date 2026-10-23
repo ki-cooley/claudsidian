@@ -12,6 +12,7 @@ import { SessionStore } from './core/session-store';
 import type { CapturedContext } from './core/types';
 import { ContextCapture } from './obsidian/context-capture';
 import { Notifications } from './obsidian/notifications';
+import { readAuthSecret, type SecretStore, secretStoreOf, writeAuthSecret } from './obsidian/secrets';
 import { type ClaudsidianSettings, migrateSettings } from './settings';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
 import { QuickAskModal, lastAssistantText } from './ui/modals/QuickAskModal';
@@ -40,11 +41,14 @@ export default class ClaudsidianPlugin extends Plugin {
   readonly ui = { showNewSession: signal(false) };
   /** Bumps after every saveSettings so the view re-applies modes and re-renders. */
   readonly settingsChanged = signal(0);
+  /** app.secretStorage, or null on Obsidian before 1.11.4 (the sign-in then stays in data.json). */
+  secrets: SecretStore | null = null;
   private notifications: Notifications | null = null;
   private ribbonEl: HTMLElement | null = null;
   private readonly needsInput = new Set<string>();
 
   async onload(): Promise<void> {
+    this.secrets = secretStoreOf(this.app);
     await this.loadSettings();
     setDebugLogging(this.settings.debugLog);
     if (!this.settings.clientId) {
@@ -54,9 +58,10 @@ export default class ClaudsidianPlugin extends Plugin {
 
     this.auth = new AuthManager({
       transport: obsidianTransport,
-      load: () => this.settings.auth,
+      load: () => (this.secrets ? readAuthSecret(this.secrets, this.settings.authSecretId) : this.settings.auth),
       save: async (s) => {
-        this.settings.auth = s;
+        if (this.secrets) writeAuthSecret(this.secrets, this.settings.authSecretId, s);
+        else this.settings.auth = s;
         await this.saveSettings();
       },
       tokenUrl: () => this.settings.oauthTokenUrl,
@@ -126,6 +131,7 @@ export default class ClaudsidianPlugin extends Plugin {
         save: (patch) => this.saveSettings(patch),
         environments: () => this.store.environments().map((e) => ({ id: e.id, label: e.label })),
         openSignIn: () => this.openSignIn(),
+        keychain: this.secrets !== null,
       }),
     );
 
@@ -156,22 +162,43 @@ export default class ClaudsidianPlugin extends Plugin {
 
   /** data.json changed outside this app (Obsidian Sync from the iPad or phone, a file write): take it in. */
   async onExternalSettingsChange(): Promise<void> {
+    const secretId = this.settings.authSecretId;
     await this.loadSettings();
+    if (this.settings.authSecretId !== secretId) this.auth.reload();
     setDebugLogging(this.settings.debugLog);
     this.settingsChanged.value += 1;
   }
 
   async loadSettings(): Promise<void> {
     this.settings = migrateSettings(await this.loadData());
+    await this.moveAuthToSecret();
+  }
+
+  /**
+   * One-time move of a data.json sign-in into SecretStorage, then blank it in data.json. Also catches a
+   * data.json synced in from a device still on an old build: its token never overwrites one already here.
+   */
+  private async moveAuthToSecret(): Promise<void> {
+    const legacy = this.settings.auth;
+    if (!this.secrets || !legacy) return;
+    const id = this.settings.authSecretId;
+    const adopted = !readAuthSecret(this.secrets, id);
+    if (adopted) writeAuthSecret(this.secrets, id, legacy);
+    this.settings.auth = null;
+    await this.saveData(this.settings);
+    if (adopted && this.auth) this.auth.reload();
   }
 
   /** Apply a patch (when given), persist, and tell the view. */
   async saveSettings(patch?: Partial<ClaudsidianSettings>): Promise<void> {
     let urlChanged = false;
+    let secretChanged = false;
     if (patch) {
       urlChanged = URL_KEYS.some((k) => patch[k] !== undefined && patch[k] !== this.settings[k]);
+      secretChanged = patch.authSecretId !== undefined && patch.authSecretId !== this.settings.authSecretId;
       Object.assign(this.settings, patch);
     }
+    if (secretChanged) this.auth.reload();
     await this.saveData(this.settings);
     setDebugLogging(this.settings.debugLog);
     this.settingsChanged.value += 1;

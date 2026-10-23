@@ -29,6 +29,7 @@ export {
   ButtonComponent,
   ExtraButtonComponent,
   SliderComponent,
+  SecretComponent,
   ColorComponent,
   ProgressBarComponent,
 } from './shim/setting';

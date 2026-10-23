@@ -220,6 +220,22 @@ export class ExtraButtonComponent extends BaseComponent {
   }
 }
 
+/** Obsidian 1.11.4+ secret picker; the harness has no SecretStorage, so this only shows the linked id. */
+export class SecretComponent extends BaseComponent {
+  valueEl: HTMLElement;
+  constructor(_app: unknown, containerEl: HTMLElement) {
+    super();
+    this.valueEl = containerEl.createSpan({ cls: 'setting-hotkey' });
+  }
+  setValue(value: string): this {
+    this.valueEl.setText(value);
+    return this;
+  }
+  onChange(_cb: (value: string | null) => unknown): this {
+    return this;
+  }
+}
+
 export class SliderComponent extends ValueComponent<number> {
   sliderEl: HTMLInputElement;
   constructor(containerEl: HTMLElement) {
@@ -377,5 +393,9 @@ export class Setting {
   }
   addSlider(cb: (c: SliderComponent) => unknown): this {
     return this.add(new SliderComponent(this.controlEl), cb);
+  }
+  addComponent<T extends BaseComponent>(cb: (el: HTMLElement) => T): this {
+    this.components.push(cb(this.controlEl));
+    return this;
   }
 }

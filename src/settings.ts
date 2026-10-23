@@ -39,7 +39,10 @@ export interface ClaudsidianSettings {
   showThinking: boolean;
   showSubagentTraffic: boolean;
   debugLog: boolean;
+  /** Only on Obsidian without SecretStorage; otherwise null here and the sign-in lives in the secret below. */
   auth: AuthState | null;
+  /** SecretStorage id holding the sign-in (AuthState JSON) on this device. */
+  authSecretId: string;
   /** last opened session id, restored on view open */
   lastSessionId: string;
   /** per-install uuid sent with presence; generated on first load */
@@ -89,6 +92,7 @@ export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   showSubagentTraffic: false,
   debugLog: false,
   auth: null,
+  authSecretId: 'claudsidian-auth',
   lastSessionId: '',
   clientId: '',
   environmentDirs: {},
@@ -147,6 +151,7 @@ export function migrateSettings(raw: unknown): ClaudsidianSettings {
     }
   }
   if (LEGACY_TOKEN_URLS.has(out.oauthTokenUrl)) out.oauthTokenUrl = DEFAULT_SETTINGS.oauthTokenUrl;
+  if (!/^[a-z0-9-]+$/.test(out.authSecretId)) out.authSecretId = DEFAULT_SETTINGS.authSecretId;
   if (out.listScope !== 'vault' && out.listScope !== 'all') out.listScope = DEFAULT_SETTINGS.listScope;
   return out;
 }

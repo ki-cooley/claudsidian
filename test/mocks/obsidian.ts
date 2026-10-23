@@ -231,6 +231,27 @@ export class Setting {
     cb(new SliderComponent());
     return this;
   }
+  addComponent<T>(cb: (el: HTMLElement) => T): this {
+    cb(this.settingEl);
+    return this;
+  }
+}
+
+export class SecretComponent {
+  static last: SecretComponent | null = null;
+  value = '';
+  changeCb: ((v: string | null) => unknown) | null = null;
+  constructor(_app: unknown, _el: HTMLElement) {
+    SecretComponent.last = this;
+  }
+  setValue(v: string): this {
+    this.value = v;
+    return this;
+  }
+  onChange(cb: (v: string | null) => unknown): this {
+    this.changeCb = cb;
+    return this;
+  }
 }
 
 export class TextComponent {

@@ -2,7 +2,7 @@
  * The plugin settings tab: account, Mac host, session defaults, context, polling, cooking mode,
  * notifications, display, advanced. Every control saves one patch through deps.save.
  */
-import { type App, Notice, type Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { type App, Notice, type Plugin, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
 import type { AuthApi } from '../api/auth-api';
 import type { AuthState } from '../api/auth-types';
 import {
@@ -20,6 +20,8 @@ export interface SettingsTabDeps {
   save: (patch: Partial<ClaudsidianSettings>) => Promise<void>;
   environments: () => { id: string; label: string }[];
   openSignIn: () => void;
+  /** Obsidian has SecretStorage (1.11.4+): the sign-in is kept there, per device, instead of in data.json. */
+  keychain?: boolean;
   onChanged?: () => void;
 }
 
@@ -157,6 +159,25 @@ export class ClaudsidianSettingTab extends PluginSettingTab {
           b.setButtonText('Sign in').setCta().onClick(() => this.deps.openSignIn());
         }
       });
+    if (this.deps.keychain) {
+      new Setting(el)
+        .setName('Sign-in secret')
+        .setDesc(
+          state
+            ? "Kept in Obsidian's keychain on this device. It does not sync, so each device signs in once."
+            : 'No sign-in on this device. Sign-ins stay in each device\'s keychain and do not sync; sign in here once.',
+        )
+        .addComponent((c) =>
+          new SecretComponent(this.app, c).setValue(this.settings.authSecretId).onChange(async (id) => {
+            await this.patch({ authSecretId: id || DEFAULT_SETTINGS.authSecretId });
+            this.display();
+          }),
+        );
+    } else {
+      new Setting(el)
+        .setName('Sign-in storage')
+        .setDesc('This Obsidian has no keychain (needs 1.11.4 or later), so the sign-in is in the plugin data.json, which syncs. Update Obsidian to keep it on the device.');
+    }
     if (state && !state.orgUuid) {
       new Setting(el)
         .setName('Organization uuid')

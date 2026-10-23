@@ -160,6 +160,12 @@ export class AuthManager implements AuthApi {
     await this.commit({ ...this.current, orgUuid: uuid });
   }
 
+  /** Re-read the stored sign-in: the plugin moved it into SecretStorage or linked a different secret. */
+  reload(): void {
+    this.current = this.deps.load();
+    this.notify(this.current);
+  }
+
   onChange(cb: (state: AuthState | null) => void): () => void {
     this.listeners.add(cb);
     return () => {
@@ -223,6 +229,10 @@ export class AuthManager implements AuthApi {
   private async commit(next: AuthState | null): Promise<void> {
     this.current = next;
     await this.deps.save(next);
+    this.notify(next);
+  }
+
+  private notify(next: AuthState | null): void {
     for (const cb of Array.from(this.listeners)) {
       try {
         cb(next);
