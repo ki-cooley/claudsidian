@@ -59,104 +59,108 @@ function ChatHeaderView(p: ChatHeaderProps): JSX.Element {
   };
   const statusClass = `claudsidian-status is-${p.status.tone} ${p.status.busy ? 'is-busy' : ''}`;
 
+  // The sheets render beside the header, not inside it: the header is positioned (z-index over the transcript),
+  // so a sheet inside it would size its backdrop to the header and clip the panel to a sliver.
   return (
-    <header class="claudsidian-header">
-      <div class="claudsidian-header-row">
-        <Button icon="arrow-left" ariaLabel="Back to sessions" kind="ghost" onClick={p.onBack} />
-        <button type="button" class="claudsidian-header-title" onClick={p.onRename}>
-          <span class="claudsidian-header-title-text">{p.title}</span>
-        </button>
-        <Button icon="more-horizontal" ariaLabel="More actions" kind="ghost" onClick={() => (menu.value = 'main')} />
-      </div>
-      <div class="claudsidian-header-row is-meta">
-        {p.status.tone === 'needs' ? (
-          <button type="button" class={`${statusClass} is-tappable`} onClick={(ev) => requestScrollToPending(ev.currentTarget as HTMLElement)}>
-            <span class="claudsidian-status-dot" aria-hidden="true" />
-            {p.status.label}
+    <>
+      <header class="claudsidian-header">
+        <div class="claudsidian-header-row">
+          <Button icon="arrow-left" ariaLabel="Back to sessions" kind="ghost" onClick={p.onBack} />
+          <button type="button" class="claudsidian-header-title" onClick={p.onRename}>
+            <span class="claudsidian-header-title-text">{p.title}</span>
           </button>
-        ) : (
-          <span class={statusClass} role="status">
-            <span class="claudsidian-status-dot" aria-hidden="true" />
-            {p.status.label}
-          </span>
-        )}
-        {p.model ? (
-          <button type="button" class="claudsidian-meta-chip is-tappable" data-value={p.model} onClick={() => (menu.value = 'model')}>
-            <span class="claudsidian-meta-chip-label">{modelLabel(p.model)}</span>
-            <Icon name="chevron-down" size="small" class="claudsidian-meta-chevron" />
-          </button>
+          <Button icon="more-horizontal" ariaLabel="More actions" kind="ghost" onClick={() => (menu.value = 'main')} />
+        </div>
+        <div class="claudsidian-header-row is-meta">
+          {p.status.tone === 'needs' ? (
+            <button type="button" class={`${statusClass} is-tappable`} onClick={(ev) => requestScrollToPending(ev.currentTarget as HTMLElement)}>
+              <span class="claudsidian-status-dot" aria-hidden="true" />
+              {p.status.label}
+            </button>
+          ) : (
+            <span class={statusClass} role="status">
+              <span class="claudsidian-status-dot" aria-hidden="true" />
+              {p.status.label}
+            </span>
+          )}
+          {p.model ? (
+            <button type="button" class="claudsidian-meta-chip is-tappable" data-value={p.model} onClick={() => (menu.value = 'model')}>
+              <span class="claudsidian-meta-chip-label">{modelLabel(p.model)}</span>
+              <Icon name="chevron-down" size="small" class="claudsidian-meta-chevron" />
+            </button>
+          ) : null}
+          {p.permissionMode ? (
+            <button type="button" class="claudsidian-meta-chip is-tappable" data-value={p.permissionMode} onClick={() => (menu.value = 'mode')}>
+              <span class="claudsidian-meta-chip-label">{permissionModeLabel(p.permissionMode)}</span>
+              <Icon name="chevron-down" size="small" class="claudsidian-meta-chevron" />
+            </button>
+          ) : null}
+          {p.cooking ? (
+            <button type="button" class="claudsidian-meta-chip is-static is-cooking-toggle" aria-pressed="true" onClick={() => p.onToggleCooking()}>
+              <Icon name="chef-hat" size="small" />
+              <span class="claudsidian-sr-text">Cooking mode on. Tap to turn off.</span>
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+        {menu.value === 'main' ? (
+          <Sheet title={p.title} onClose={close}>
+            <SheetAction icon="pencil" label="Rename" onClick={() => act(p.onRename)} />
+            <SheetAction icon="cpu" label="Model" onClick={() => (menu.value = 'model')} />
+            <SheetAction icon="shield" label="Permission mode" onClick={() => (menu.value = 'mode')} />
+            <SheetAction icon="gauge" label="Effort" onClick={() => (menu.value = 'effort')} />
+            <SheetAction icon="external-link" label="Open in claude.ai" onClick={() => act(p.onOpenExternal)} />
+            <SheetAction icon="chef-hat" label="Cooking mode" pressed={p.cooking} onClick={() => act(p.onToggleCooking)} />
+            <SheetAction icon="archive" label="Archive" danger onClick={() => act(p.onArchive)} />
+          </Sheet>
         ) : null}
-        {p.permissionMode ? (
-          <button type="button" class="claudsidian-meta-chip is-tappable" data-value={p.permissionMode} onClick={() => (menu.value = 'mode')}>
-            <span class="claudsidian-meta-chip-label">{permissionModeLabel(p.permissionMode)}</span>
-            <Icon name="chevron-down" size="small" class="claudsidian-meta-chevron" />
-          </button>
+
+        {menu.value === 'model' ? (
+          <Sheet title="Model" onClose={close}>
+            {MODEL_OPTIONS.map((m) => (
+              <SheetAction key={m.value} label={modelLabel(m.value) || m.label} selected={m.value === p.model} onClick={() => act(() => p.onSetModel(m.value))} />
+            ))}
+            <div class="claudsidian-sheet-custom">
+              <input
+                type="text"
+                placeholder="Custom model id"
+                aria-label="Custom model id"
+                value={customModel.value}
+                onInput={(ev) => (customModel.value = (ev.currentTarget as HTMLInputElement).value)}
+                onKeyDown={(ev) => {
+                  if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    useCustom();
+                  }
+                }}
+              />
+              <Button label="Use model" kind="primary" disabled={!customModel.value.trim()} onClick={useCustom} />
+            </div>
+          </Sheet>
         ) : null}
-        {p.cooking ? (
-          <button type="button" class="claudsidian-meta-chip is-static is-cooking-toggle" aria-pressed="true" onClick={() => p.onToggleCooking()}>
-            <Icon name="chef-hat" size="small" />
-            <span class="claudsidian-sr-text">Cooking mode on. Tap to turn off.</span>
-          </button>
+
+        {menu.value === 'mode' ? (
+          <Sheet title="Permission mode" onClose={close}>
+            {PERMISSION_MODE_OPTIONS.map((m) => (
+              <SheetAction
+                key={m.value}
+                label={permissionModeLabel(m.value) || m.label}
+                selected={m.value === p.permissionMode}
+                onClick={() => act(() => p.onSetPermissionMode(m.value))}
+              />
+            ))}
+          </Sheet>
         ) : null}
-      </div>
 
-      {menu.value === 'main' ? (
-        <Sheet title={p.title} onClose={close}>
-          <SheetAction icon="pencil" label="Rename" onClick={() => act(p.onRename)} />
-          <SheetAction icon="cpu" label="Model" onClick={() => (menu.value = 'model')} />
-          <SheetAction icon="shield" label="Permission mode" onClick={() => (menu.value = 'mode')} />
-          <SheetAction icon="gauge" label="Effort" onClick={() => (menu.value = 'effort')} />
-          <SheetAction icon="external-link" label="Open in claude.ai" onClick={() => act(p.onOpenExternal)} />
-          <SheetAction icon="chef-hat" label="Cooking mode" pressed={p.cooking} onClick={() => act(p.onToggleCooking)} />
-          <SheetAction icon="archive" label="Archive" danger onClick={() => act(p.onArchive)} />
-        </Sheet>
-      ) : null}
-
-      {menu.value === 'model' ? (
-        <Sheet title="Model" onClose={close}>
-          {MODEL_OPTIONS.map((m) => (
-            <SheetAction key={m.value} label={modelLabel(m.value) || m.label} selected={m.value === p.model} onClick={() => act(() => p.onSetModel(m.value))} />
-          ))}
-          <div class="claudsidian-sheet-custom">
-            <input
-              type="text"
-              placeholder="Custom model id"
-              aria-label="Custom model id"
-              value={customModel.value}
-              onInput={(ev) => (customModel.value = (ev.currentTarget as HTMLInputElement).value)}
-              onKeyDown={(ev) => {
-                if (ev.key === 'Enter') {
-                  ev.preventDefault();
-                  useCustom();
-                }
-              }}
-            />
-            <Button label="Use model" kind="primary" disabled={!customModel.value.trim()} onClick={useCustom} />
-          </div>
-        </Sheet>
-      ) : null}
-
-      {menu.value === 'mode' ? (
-        <Sheet title="Permission mode" onClose={close}>
-          {PERMISSION_MODE_OPTIONS.map((m) => (
-            <SheetAction
-              key={m.value}
-              label={permissionModeLabel(m.value) || m.label}
-              selected={m.value === p.permissionMode}
-              onClick={() => act(() => p.onSetPermissionMode(m.value))}
-            />
-          ))}
-        </Sheet>
-      ) : null}
-
-      {menu.value === 'effort' ? (
-        <Sheet title="Effort" onClose={close}>
-          {EFFORT_OPTIONS.map((e) => (
-            <SheetAction key={e.value} label={e.label} onClick={() => act(() => p.onEffort(e.value))} />
-          ))}
-        </Sheet>
-      ) : null}
-    </header>
+        {menu.value === 'effort' ? (
+          <Sheet title="Effort" onClose={close}>
+            {EFFORT_OPTIONS.map((e) => (
+              <SheetAction key={e.value} label={e.label} onClick={() => act(() => p.onEffort(e.value))} />
+            ))}
+          </Sheet>
+        ) : null}
+    </>
   );
 }
 
