@@ -124,6 +124,7 @@ export function PermissionCard(p: PermissionCardProps): JSX.Element {
             class="claudsidian-perm-reason"
             type="text"
             placeholder="Reason (optional)"
+            enterKeyHint="send"
             aria-label="Reason for denying"
             value={reason}
             disabled={waiting}

@@ -166,15 +166,22 @@ body.is-mobile .claudsidian-modal .claudsidian-modal-actions button {
   box-sizing: border-box;
 }
 
-.claudsidian-sign-in-url {
+.claudsidian-sign-in-row {
   display: flex;
   gap: 8px;
   margin-top: 8px;
 }
 
-.claudsidian-sign-in-url input {
+.claudsidian-sign-in-row input {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.claudsidian-modal .claudsidian-sign-in-row button {
+  flex: 0 0 auto;
+}
+
+.claudsidian-sign-in-url input {
   font-size: var(--font-ui-small);
 }
 

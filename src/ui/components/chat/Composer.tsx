@@ -379,7 +379,7 @@ export function Composer(p: ComposerProps): JSX.Element {
           ))}
         </div>
       ) : null}
-      <div class="claudsidian-composer-row">
+      <div class="claudsidian-composer-row" data-keeps-keyboard>
         <div class="claudsidian-composer-tools">
           <Button icon="at-sign" ariaLabel="Mention a note" kind="ghost" class="claudsidian-composer-tool" disabled={p.disabled} onClick={insertAtSign} />
           <Button

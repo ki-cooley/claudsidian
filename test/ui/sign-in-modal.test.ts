@@ -55,7 +55,7 @@ describe('SignInModal', () => {
     const codeField = Array.from(inputs).find((i) => !i.readOnly)!;
     expect(codeField).toBeTruthy();
     expect(modal.contentEl.querySelectorAll('button').length).toBeGreaterThanOrEqual(3);
-    const finish = buttonByText(modal.contentEl, 'Finish sign-in');
+    const finish = buttonByText(modal.contentEl, 'Finish');
     buttonByText(modal.contentEl, 'Open claude.ai');
     buttonByText(modal.contentEl, 'Copy');
     expect(modal.contentEl.textContent).toMatch(/paste/i);
@@ -75,6 +75,28 @@ describe('SignInModal', () => {
     expect(onDone).toHaveBeenCalledWith(true);
     expect(close).toHaveBeenCalledTimes(1);
     expect(modal.contentEl.textContent).not.toContain('invalid_grant: bad code');
+  });
+
+  it('finishes on a pasted code#state and on return from a keyboard that inserts a line break', async () => {
+    const auth = fakeAuth();
+    const modal = new SignInModal(new App(), auth);
+    modal.open();
+    await flush();
+    const codeField = Array.from(modal.contentEl.querySelectorAll('input')).find((i) => !i.readOnly)!;
+    expect(codeField.enterKeyHint).toBe('go');
+
+    codeField.value = 'bad#s1';
+    codeField.dispatchEvent(new Event('paste'));
+    await flush();
+    await flush();
+    expect(auth.completeSignIn).toHaveBeenCalledWith('bad#s1');
+
+    codeField.value = 'good#s1';
+    const ev = new InputEvent('beforeinput', { inputType: 'insertLineBreak', cancelable: true });
+    codeField.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await flush();
+    expect(auth.completeSignIn).toHaveBeenLastCalledWith('good#s1');
   });
 
   it('opens the authorize url in the browser and copies it', async () => {
@@ -102,7 +124,7 @@ describe('SignInModal', () => {
     const modal = new SignInModal(new App(), auth);
     modal.open();
     await flush();
-    buttonByText(modal.contentEl, 'Finish sign-in').click();
+    buttonByText(modal.contentEl, 'Finish').click();
     await flush();
     expect(auth.completeSignIn).not.toHaveBeenCalled();
     expect(modal.contentEl.textContent).toMatch(/paste the code/i);

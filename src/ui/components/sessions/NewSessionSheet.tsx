@@ -211,6 +211,7 @@ export function NewSessionSheet(p: NewSessionSheetProps): JSX.Element {
               type="text"
               value={title}
               placeholder="What this session is for"
+              enterKeyHint="done"
               onInput={(ev) => setTitle(value(ev))}
             />
           </label>

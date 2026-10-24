@@ -2,10 +2,12 @@
  * RenameModal: one text field prefilled with the current title. Enter or the Rename button submits a
  * trimmed, non-empty title; closing without one submits nothing.
  */
-import { App, Modal } from 'obsidian';
+import { App, Modal, Platform } from 'obsidian';
+import { installKeyboardDismiss, submitOnReturn } from '../keyboard';
 
 export class RenameModal extends Modal {
   private value: string;
+  private readonly cleanups: (() => void)[] = [];
 
   constructor(
     app: App,
@@ -31,12 +33,8 @@ export class RenameModal extends Modal {
     input.addEventListener('input', () => {
       this.value = input.value;
     });
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        this.submit();
-      }
-    });
+    this.cleanups.push(submitOnReturn(input, () => this.submit(), 'done'));
+    if (Platform.isMobile) this.cleanups.push(installKeyboardDismiss(this.modalEl));
 
     const actions = root.createDiv({ cls: 'claudsidian-modal-actions' });
     actions.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
@@ -47,6 +45,7 @@ export class RenameModal extends Modal {
   }
 
   onClose(): void {
+    for (const cleanup of this.cleanups.splice(0)) cleanup();
     this.contentEl.empty();
   }
 

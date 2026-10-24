@@ -2,11 +2,12 @@
  * QuickAskModal: ask about the editor selection without leaving the note. Sends the question to the open
  * session with the selection as context; when the reply lands, a notice offers to insert it at the cursor.
  */
-import { App, Modal, Notice } from 'obsidian';
+import { App, Modal, Notice, Platform } from 'obsidian';
 import { formatContextBlock } from '../../core/context-format';
 import type { CapturedContext, TranscriptState } from '../../core/types';
 import type ClaudsidianPlugin from '../../main';
 import { ObsidianFacade } from '../../obsidian/facade-impl';
+import { installKeyboardDismiss } from '../keyboard';
 
 const DEFAULT_QUESTION = 'Look at this selection.';
 const PREVIEW_CHARS = 600;
@@ -30,6 +31,7 @@ function messageOf(err: unknown): string {
 export class QuickAskModal extends Modal {
   private question = '';
   private busy = false;
+  private dismissKeyboard: (() => void) | null = null;
 
   constructor(
     app: App,
@@ -76,10 +78,13 @@ export class QuickAskModal extends Modal {
     if (!sessionId) send.disabled = true;
     send.addEventListener('click', () => void this.send());
 
+    if (Platform.isMobile) this.dismissKeyboard = installKeyboardDismiss(this.modalEl);
     field.focus();
   }
 
   onClose(): void {
+    this.dismissKeyboard?.();
+    this.dismissKeyboard = null;
     this.contentEl.empty();
   }
 

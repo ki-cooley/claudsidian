@@ -9,6 +9,7 @@ import { h, render } from 'preact';
 import type ClaudsidianPlugin from '../main';
 import { ObsidianFacade } from '../obsidian/facade-impl';
 import { Root } from './components/Root';
+import { installKeyboardDismiss } from './keyboard';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { RenameModal } from './modals/RenameModal';
 
@@ -91,6 +92,7 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.workspace.on('layout-change', () => this.onLayout()));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.onLayout()));
     this.registerEvent(this.app.workspace.on('resize', () => this.scheduleInsets()));
+    if (Platform.isMobile) this.register(installKeyboardDismiss(contentEl));
     if (Platform.isPhone) {
       this.registerDomEvent(window, 'resize', () => this.scheduleInsets());
       const viewport = window.visualViewport;

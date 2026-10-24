@@ -1,10 +1,12 @@
 /**
  * SignInModal: the three-step manual-code OAuth flow. Opens claude.ai (or shows the URL to
  * copy), takes the pasted code, calls AuthApi.completeSignIn, and shows the server's error
- * text under the field without closing. Closes and reports onDone(true) on success.
+ * text under the field without closing. Closes and reports onDone(true) on success. Finish sits beside the
+ * code field so it stays above the phone keyboard, return finishes, and a pasted code#state finishes at once.
  */
-import { App, Modal, Notice } from 'obsidian';
+import { App, Modal, Notice, Platform } from 'obsidian';
 import type { AuthApi } from '../../api/auth-api';
+import { installKeyboardDismiss, submitOnReturn } from '../keyboard';
 
 export class SignInModal extends Modal {
   private url = '';
@@ -14,6 +16,7 @@ export class SignInModal extends Modal {
   private codeField: HTMLInputElement | null = null;
   private errorEl: HTMLElement | null = null;
   private finishBtn: HTMLButtonElement | null = null;
+  private readonly cleanups: (() => void)[] = [];
 
   constructor(
     app: App,
@@ -30,7 +33,7 @@ export class SignInModal extends Modal {
     root.empty();
 
     root.createEl('p', {
-      text: 'Three steps: open claude.ai and approve access, copy the code it shows, then paste that code here and finish.',
+      text: 'Open claude.ai and approve access, copy the code it shows, then paste that code here.',
     });
 
     const step1 = root.createDiv({ cls: 'claudsidian-sign-in-step' });
@@ -44,7 +47,7 @@ export class SignInModal extends Modal {
         new Notice('Could not open a browser. Copy the link instead.');
       }
     });
-    const urlRow = step1.createDiv({ cls: 'claudsidian-sign-in-url' });
+    const urlRow = step1.createDiv({ cls: ['claudsidian-sign-in-row', 'claudsidian-sign-in-url'] });
     this.urlField = urlRow.createEl('input', { type: 'text', attr: { readonly: 'true', 'aria-label': 'Sign-in link' } });
     this.urlField.readOnly = true;
     this.urlField.addEventListener('focus', () => this.urlField?.select());
@@ -53,30 +56,32 @@ export class SignInModal extends Modal {
 
     const step2 = root.createDiv({ cls: 'claudsidian-sign-in-step' });
     step2.createEl('div', { cls: 'claudsidian-sign-in-label', text: '2. Paste the code here' });
-    this.codeField = step2.createEl('input', {
+    const codeRow = step2.createDiv({ cls: 'claudsidian-sign-in-row' });
+    this.codeField = codeRow.createEl('input', {
       type: 'text',
       placeholder: 'Paste the code here',
       attr: { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Paste the code here' },
     });
-    this.codeField.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        void this.finish();
-      }
+    this.cleanups.push(submitOnReturn(this.codeField, () => void this.finish()));
+    // claude.ai shows the code as code#state; a paste of that shape is the whole code, so finish without another tap
+    this.codeField.addEventListener('paste', () => {
+      window.setTimeout(() => {
+        if (this.codeField?.value.trim().includes('#')) void this.finish();
+      }, 0);
     });
+    this.finishBtn = codeRow.createEl('button', { cls: 'mod-cta', text: 'Finish' });
+    this.finishBtn.addEventListener('click', () => void this.finish());
     this.errorEl = step2.createDiv({ cls: 'claudsidian-sign-in-error' });
     this.errorEl.setAttr('role', 'alert');
     this.errorEl.hide();
 
-    const step3 = root.createDiv({ cls: 'claudsidian-sign-in-step' });
-    step3.createEl('div', { cls: 'claudsidian-sign-in-label', text: '3. Finish' });
-    this.finishBtn = step3.createEl('button', { cls: 'mod-cta', text: 'Finish sign-in' });
-    this.finishBtn.addEventListener('click', () => void this.finish());
+    if (Platform.isMobile) this.cleanups.push(installKeyboardDismiss(this.modalEl));
 
     void this.begin();
   }
 
   onClose(): void {
+    for (const cleanup of this.cleanups.splice(0)) cleanup();
     this.contentEl.empty();
     if (!this.done) {
       this.done = true;

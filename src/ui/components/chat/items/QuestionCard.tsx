@@ -136,6 +136,7 @@ export function QuestionCard(p: QuestionCardProps): JSX.Element {
               <input
                 type="text"
                 placeholder={q.multiSelect ? 'Add your own' : 'Type your own answer'}
+                enterKeyHint={single ? 'send' : 'done'}
                 value={draft?.other ?? ''}
                 disabled={waiting}
                 onInput={(ev) => {

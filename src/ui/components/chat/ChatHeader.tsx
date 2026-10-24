@@ -125,6 +125,7 @@ function ChatHeaderView(p: ChatHeaderProps): JSX.Element {
               <input
                 type="text"
                 placeholder="Custom model id"
+                  enterKeyHint="go"
                 aria-label="Custom model id"
                 value={customModel.value}
                 onInput={(ev) => (customModel.value = (ev.currentTarget as HTMLInputElement).value)}

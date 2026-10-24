@@ -1,0 +1,1 @@
+Read `docs/testing.md` before calling any change done. Any substantial UI change needs real Obsidian at phone size (`e2e/obsidian/ui-check.mjs` plus its screenshots), and chat changes also need the multi-message flows in `e2e/obsidian/flows.mjs` (section 4). The harness alone has missed bugs that were obvious on the phone.
