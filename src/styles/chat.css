@@ -593,7 +593,9 @@
   min-width: 0;
   padding: 8px 12px;
   border-radius: var(--radius-m);
-  background: var(--background-secondary);
+  /* accent-tinted so the person's turns read apart from Claude's plain text at a glance, dark theme included */
+  background: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 45%, transparent);
   overflow-wrap: anywhere;
 }
 .claudsidian-user.is-synthetic .claudsidian-user-bubble {

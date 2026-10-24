@@ -27,12 +27,19 @@ describe('classifyInjection', () => {
     expect(classifyInjection('Your response above was stopped by a safety classifier. Continue.')?.label).toBe('Stopped by a safety classifier');
     expect(classifyInjection('[Request interrupted by user]')?.label).toBe('Request interrupted');
     expect(classifyInjection('<channel source="telegram">hello</channel>')?.label).toBe('Message from a channel');
+    expect(classifyInjection('Base directory for this skill: /x/.claude/skills/sync-dish\n\n# Sync Dish')?.label).toBe('Skill instructions');
     expect(classifyInjection('whats left on this for tomorrow')).toBeUndefined();
     expect(classifyInjection('I read <cross-session-message> docs today')).toBeUndefined();
   });
 });
 
 describe('UserMessage', () => {
+  it("collapses a meta turn Claude Code injected instead of drawing it as the person's bubble", () => {
+    const root = render({ item: { ...items.user('<command-name>/sync-dish</command-name> expanded text'), synthetic: true } });
+    expect(maybe(root, '.claudsidian-user-bubble')).toBeNull();
+    expect(text(q(root, '.claudsidian-system.is-injected'))).toBe('Injected by Claude Code');
+  });
+
   it('renders a peer message as a collapsed system line that expands on tap, never as a bubble', async () => {
     const root = render({ item: items.user(PEER) });
     expect(maybe(root, '.claudsidian-user-bubble')).toBeNull();

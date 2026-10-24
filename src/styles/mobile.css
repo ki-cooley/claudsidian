@@ -41,6 +41,15 @@
 .claudsidian-view.is-phone .claudsidian-dock {
   padding-bottom: 0;
 }
+/* Phone, in the sidebar drawer: the view ends above the drawer's footer, which owns the safe area. Padding
+   for the home indicator there left an empty band between the composer and the drawer's view switcher. */
+.claudsidian-view.is-phone.is-above-screen-bottom {
+  padding-bottom: max(var(--claudsidian-phone-bottom, 0px), 8px);
+}
+/* Mobile modals (sign-in, rename, quick ask): iOS zooms into fields smaller than 16px */
+body.is-mobile .claudsidian-modal :where(input, textarea, select) {
+  font-size: max(16px, var(--font-ui-medium, 16px));
+}
 
 .claudsidian-view.is-mobile :where(input, textarea, select) {
   /* iOS zooms into fields smaller than 16px */

@@ -67,6 +67,17 @@ export function toolSummary(name: string, input: Record<string, unknown>, roots:
   return relativizeText(summarizeTool(name, prepared), roots);
 }
 
+/**
+ * A transcript tool card's title. Bash leads with the call's own description when it has one ("Write the
+ * component file", not "python3 - <<'EOF' (+38 lines)"), which a phone can read; the command stays in the
+ * card's body. Permission prompts keep toolSummary, so what gets approved is the command, not its label.
+ */
+export function toolTitle(name: string, input: Record<string, unknown>, roots: PathRoots): string {
+  const description = name === 'Bash' ? str(input.description) : undefined;
+  if (description) return relativizeText(description.split('\n')[0]?.trim() ?? description, roots);
+  return toolSummary(name, input, roots);
+}
+
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
 }
@@ -90,7 +101,10 @@ export function workingLabel(item: ToolItem, roots: PathRoots): string {
       return withPath('Editing', path('notebook_path'));
     case 'Write':
       return withPath('Writing', path('file_path'));
-    case 'Bash':
+    case 'Bash': {
+      const description = str(input.description);
+      return description ? (description.split('\n')[0]?.trim() ?? 'Running bash') : 'Running bash';
+    }
     case 'BashOutput':
       return 'Running bash';
     case 'Grep':

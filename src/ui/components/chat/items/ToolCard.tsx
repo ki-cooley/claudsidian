@@ -12,7 +12,7 @@ import type { PluginFacade } from '../../../facade';
 import { Icon } from '../../common/Icon';
 import { Spinner } from '../../common/Spinner';
 import { CodeBlock } from './CodeBlock';
-import { toolSummary, type PathRoots } from './paths';
+import { toolTitle, type PathRoots } from './paths';
 import { ToolInput } from './ToolInput';
 
 export interface ToolCardProps {
@@ -55,7 +55,7 @@ export function ToolCard(p: ToolCardProps): JSX.Element {
   const { item } = p;
   const roots = p.roots ?? NO_ROOTS;
   const members: readonly ToolItem[] = p.group && p.group.length > 1 ? p.group : [item];
-  const summary = toolSummary(item.name, item.input, roots);
+  const summary = toolTitle(item.name, item.input, roots);
   const category = toolCategory(item.name);
   const status = groupStatus(members);
   const isError = status === 'error';

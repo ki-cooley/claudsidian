@@ -101,12 +101,25 @@ export function ChatScreen(p: ChatScreenProps): JSX.Element {
       el.style.setProperty(KEYBOARD_VAR, `${keyboardInset(el.getBoundingClientRect().bottom, viewport)}px`);
       el.style.setProperty(VISIBLE_HEIGHT_VAR, `${Math.round(viewport.height)}px`);
     };
-    viewport.addEventListener('resize', update);
-    viewport.addEventListener('scroll', update);
+    // The viewport resizes before Obsidian finishes re-laying out around the keyboard (the drawer's footer
+    // goes away, the app may shrink), so a measure taken only then lifted the dock too far and left a gap
+    // above the keys. Measure again whenever the screen itself changes size, and once the keyboard has settled.
+    let settle: number | undefined;
+    const onViewport = (): void => {
+      update();
+      window.clearTimeout(settle);
+      settle = window.setTimeout(update, 350);
+    };
+    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
+    resize?.observe(el);
+    viewport.addEventListener('resize', onViewport);
+    viewport.addEventListener('scroll', onViewport);
     update();
     return () => {
-      viewport.removeEventListener('resize', update);
-      viewport.removeEventListener('scroll', update);
+      window.clearTimeout(settle);
+      resize?.disconnect();
+      viewport.removeEventListener('resize', onViewport);
+      viewport.removeEventListener('scroll', onViewport);
       el.style.removeProperty(KEYBOARD_VAR);
       el.style.removeProperty(VISIBLE_HEIGHT_VAR);
     };

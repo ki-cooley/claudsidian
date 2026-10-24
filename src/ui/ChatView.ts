@@ -162,6 +162,8 @@ export class ChatView extends ItemView {
     const insets = phoneInsets({ top: view.top, bottom: view.bottom, height: view.height }, box(header), box(navbar));
     content.style.setProperty(PHONE_TOP_VAR, `${insets.top}px`);
     content.style.setProperty(PHONE_BOTTOM_VAR, `${insets.bottom}px`);
+    // In the sidebar drawer the view ends above Obsidian's own footer, so the home-indicator padding is not ours.
+    content.toggleClass('is-above-screen-bottom', view.bottom < window.innerHeight - 2);
   }
 
   private scheduleInsets(): void {

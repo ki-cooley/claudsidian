@@ -5,7 +5,7 @@
 //   sign-in  Finish sits beside the code field, return in the field runs Finish (empty code: inline error, no
 //            network), a tap on the modal's text drops focus
 // Reloads the plugin from the vault copy first. Opens only the test session. Screenshots in e2e/out/obsidian/ui-check/.
-// Usage: node e2e/obsidian/ui-check.mjs [--session "claudsidian ux test"]
+// Usage: node e2e/obsidian/ui-check.mjs [--session "claudsidian ux test"] [--dark]
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -106,8 +106,21 @@ await ev(async () => {
 await waitFor(() => !!window.app.plugins.plugins['claudsidian'], 'plugin loaded');
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
 await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+const priorTheme = await ev(() => window.app.vault.getConfig('theme'));
+const setTheme = (t) => ev((theme) => {
+  window.app.vault.setConfig('theme', theme);
+  (window.app.setTheme ?? window.app.changeTheme)?.call(window.app, theme);
+  // the profile follows the system appearance, which can put theme-light back; set the body classes directly
+  const dark = theme === 'obsidian';
+  document.body.classList.toggle('theme-dark', dark);
+  document.body.classList.toggle('theme-light', !dark);
+  return getComputedStyle(document.body).getPropertyValue('--background-primary').trim();
+}, t);
 await ev(() => window.app.emulateMobile(true));
+// switching to the mobile layout can reload the window; wait for the app and the plugin to come back
 await sleep(1500);
+await waitFor(() => !!window.app?.plugins?.plugins?.['claudsidian'], 'plugin after mobile switch');
+if (args.dark !== undefined) console.log('[ui] dark theme:', await setTheme('obsidian'));
 await ev(() => window.app.commands.executeCommandById('claudsidian:open'));
 await waitFor(() => !!document.querySelector('.claudsidian-root'), 'view root');
 await sleep(1500);
@@ -158,6 +171,31 @@ await check('return in the custom model field leaves it (empty field: nothing to
 });
 await ev(() => document.querySelector('.claudsidian-sheet-head button')?.click());
 await sleep(400);
+
+// ---- layout ---------------------------------------------------------------------------------------------------
+await check('no empty band between the composer and the bottom of the view (sidebar drawer)', async () => {
+  const g = await ev(() => {
+    const view = document.querySelector('.claudsidian-view').getBoundingClientRect();
+    const dock = document.querySelector('.claudsidian-dock').getBoundingClientRect();
+    return { gap: Math.round(view.bottom - dock.bottom), viewBottom: Math.round(view.bottom), screen: window.innerHeight, aboveBottom: document.querySelector('.claudsidian-view').classList.contains('is-above-screen-bottom') };
+  });
+  await shot('03a-bottom');
+  assert(g.gap <= 12, JSON.stringify(g));
+  return g;
+});
+await check("the person's bubble reads apart from Claude's text", async () => {
+  const c = await ev(() => {
+    const bubble = document.querySelector('.claudsidian-user-bubble');
+    if (!bubble) return null;
+    const cs = getComputedStyle(bubble);
+    const themed = [];
+    for (let e = bubble; e; e = e.parentElement) if (e.classList.contains('theme-light') || e.classList.contains('theme-dark')) themed.push(`${e.tagName}.${[...e.classList].filter((c) => c.startsWith('theme-')).join('.')}`);
+    return { bubble: cs.backgroundColor, border: cs.borderTopColor, primary: cs.getPropertyValue('--background-primary').trim(), themed };
+  });
+  assert(c, 'no user bubble in view');
+  assert(c.bubble !== c.page && c.border !== 'rgba(0, 0, 0, 0)', JSON.stringify(c));
+  return c;
+});
 
 // ---- keyboard dismissal in the chat --------------------------------------------------------------------------
 // A touch tap in desktop Chromium also fires mousedown, which blurs natively; iOS WebKit does not. So taps are
@@ -212,6 +250,7 @@ await check('sign-in: Finish sits beside the code field, return runs it, a tap o
   });
   assert(layout.sameRow, `Finish not beside the field: ${JSON.stringify(layout)}`);
   assert(layout.hint === 'go', `enterkeyhint ${layout.hint}`);
+  assert(layout.fontPx >= 16, `code field font ${layout.fontPx}px makes iOS zoom on focus`);
   await ev(() => document.querySelector('.claudsidian-sign-in .claudsidian-sign-in-row input:not([readonly])').focus());
   await page.keyboard.press('Enter');
   await waitFor(() => /paste the code/i.test(document.querySelector('.claudsidian-sign-in-error')?.textContent ?? ''), 'empty-code error', 3000);
@@ -225,6 +264,7 @@ await check('sign-in: Finish sits beside the code field, return runs it, a tap o
 await ev(() => document.querySelector('.claudsidian-sign-in .modal-close-button')?.click());
 
 // ---- teardown -------------------------------------------------------------------------------------------------
+await setTheme(priorTheme ?? 'moonstone').catch(() => {});
 await ev(() => window.app.emulateMobile(false)).catch(() => {});
 await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
 await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});

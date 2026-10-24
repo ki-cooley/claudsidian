@@ -5,7 +5,8 @@
  * while the request is in flight, "Queued" once the server accepted it; a message below an
  * unanswered permission or question card also reads "Queued" until the card is answered. User turns the host or a peer session injected
  * (cross-session messages, safety-classifier stops, interruptions) are not the person's words:
- * they render as a collapsed muted system line that expands on tap.
+ * they render as a collapsed muted system line that expands on tap, and so do the meta turns Claude Code
+ * itself injects (a skill's instructions, a command's expansion).
  */
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
@@ -37,6 +38,7 @@ const INJECTIONS: { test: RegExp; kind: Injection['kind']; label: string }[] = [
   { test: /^\s*<system-reminder\b/, kind: 'system', label: 'System note' },
   { test: /stopped by a safety classifier/i, kind: 'system', label: 'Stopped by a safety classifier' },
   { test: /^\s*\[Request interrupted/, kind: 'system', label: 'Request interrupted' },
+  { test: /^\s*Base directory for this skill:/, kind: 'system', label: 'Skill instructions' },
 ];
 
 /** What a user turn is when it was not typed by the person; undefined for ordinary messages. */
@@ -107,7 +109,8 @@ export function isPendingItem(item: UserItem): boolean {
 export function UserMessage(p: UserMessageProps): JSX.Element {
   const [showContext, setShowContext] = useState(false);
   const [open, setOpen] = useState(false);
-  const injection = classifyInjection(p.item.text);
+  // a meta turn Claude Code injected (a skill's or command's expansion) is never the person's words either
+  const injection = classifyInjection(p.item.text) ?? (p.item.synthetic ? { kind: 'system' as const, label: 'Injected by Claude Code' } : undefined);
   if (injection) {
     return (
       <div class={`claudsidian-system is-injected is-${injection.kind}`} data-subtype={injection.kind}>

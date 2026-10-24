@@ -1,6 +1,6 @@
 // Paths in tool rows: vault-relative, then session-relative, then ~/; cd prefixes dropped from Bash summaries.
 import { describe, expect, it } from 'vitest';
-import { pathRoots, relativizePath, relativizeText, stripCdPrefix, toolSummary, workingLabel } from '../../../../src/ui/components/chat/items/paths';
+import { pathRoots, relativizePath, relativizeText, stripCdPrefix, toolSummary, toolTitle, workingLabel } from '../../../../src/ui/components/chat/items/paths';
 import { items } from '../../../helpers/fake-store';
 
 const VAULT = '/Users/kicooley-winters/workspace/projects/yes-chef';
@@ -79,5 +79,17 @@ describe('workingLabel', () => {
     expect(workingLabel(items.tool('Agent', { description: 'audit the vault\nmore' }, { status: 'running' }), roots)).toBe('Running agent: audit the vault');
     expect(workingLabel(items.tool('mcp__wine-tracker__search_wines', {}, { status: 'running' }), roots)).toBe('Running wine-tracker');
     expect(workingLabel(items.tool('TodoWrite', {}, { status: 'running' }), roots)).toBe('Running TodoWrite');
+  });
+});
+
+describe('toolTitle', () => {
+  const roots = pathRoots(VAULT, CWD);
+  it('titles a Bash card by its description and keeps the command for everything else', () => {
+    const input = { command: "python3 - <<'EOF'\nprint(1)\nEOF", description: 'Write the component file\nmore' };
+    expect(toolTitle('Bash', input, roots)).toBe('Write the component file');
+    expect(toolSummary('Bash', input, roots)).toBe("Bash: python3 - <<'EOF' (+2 lines)");
+    expect(toolTitle('Bash', { command: 'ls' }, roots)).toBe('Bash: ls');
+    expect(toolTitle('Read', { file_path: `${VAULT}/menu.md` }, roots)).toBe('Read menu.md');
+    expect(workingLabel(items.tool('Bash', input, { status: 'running' }), roots)).toBe('Write the component file');
   });
 });
