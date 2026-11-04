@@ -40,7 +40,7 @@ Then reload the plugin in Settings > Community plugins.
 2. The modal opens claude.ai in your browser (or shows the URL to copy). Approve; claude.ai shows a code.
 3. Paste the code (`code#state`, or the whole callback URL) into the modal.
 
-If pasting on a phone or iPad will not work, run "Sign in a phone or iPad from this Mac" in desktop Obsidian instead: you approve and paste on the Mac, and the next phone or iPad that opens Obsidian without a sign-in picks it up through Obsidian Sync (within an hour; it is its own grant, so it never signs the Mac out). The grant rides in `data.json` (gitignored, carried by Obsidian Sync, which is end-to-end encrypted) until that device moves it into its own secure storage; anyone who can read the vault in that hour could use it.
+If pasting on a phone or iPad will not work, sign it in from the Mac: open Claudsidian on the phone (signed out) so it publishes a public key through Obsidian Sync, then run "Sign in a phone or iPad from this Mac" in desktop Obsidian and approve and paste there. The grant is encrypted to that phone with tweetnacl `box` (X25519 + XSalsa20-Poly1305); its secret key never leaves the phone's SecretStorage, so `data.json` only ever holds a public key and a box only that phone can open. It is its own grant, so the Mac stays signed in; an unopened box is dropped after an hour.
 
 The plugin exchanges it for a token using Claude Code's public OAuth client and stores the token in the plugin's `data.json`. If the organization cannot be read from the token response, paste the organization uuid in settings. Tokens refresh themselves; on a refresh failure the sign-in card comes back.
 

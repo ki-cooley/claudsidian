@@ -1,6 +1,6 @@
 {
   "name": "claudsidian",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "description": "Talk to your Claude Code sessions from any device over Remote Control, with your open notes as context.",
   "private": true,
   "main": "main.js",
@@ -36,5 +36,8 @@
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^3.2.0"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
   }
 }

@@ -57,6 +57,8 @@ Any substantial UI change (a screen, sheet, modal, the composer, layout or keybo
 
 Before calling any chat change done, also run `node e2e/obsidian/flows.mjs` against this instance (CDP 9333, test session "claudsidian ux test" only). Send-wait-reply is not enough (Ki, 2026-10-17: "we have to handle more than that"): cover a send mid-turn, leaving a chat before the reply and coming back, and the list updating with the chat closed. Those flows caught dropped after_id rows, messages stuck on "Sending...", and the iPad keyboard pushing the composer up. Before diagnosing from Ki's iPad screenshots, check which build the device runs.
 
+Mac-to-phone sign-in: `node e2e/obsidian/handoff-e2e.mjs` (mock on 8765) plays both devices in this instance and checks that `data.json` never holds a readable token.
+
 ## 5. Live smoke
 
 Desktop verified 2026-10-11 (2.0.2) via `node e2e/obsidian/live-smoke.mjs` with a real token from `scripts/oauth-login.mjs`: the plugin lists the real sessions, opens the yes-chef bridge session, sends a message, and the session replies through the plugin ("reached me in the yes-chef vault, and I got the project context"); zero console errors/warnings. Still to confirm on the iPad by Ki: the items below that need touch, camera, and Obsidian Sync.

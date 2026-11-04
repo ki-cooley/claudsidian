@@ -12,6 +12,7 @@ import { SessionStore } from './core/session-store';
 import type { CapturedContext } from './core/types';
 import { ContextCapture } from './obsidian/context-capture';
 import { Notifications } from './obsidian/notifications';
+import { ensureHandoffRequest, forgetHandoffKey, handoffDeviceId, isForThisDevice, openHandoff, sealHandoff } from './obsidian/handoff';
 import { readAuthSecret, type SecretStore, secretStoreOf, writeAuthSecret } from './obsidian/secrets';
 import { type ClaudsidianSettings, HANDOFF_TTL_MS, migrateSettings } from './settings';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
@@ -172,34 +173,50 @@ export default class ClaudsidianPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     this.settings = migrateSettings(await this.loadData());
     await this.moveAuthToSecret();
-    await this.adoptHandoff();
+    await this.syncHandoff();
   }
 
   /**
-   * A phone or iPad with no sign-in takes the one the Mac made for it (authHandoff, synced in data.json) into
-   * its own SecretStorage and blanks it, so no clipboard is needed on the device. Desktop and devices already
-   * signed in leave it for the device it was meant for; an expired one is dropped by whoever sees it.
+   * Mac-to-phone sign-in, phone side (src/obsidian/handoff.ts). A signed-out phone or iPad publishes its public
+   * key; when the Mac's sealed sign-in for it arrives, it opens it into SecretStorage and clears both. Signed-in
+   * devices withdraw their own request. Desktop only drops an expired box.
    */
-  private async adoptHandoff(): Promise<void> {
-    const handoff = this.settings.authHandoff;
-    if (!handoff) return;
-    if (Date.now() - this.settings.authHandoffAt > HANDOFF_TTL_MS) {
-      this.settings.authHandoff = null;
-      this.settings.authHandoffAt = 0;
-      await this.saveData(this.settings);
-      return;
+  private async syncHandoff(): Promise<void> {
+    const s = this.settings;
+    let dirty = false;
+    if (s.authHandoff && Date.now() - s.authHandoff.at > HANDOFF_TTL_MS) {
+      s.authHandoff = null;
+      dirty = true;
     }
-    if (!Platform.isMobile) return;
-    const signedIn = this.secrets ? !!readAuthSecret(this.secrets, this.settings.authSecretId) : !!this.settings.auth;
-    if (signedIn) return;
-    if (this.secrets) writeAuthSecret(this.secrets, this.settings.authSecretId, handoff);
-    else this.settings.auth = handoff;
-    this.settings.authHandoff = null;
-    this.settings.authHandoffAt = 0;
-    await this.saveData(this.settings);
-    new Notice('Signed in to Claude from your Mac');
-    if (this.auth) this.auth.reload();
-    if (this.store) void this.store.refreshSessions();
+    const secrets = this.secrets;
+    if (Platform.isMobile && secrets) {
+      const signedIn = !!readAuthSecret(secrets, s.authSecretId);
+      const mine = handoffDeviceId(secrets);
+      if (signedIn) {
+        if (mine && s.handoffRequest?.device === mine) {
+          s.handoffRequest = null;
+          dirty = true;
+        }
+        if (mine) forgetHandoffKey(secrets);
+      } else if (s.authHandoff && isForThisDevice(secrets, s.authHandoff)) {
+        try {
+          writeAuthSecret(secrets, s.authSecretId, openHandoff(secrets, s.authHandoff));
+          forgetHandoffKey(secrets);
+          s.handoffRequest = null;
+          new Notice('Signed in to Claude from your Mac');
+          if (this.auth) this.auth.reload();
+          if (this.store) void this.store.refreshSessions();
+        } catch (err) {
+          new Notice(`Sign-in from the Mac failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        s.authHandoff = null;
+        dirty = true;
+      } else if (!mine || s.handoffRequest?.device !== mine) {
+        s.handoffRequest = ensureHandoffRequest(secrets);
+        dirty = true;
+      }
+    }
+    if (dirty) await this.saveData(s);
   }
 
   /**
@@ -266,16 +283,22 @@ export default class ClaudsidianPlugin extends Plugin {
   }
 
   /**
-   * Runs the sign-in here, where paste works, for a phone or iPad: a separate grant (its own refresh token, so
-   * the devices never rotate each other out) parked in data.json for Obsidian Sync to carry. This Mac's own
-   * sign-in is untouched.
+   * Mac-to-phone sign-in, Mac side: runs the sign-in here, where paste works, as a separate grant (its own refresh
+   * token, so the devices never rotate each other out) and seals it to the waiting device's public key. This
+   * Mac's own sign-in is untouched.
    */
   openSignInForDevice(): void {
+    if (!this.settings.handoffRequest) {
+      new Notice('Open Claudsidian on the phone or iPad first (signed out), let Obsidian Sync run, then try again.', 10000);
+      return;
+    }
     const forDevice = new AuthManager({
       transport: obsidianTransport,
       load: () => null,
-      save: async (s) => {
-        if (s) await this.saveSettings({ authHandoff: s, authHandoffAt: Date.now() });
+      save: async (grant) => {
+        const request = this.settings.handoffRequest;
+        if (!grant || !request) return;
+        await this.saveSettings({ authHandoff: sealHandoff(request, grant) });
       },
       tokenUrl: () => this.settings.oauthTokenUrl,
       authorizeUrl: () => this.settings.oauthAuthorizeUrl,
@@ -289,7 +312,7 @@ export default class ClaudsidianPlugin extends Plugin {
       },
       {
         title: 'Sign in a phone or iPad',
-        intro: 'Approve on claude.ai here and paste the code. Obsidian Sync carries the sign-in to the next phone or iPad that opens Obsidian without one (within an hour). This Mac stays signed in as it is.',
+        intro: 'Approve on claude.ai here and paste the code. The sign-in is encrypted to the phone or iPad that last opened Claudsidian signed out, and Obsidian Sync carries it there (within an hour). This Mac stays signed in as it is.',
       },
     ).open();
   }
