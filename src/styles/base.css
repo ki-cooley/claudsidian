@@ -185,6 +185,10 @@ body.is-mobile .claudsidian-modal .claudsidian-modal-actions button {
   font-size: var(--font-ui-small);
 }
 
+.claudsidian-sign-in-paste {
+  margin-bottom: 4px;
+}
+
 .claudsidian-sign-in-error {
   margin-top: 8px;
   color: var(--color-red);

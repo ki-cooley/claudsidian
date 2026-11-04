@@ -119,6 +119,32 @@ describe('SignInModal', () => {
     }
   });
 
+  it('Paste code reads the clipboard and finishes without focusing the field (no keyboard)', async () => {
+    const auth = fakeAuth();
+    const modal = new SignInModal(new App(), auth);
+    const readText = vi.fn(async () => '  good#s1\n');
+    Object.defineProperty(navigator, 'clipboard', { value: { readText }, configurable: true });
+    modal.open();
+    await flush();
+    const codeField = Array.from(modal.contentEl.querySelectorAll('input')).find((i) => !i.readOnly)!;
+    buttonByText(modal.contentEl, 'Paste code').click();
+    await flush();
+    await flush();
+    expect(auth.completeSignIn).toHaveBeenCalledWith('good#s1');
+    expect(document.activeElement).not.toBe(codeField);
+
+    // a clipboard the webview will not read falls back to the field with a hint
+    const denied = fakeAuth();
+    Object.defineProperty(navigator, 'clipboard', { value: { readText: vi.fn(async () => { throw new Error('NotAllowedError'); }) }, configurable: true });
+    const m2 = new SignInModal(new App(), denied);
+    m2.open();
+    await flush();
+    buttonByText(m2.contentEl, 'Paste code').click();
+    await flush();
+    expect(denied.completeSignIn).not.toHaveBeenCalled();
+    expect(m2.contentEl.textContent).toMatch(/long-press/i);
+  });
+
   it('ignores an empty code, and reports a failed beginSignIn instead of throwing', async () => {
     const auth = fakeAuth();
     const modal = new SignInModal(new App(), auth);

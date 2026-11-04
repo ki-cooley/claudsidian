@@ -2,7 +2,8 @@
 //   sheets   the header pickers open as full bottom sheets over the chat (2026-10-24: clipped to the header)
 //   keyboard a tap on transcript text and a drag (even one starting on a control) drop the composer's focus; a
 //            tap on the composer's surround or tools does not
-//   sign-in  Finish sits beside the code field, return in the field runs Finish (empty code: inline error, no
+//   sign-in  Paste code works with no keyboard; under a simulated iOS overlay keyboard the modal and code field stay
+//            above the keys; Finish sits beside the code field, return in the field runs Finish (empty code: inline error, no
 //            network), a tap on the modal's text drops focus
 // Reloads the plugin from the vault copy first. Opens only the test session. Screenshots in e2e/out/obsidian/ui-check/.
 // Usage: node e2e/obsidian/ui-check.mjs [--session "claudsidian ux test"] [--dark]
@@ -262,6 +263,60 @@ await check('sign-in: Finish sits beside the code field, return runs it, a tap o
   return layout;
 });
 await ev(() => document.querySelector('.claudsidian-sign-in .modal-close-button')?.click());
+
+// iOS lays the keyboard over the webview without shrinking it: window.innerHeight stays put and only the visual
+// viewport gets shorter. Chromium cannot shrink the visual viewport alone, so the check swaps in a fake one. The
+// 10/24 check measured the modal with no keyboard at all, which is how a field hidden under the keys and a modal
+// with nothing to scroll shipped (Ki, 11/4: "impossible to complete").
+await check('sign-in under an overlay keyboard: Paste needs no keyboard, the field stays visible, the modal scrolls', async () => {
+  const KB = 340;
+  await ev((kb) => {
+    const fake = new EventTarget();
+    Object.defineProperties(fake, { height: { get: () => window.innerHeight - kb }, offsetTop: { value: 0 }, width: { get: () => window.innerWidth } });
+    window.__realVV = window.visualViewport;
+    Object.defineProperty(window, 'visualViewport', { value: fake, configurable: true });
+    navigator.clipboard.readText = async () => 'mock-code#mock-state';
+    // the previous check's modal can still be up; start from none
+    for (const m of document.querySelectorAll('.claudsidian-sign-in')) m.parentElement.remove();
+  }, KB);
+  try {
+    await ev(() => window.app.commands.executeCommandById('claudsidian:sign-in'));
+    await waitFor(() => !!document.querySelector('.claudsidian-sign-in-paste'), 'paste button', 5000);
+    // the phone modal slides in; measure once it has stopped moving
+    await sleep(1500);
+    const g = await ev((kb) => {
+      const visibleBottom = window.innerHeight - kb;
+      const modal = document.querySelector('.claudsidian-sign-in');
+      const field = modal.querySelector('.claudsidian-sign-in-row input:not([readonly])');
+      const paste = modal.querySelector('.claudsidian-sign-in-paste');
+      field.focus();
+      field.scrollIntoView({ block: 'nearest' });
+      const scroller = [modal, modal.querySelector('.modal-content')].find((e) => e.scrollHeight > e.clientHeight + 1);
+      return {
+        visibleBottom,
+        modalBottom: Math.round(modal.getBoundingClientRect().bottom),
+        fieldBottom: Math.round(field.getBoundingClientRect().bottom),
+        pasteBottom: Math.round(paste.getBoundingClientRect().bottom),
+        inputMode: field.inputMode,
+        scrolls: !!scroller,
+      };
+    }, KB);
+    await shot('04b-sign-in-keyboard');
+    assert(g.modalBottom <= g.visibleBottom, `modal runs under the keyboard: ${JSON.stringify(g)}`);
+    assert(g.fieldBottom <= g.visibleBottom, `code field under the keyboard: ${JSON.stringify(g)}`);
+    assert(g.inputMode === 'none', `code field raises the keyboard: ${g.inputMode}`);
+    // Paste with the mock clipboard reaches the exchange (the mock or real server answers; any error text proves it ran)
+    await ev(() => document.activeElement?.blur());
+    await ev(() => document.querySelector('.claudsidian-sign-in-paste').click());
+    await waitFor(() => document.querySelector('.claudsidian-sign-in .claudsidian-sign-in-row input:not([readonly])')?.value === 'mock-code#mock-state' || !document.querySelector('.claudsidian-sign-in'), 'paste filled the code', 5000);
+    return g;
+  } finally {
+    await ev(() => {
+      Object.defineProperty(window, 'visualViewport', { value: window.__realVV, configurable: true });
+      document.querySelector('.claudsidian-sign-in .modal-close-button')?.click();
+    });
+  }
+});
 
 // ---- teardown -------------------------------------------------------------------------------------------------
 await setTheme(priorTheme ?? 'moonstone').catch(() => {});

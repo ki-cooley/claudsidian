@@ -51,6 +51,23 @@ body.is-mobile .claudsidian-modal :where(input, textarea, select) {
   font-size: max(16px, var(--font-ui-medium, 16px));
 }
 
+/* Sign-in: iOS lays the keyboard over the webview, so SignInModal publishes its height and the visible height
+   on the container. The modal sits above the keys and scrolls inside what is left. */
+body.is-mobile .modal-container:has(> .claudsidian-sign-in) {
+  padding-bottom: var(--claudsidian-modal-kb, 0px);
+  box-sizing: border-box;
+}
+body.is-mobile .claudsidian-sign-in {
+  max-height: calc(var(--claudsidian-modal-vvh, 100%) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+body.is-mobile .claudsidian-sign-in .claudsidian-sign-in-paste {
+  width: 100%;
+  min-height: 44px;
+}
+
 .claudsidian-view.is-mobile :where(input, textarea, select) {
   /* iOS zooms into fields smaller than 16px */
   font-size: max(16px, var(--claudsidian-font));
