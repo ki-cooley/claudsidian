@@ -2,7 +2,7 @@
 //   sheets   the header pickers open as full bottom sheets over the chat (2026-10-24: clipped to the header)
 //   keyboard a tap on transcript text and a drag (even one starting on a control) drop the composer's focus; a
 //            tap on the composer's surround or tools does not
-//   sign-in  Paste code works with no keyboard; under a simulated iOS overlay keyboard the modal and code field stay
+//   sign-in  Paste code fills the field; under a simulated iOS overlay keyboard the modal and code field stay
 //            above the keys; Finish sits beside the code field, return in the field runs Finish (empty code: inline error, no
 //            network), a tap on the modal's text drops focus
 // Reloads the plugin from the vault copy first. Opens only the test session. Screenshots in e2e/out/obsidian/ui-check/.
@@ -268,7 +268,7 @@ await ev(() => document.querySelector('.claudsidian-sign-in .modal-close-button'
 // viewport gets shorter. Chromium cannot shrink the visual viewport alone, so the check swaps in a fake one. The
 // 10/24 check measured the modal with no keyboard at all, which is how a field hidden under the keys and a modal
 // with nothing to scroll shipped (Ki, 11/4: "impossible to complete").
-await check('sign-in under an overlay keyboard: Paste needs no keyboard, the field stays visible, the modal scrolls', async () => {
+await check('sign-in under an overlay keyboard: Paste code fills the field, the modal and code field stay above the keys', async () => {
   const KB = 340;
   await ev((kb) => {
     const fake = new EventTarget();
@@ -297,14 +297,12 @@ await check('sign-in under an overlay keyboard: Paste needs no keyboard, the fie
         modalBottom: Math.round(modal.getBoundingClientRect().bottom),
         fieldBottom: Math.round(field.getBoundingClientRect().bottom),
         pasteBottom: Math.round(paste.getBoundingClientRect().bottom),
-        inputMode: field.inputMode,
         scrolls: !!scroller,
       };
     }, KB);
     await shot('04b-sign-in-keyboard');
     assert(g.modalBottom <= g.visibleBottom, `modal runs under the keyboard: ${JSON.stringify(g)}`);
     assert(g.fieldBottom <= g.visibleBottom, `code field under the keyboard: ${JSON.stringify(g)}`);
-    assert(g.inputMode === 'none', `code field raises the keyboard: ${g.inputMode}`);
     // Paste with the mock clipboard reaches the exchange (the mock or real server answers; any error text proves it ran)
     await ev(() => document.activeElement?.blur());
     await ev(() => document.querySelector('.claudsidian-sign-in-paste').click());

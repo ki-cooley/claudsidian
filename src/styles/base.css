@@ -189,6 +189,12 @@ body.is-mobile .claudsidian-modal .claudsidian-modal-actions button {
   margin-bottom: 4px;
 }
 
+.claudsidian-sign-in-foot {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .claudsidian-sign-in-error {
   margin-top: 8px;
   color: var(--color-red);

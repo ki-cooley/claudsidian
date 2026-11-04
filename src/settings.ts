@@ -43,6 +43,14 @@ export interface ClaudsidianSettings {
   auth: AuthState | null;
   /** SecretStorage id holding the sign-in (AuthState JSON) on this device. */
   authSecretId: string;
+  /**
+   * A sign-in made on the Mac for a phone or iPad ("Sign in a phone or iPad from this Mac"). It rides Obsidian
+   * Sync once: the first mobile device with no sign-in moves it into its own SecretStorage and blanks it here.
+   * Desktop never adopts it. Dropped after HANDOFF_TTL_MS.
+   */
+  authHandoff: AuthState | null;
+  /** when authHandoff was written (ms) */
+  authHandoffAt: number;
   /** last opened session id, restored on view open */
   lastSessionId: string;
   /** per-install uuid sent with presence; generated on first load */
@@ -62,6 +70,8 @@ export interface ClaudsidianSettings {
 
 /** How many session cwds data.json keeps (the newest); older sessions fall back to their environment's directory. */
 export const MAX_SESSION_CWDS = 200;
+/** A sign-in made on the Mac for a phone (authHandoff) is dropped after this long unadopted. */
+export const HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   version: 2,
@@ -93,6 +103,8 @@ export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   debugLog: false,
   auth: null,
   authSecretId: 'claudsidian-auth',
+  authHandoff: null,
+  authHandoffAt: 0,
   lastSessionId: '',
   clientId: '',
   environmentDirs: {},
@@ -144,8 +156,8 @@ export function migrateSettings(raw: unknown): ClaudsidianSettings {
       (out as unknown as Record<string, unknown>)[key] = { ...(d as Record<string, unknown>), ...v };
     } else if (Array.isArray(d)) {
       if (Array.isArray(v)) (out as unknown as Record<string, unknown>)[key] = v.filter((x) => typeof x === 'string');
-    } else if (key === 'auth') {
-      out.auth = isObject(v) && typeof v.accessToken === 'string' ? (v as unknown as AuthState) : null;
+    } else if (key === 'auth' || key === 'authHandoff') {
+      out[key] = isObject(v) && typeof v.accessToken === 'string' ? (v as unknown as AuthState) : null;
     } else if (typeof v === typeof d) {
       (out as unknown as Record<string, unknown>)[key] = v;
     }

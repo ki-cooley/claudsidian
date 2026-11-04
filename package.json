@@ -1,6 +1,6 @@
 {
   "name": "claudsidian",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "description": "Talk to your Claude Code sessions from any device over Remote Control, with your open notes as context.",
   "private": true,
   "main": "main.js",

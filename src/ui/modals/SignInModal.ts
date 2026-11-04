@@ -6,8 +6,9 @@
  *
  * Phone: iOS lays the keyboard over the webview without shrinking it, so the code field sat behind the keys,
  * the modal had nothing to scroll, and the paste callout opened out of sight. Paste reads the clipboard with
- * no keyboard at all, the code field takes no keyboard (a long-press still pastes), and while any keyboard is
- * up the modal is lifted above it and limited to the visible height so it scrolls.
+ * no keyboard at all, and while the keyboard is up the modal is lifted above it and limited to the visible
+ * height so it scrolls. When the phone will not paste at all, "Sign in a phone or iPad from this Mac" on desktop
+ * does the whole thing there and Obsidian Sync carries the sign-in over (Plugin.adoptHandoff).
  */
 import { App, Modal, Notice, Platform } from 'obsidian';
 import type { AuthApi } from '../../api/auth-api';
@@ -30,18 +31,19 @@ export class SignInModal extends Modal {
     app: App,
     private readonly auth: AuthApi,
     private readonly onDone?: (signedIn: boolean) => void,
+    private readonly text: { title?: string; intro?: string } = {},
   ) {
     super(app);
   }
 
   onOpen(): void {
-    this.setTitle('Sign in to Claude');
+    this.setTitle(this.text.title ?? 'Sign in to Claude');
     this.modalEl.addClass('claudsidian-modal', 'claudsidian-sign-in');
     const root = this.contentEl;
     root.empty();
 
     root.createEl('p', {
-      text: 'Open claude.ai and approve access, copy the code it shows, then paste that code here.',
+      text: this.text.intro ?? 'Open claude.ai and approve access, copy the code it shows, then paste that code here.',
     });
 
     const step1 = root.createDiv({ cls: 'claudsidian-sign-in-step' });
@@ -72,8 +74,6 @@ export class SignInModal extends Modal {
       placeholder: 'or paste the code here',
       attr: { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Paste the code here' },
     });
-    // nobody types the code; without a keyboard a tap or long-press on the field brings up Paste where it can be seen
-    if (Platform.isMobile) this.codeField.inputMode = 'none';
     this.cleanups.push(submitOnReturn(this.codeField, () => void this.finish()));
     // claude.ai shows the code as code#state; a paste of that shape is the whole code, so finish without another tap
     this.codeField.addEventListener('paste', () => {
@@ -86,6 +86,12 @@ export class SignInModal extends Modal {
     this.errorEl = step2.createDiv({ cls: 'claudsidian-sign-in-error' });
     this.errorEl.setAttr('role', 'alert');
     this.errorEl.hide();
+
+    const foot = root.createEl('p', { cls: 'claudsidian-sign-in-foot' });
+    if (Platform.isMobile && !this.text.title) {
+      foot.appendText('Paste not working here? On your Mac, run "Sign in a phone or iPad from this Mac" and this device signs in through Obsidian Sync. ');
+    }
+    foot.appendText(`Claudsidian ${this.version()}`);
 
     if (Platform.isMobile) {
       this.cleanups.push(installKeyboardDismiss(this.modalEl));
@@ -119,8 +125,8 @@ export class SignInModal extends Modal {
     let text = '';
     try {
       text = (await navigator.clipboard.readText()).trim();
-    } catch {
-      this.showError('Could not read the clipboard. Long-press the field below and tap Paste.');
+    } catch (err) {
+      this.showError(`Could not read the clipboard (${messageOf(err)}). Long-press the field below and tap Paste.`);
       this.codeField?.focus();
       return;
     }
@@ -165,6 +171,11 @@ export class SignInModal extends Modal {
       container.style.removeProperty(KEYBOARD_VAR);
       container.style.removeProperty(VISIBLE_VAR);
     };
+  }
+
+  private version(): string {
+    const plugins = (this.app as unknown as { plugins?: { manifests?: Record<string, { version?: string }> } }).plugins;
+    return plugins?.manifests?.claudsidian?.version ?? '';
   }
 
   private async copyUrl(): Promise<void> {

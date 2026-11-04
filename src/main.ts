@@ -13,7 +13,7 @@ import type { CapturedContext } from './core/types';
 import { ContextCapture } from './obsidian/context-capture';
 import { Notifications } from './obsidian/notifications';
 import { readAuthSecret, type SecretStore, secretStoreOf, writeAuthSecret } from './obsidian/secrets';
-import { type ClaudsidianSettings, migrateSettings } from './settings';
+import { type ClaudsidianSettings, HANDOFF_TTL_MS, migrateSettings } from './settings';
 import { ChatView, VIEW_TYPE_CHAT } from './ui/ChatView';
 import { QuickAskModal, lastAssistantText } from './ui/modals/QuickAskModal';
 import { SignInModal } from './ui/modals/SignInModal';
@@ -172,6 +172,34 @@ export default class ClaudsidianPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     this.settings = migrateSettings(await this.loadData());
     await this.moveAuthToSecret();
+    await this.adoptHandoff();
+  }
+
+  /**
+   * A phone or iPad with no sign-in takes the one the Mac made for it (authHandoff, synced in data.json) into
+   * its own SecretStorage and blanks it, so no clipboard is needed on the device. Desktop and devices already
+   * signed in leave it for the device it was meant for; an expired one is dropped by whoever sees it.
+   */
+  private async adoptHandoff(): Promise<void> {
+    const handoff = this.settings.authHandoff;
+    if (!handoff) return;
+    if (Date.now() - this.settings.authHandoffAt > HANDOFF_TTL_MS) {
+      this.settings.authHandoff = null;
+      this.settings.authHandoffAt = 0;
+      await this.saveData(this.settings);
+      return;
+    }
+    if (!Platform.isMobile) return;
+    const signedIn = this.secrets ? !!readAuthSecret(this.secrets, this.settings.authSecretId) : !!this.settings.auth;
+    if (signedIn) return;
+    if (this.secrets) writeAuthSecret(this.secrets, this.settings.authSecretId, handoff);
+    else this.settings.auth = handoff;
+    this.settings.authHandoff = null;
+    this.settings.authHandoffAt = 0;
+    await this.saveData(this.settings);
+    new Notice('Signed in to Claude from your Mac');
+    if (this.auth) this.auth.reload();
+    if (this.store) void this.store.refreshSessions();
   }
 
   /**
@@ -237,6 +265,35 @@ export default class ClaudsidianPlugin extends Plugin {
     }).open();
   }
 
+  /**
+   * Runs the sign-in here, where paste works, for a phone or iPad: a separate grant (its own refresh token, so
+   * the devices never rotate each other out) parked in data.json for Obsidian Sync to carry. This Mac's own
+   * sign-in is untouched.
+   */
+  openSignInForDevice(): void {
+    const forDevice = new AuthManager({
+      transport: obsidianTransport,
+      load: () => null,
+      save: async (s) => {
+        if (s) await this.saveSettings({ authHandoff: s, authHandoffAt: Date.now() });
+      },
+      tokenUrl: () => this.settings.oauthTokenUrl,
+      authorizeUrl: () => this.settings.oauthAuthorizeUrl,
+      profileUrl: () => `${this.settings.apiBaseUrl}/api/oauth/profile`,
+    });
+    new SignInModal(
+      this.app,
+      forDevice,
+      (signedIn) => {
+        if (signedIn) new Notice('Sent. Open Obsidian on the phone or iPad; it signs in once Sync delivers it.', 10000);
+      },
+      {
+        title: 'Sign in a phone or iPad',
+        intro: 'Approve on claude.ai here and paste the code. Obsidian Sync carries the sign-in to the next phone or iPad that opens Obsidian without one (within a day). This Mac stays signed in as it is.',
+      },
+    ).open();
+  }
+
   // ---------------------------------------------------------------------------
   // Commands
   // ---------------------------------------------------------------------------
@@ -266,6 +323,9 @@ export default class ClaudsidianPlugin extends Plugin {
     });
     this.addCommand({ id: 'toggle-cooking', name: 'Toggle cooking mode', callback: () => void this.toggleCooking() });
     this.addCommand({ id: 'sign-in', name: 'Sign in to Claude', callback: () => this.openSignIn() });
+    if (!Platform.isMobile) {
+      this.addCommand({ id: 'sign-in-other-device', name: 'Sign in a phone or iPad from this Mac', callback: () => this.openSignInForDevice() });
+    }
     this.addCommand({ id: 'sign-out', name: 'Sign out of Claude', callback: () => void this.signOut() });
   }
 
