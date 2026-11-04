@@ -289,7 +289,7 @@ export default class ClaudsidianPlugin extends Plugin {
       },
       {
         title: 'Sign in a phone or iPad',
-        intro: 'Approve on claude.ai here and paste the code. Obsidian Sync carries the sign-in to the next phone or iPad that opens Obsidian without one (within a day). This Mac stays signed in as it is.',
+        intro: 'Approve on claude.ai here and paste the code. Obsidian Sync carries the sign-in to the next phone or iPad that opens Obsidian without one (within an hour). This Mac stays signed in as it is.',
       },
     ).open();
   }

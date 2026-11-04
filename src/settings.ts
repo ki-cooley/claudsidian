@@ -46,7 +46,7 @@ export interface ClaudsidianSettings {
   /**
    * A sign-in made on the Mac for a phone or iPad ("Sign in a phone or iPad from this Mac"). It rides Obsidian
    * Sync once: the first mobile device with no sign-in moves it into its own SecretStorage and blanks it here.
-   * Desktop never adopts it. Dropped after HANDOFF_TTL_MS.
+   * Desktop never adopts it. Dropped after HANDOFF_TTL_MS (an hour: it is a live refresh token sitting in a synced file).
    */
   authHandoff: AuthState | null;
   /** when authHandoff was written (ms) */
@@ -71,7 +71,7 @@ export interface ClaudsidianSettings {
 /** How many session cwds data.json keeps (the newest); older sessions fall back to their environment's directory. */
 export const MAX_SESSION_CWDS = 200;
 /** A sign-in made on the Mac for a phone (authHandoff) is dropped after this long unadopted. */
-export const HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
+export const HANDOFF_TTL_MS = 60 * 60 * 1000;
 
 export const DEFAULT_SETTINGS: ClaudsidianSettings = {
   version: 2,
