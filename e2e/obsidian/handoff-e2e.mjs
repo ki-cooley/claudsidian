@@ -19,6 +19,8 @@ const emulate = async (on) => {
 };
 const out = {};
 const prior = await ev(() => JSON.stringify(window.app.plugins.plugins.claudsidian.settings));
+// a run killed before its finally leaves the test values behind; never take those as the state to restore
+if (JSON.parse(prior).authSecretId === 'handoff-e2e') throw new Error('settings still hold a previous run\'s test values; restore authSecretId and the endpoint URLs first');
 try {
   await emulate(true);
   await ev(async () => {
